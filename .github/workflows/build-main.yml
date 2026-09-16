@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,3 +34,15 @@ jobs:
           path: dist/AISBench-Prefix-Tools.exe
           retention-days: 90
           if-no-files-found: error
+
+      - name: Publish rolling nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly dist/AISBench-Prefix-Tools.exe \
+            --title "Nightly Build" \
+            --notes "main 分支自动构建 (CI 自动维护的滚动 tag, 每次推送覆盖更新)。对应提交: ${COMMIT}" \
+            --prerelease

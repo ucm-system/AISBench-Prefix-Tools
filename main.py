@@ -1599,9 +1599,12 @@ class WizardApp:
             dp = int(self.dp_var.get())
             max_len = int(self.max_req_len_var.get())
             rate = float(self.repeat_rate_var.get())
-            req_rate = int(self.request_rate_var.get())
+            req_rate = float(self.request_rate_var.get())
         except ValueError:
-            messagebox.showwarning("提示", "请输入有效的数字")
+            messagebox.showwarning(
+                "提示",
+                "请输入有效的数字\n"
+                "(请求发送速率支持小数, 如 0.3 表示 0.3 req/s; 0 表示Burst模式)")
             return
 
         self.designer.set_kv_cache_info(kv, dp, max_len)
@@ -1979,8 +1982,18 @@ class WizardApp:
         if path:
             self.local_output_var.set(path)
 
+    def _sync_request_rate(self):
+        """将界面上最新的请求发送速率同步到designer
+        (生成用例后再修改速率也能生效; 无效输入时保持上次有效值)"""
+        try:
+            self.designer.set_request_rate(float(self.request_rate_var.get()))
+            return True
+        except ValueError:
+            return False
+
     def _refresh_commands(self):
         """刷新命令和摘要"""
+        self._sync_request_rate()
         commands = self.designer.generate_commands()
         self.commands_text.delete(1.0, tk.END)
         for i, cmd in enumerate(commands, 1):
@@ -2042,6 +2055,14 @@ class WizardApp:
         local_dir = self.local_output_var.get().strip()
         if not local_dir:
             messagebox.showwarning("提示", "请选择本地结果保存目录")
+            return
+
+        # 执行前同步最新速率, 避免生成用例后又修改速率导致命令/脚本不一致
+        if not self._sync_request_rate():
+            messagebox.showwarning(
+                "提示",
+                "请求发送速率输入无效, 请输入数字\n"
+                "(支持小数如 0.3; 0 表示Burst模式)")
             return
 
         self.exec_log.delete(1.0, tk.END)

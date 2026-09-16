@@ -81,9 +81,11 @@ class TestDesigner:
         """设置前缀命中率"""
         self.repeat_rate = max(0.0, min(1.0, rate))
 
-    def set_request_rate(self, rate: int):
-        """设置请求发送速率"""
-        self.request_rate = max(0, rate)
+    def set_request_rate(self, rate: float):
+        """设置请求发送速率 (0=Burst, >0 为 req/s, 支持小数如 0.3)"""
+        rate = max(0.0, float(rate))
+        # 整数值归一化为 int, 避免命令/摘要中出现 "1.0"
+        self.request_rate = int(rate) if rate.is_integer() else rate
 
     def generate_test_cases(self):
         """生成推荐的测试参数"""

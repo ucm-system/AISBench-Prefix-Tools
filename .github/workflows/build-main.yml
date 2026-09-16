@@ -1,8 +1,9 @@
-name: Build EXE (main)
+name: Build EXE
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -35,7 +36,8 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-      - name: Publish rolling nightly release
+      - name: Publish rolling nightly release (main branch builds)
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,3 +48,13 @@ jobs:
             --title "Nightly Build" \
             --notes "main 分支自动构建 (CI 自动维护的滚动 tag, 每次推送覆盖更新)。对应提交: ${COMMIT}" \
             --prerelease
+
+      - name: Publish version release (v* tag builds)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/AISBench-Prefix-Tools.exe \
+            --title "AISBench-Prefix-Tools ${{ github.ref_name }}" \
+            --generate-notes

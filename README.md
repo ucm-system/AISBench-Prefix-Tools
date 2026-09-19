@@ -51,7 +51,7 @@ build_exe.bat
 | 执行机 IP | 远程 Linux 服务器地址 | `141.xx.xx.xx` |
 | SSH 端口 | 默认 22 | `22` |
 | 用户名 | 通常 root | `root` |
-| 密码 / 密钥 | 二选一 | 密码或 `.pem` 密钥文件 |
+| 密码 / 密钥 | 二选一 | 密码（右侧小眼睛可切换明文）或 `.pem` 密钥文件 |
 
 点击 **测试连接** 确认后进入下一步。
 
@@ -61,9 +61,9 @@ build_exe.bat
 
 | 字段 | 说明 |
 |------|------|
-| 镜像 tar 包 | 本地选择 AISBench Docker 镜像 `.tar` 文件 |
-| 代码 zip 包 | 本地选择 `aisbench_auto_tools_prefix` 的 `.zip`，或点击 **从GitHub下载** 自动拉取 |
-| 模型路径 | 点击 **浏览远程目录** 在远程主机目录树中定位模型权重目录 |
+| 镜像 tar 包 | 本地选择 AISBench Docker 镜像 `.tar` 文件（附 **镜像下载链接** 按钮直达 AISBench Releases） |
+| 测试代码来源 | **程序内置**（默认，随 EXE 打包，部署时自动上传）或 **本地 zip 包**（zip 模式附代码下载链接按钮） |
+| 模型路径 | 点击 **浏览远程目录** 在远程主机目录树中定位模型权重目录（下拉框保留历史路径） |
 | 模型名称 | 对应 vLLM 的 `--served-model-name` 参数 |
 | vLLM 服务 IP / 端口 | 模型推理服务地址 |
 | API Key | 鉴权令牌，未开启鉴权则留空 |
@@ -72,19 +72,23 @@ build_exe.bat
 
 ### 步骤 3：Docker 部署（自动完成）
 
+**远程工作目录**：默认 `/tmp/AISBench_Prefix_Tools`，可自定义；提供 **检查目录 / 清理目录** 按钮，部署前若目录已存在且有内容会弹窗提醒，避免误覆盖。
+
 点击 **开始部署**，工具自动执行：
 
 ```
-1. 上传镜像 tar 包到远程主机
-2. docker load -i <tar>            → 自动解析镜像名
-3. 上传并解压代码 zip 包到远程主机
-4. docker run -itd \
-     --name aisbench-test-MMDDHHMM  \  ← 自动生成容器名
-     --shm-size=1g \
-     --net=host \
-     -v <模型路径>:<模型路径> \
-     -v <代码目录>:/benchmark/ais_bench/aisbench_auto_tools_prefix-main \
-     <镜像名> python3
+[1/4] 检查远程机 Docker 环境
+[2/4] 检查镜像是否已存在
+        ↓ 本地预读 tar 包 manifest.json 获取镜像名，已存在则跳过上传与加载
+        ↓ 不存在则 SFTP 上传（实时进度）并 docker load -i
+[3/4] 上传测试代码到远程工作目录（程序内置 或 本地 zip 包）
+[4/4] 创建并启动容器:
+        docker run -itd \
+          --name aisbench-test-MMDDHHMM  \  ← 自动生成容器名
+          --shm-size=1g --net=host \
+          -v <模型路径>:<模型路径> \
+          -v <代码目录>:/benchmark/ais_bench/aisbench_auto_tools_prefix-main \
+          <镜像名> python3
 ```
 
 全程日志实时输出，部署完成后容器自动运行。
@@ -108,13 +112,13 @@ build_exe.bat
 | OUTPUT_DIR | `./outputs/default` | 日志输出路径 |
 | POD_INFO | `[]` | **多 DP 场景必填**，格式 `ip:port,ip:port` |
 
-点击 **保存配置到容器** 写入，右侧预览区可查看完整文件内容。
+点击 **保存配置到容器** 写入，右侧预览区可查看完整文件内容；点击 **验证配置(读取容器)** 可回读容器内 config.py 与界面值比对，存在差异时提示重新保存。
 
 ---
 
 ### 步骤 5：设计测试用例
 
-填写 KV cache 信息（从 vLLM 启动日志获取）：
+填写 KV cache 信息（从 vLLM 启动日志获取，界面内置查询命令提示：`cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'`）：
 
 | 字段 | 说明 | 示例 |
 |------|------|------|
@@ -124,7 +128,7 @@ build_exe.bat
 | 前缀命中率 | repeat_rate，0~1 | `0.9` |
 | 请求发送速率 | 0 = Burst 模式；>0 为固定发送速率 (req/s)，支持小数如 `0.3` | `0` |
 
-勾选测试的 **输入长度** 和 **输出长度**，点击 **生成测试用例**。
+勾选测试的 **输入长度**（预设 8K ~ 2M，超出模型最大上下文的选项生成时会明确提示跳过）和 **输出长度**，点击 **生成测试用例**。
 
 工具自动计算（下方"计算明细"面板展示每个用例的代入过程）：
 - **最小请求数** = `floor(total_kv_cache / input_len / repeat_rate) + 1`
@@ -132,7 +136,7 @@ build_exe.bat
 - **推荐请求数** = 最小请求数 × 2
 - **并发数** = `floor(total_kv_cache / (input_len + output_len))`（KV cache 使用率 ≈ 100%）
 
-生成的用例表格包含 **请求数(推荐) / 请求数(最小) / 并发数 / KV使用率** 列，支持：
+生成的用例表格包含 **请求数(推荐) / 请求数(最小) / 并发数 / KV使用率** 列（表格与计算明细区域可拖拽分隔条调整占比），支持：
 - **双击单元格** 编辑 Input / Output / 请求数 / 并发数
 - 请求数允许低于最小值，低于时仅弹窗提醒（提示不会命中 HBM 之外的缓存介质），不强制拦截
 - **添加用例 / 复制用例 / 删除用例** 按钮管理用例列表
@@ -178,18 +182,18 @@ python3 aisbench_test.py \
 
 测试完成后自动产出：
 - **CSV 文件**：`results_test_logs_<时间戳>.csv`（包含 TTFT/TPOT/E2EL、吞吐量、命中率等指标）
-- **日志文件**：`test_logs_<时间戳>/test_<input>_<output>.log`（原始测试日志）
+- **日志文件**：`test_logs_<时间戳>/test_<序号>_<input>_<output>.log`（每个用例独立文件，同长度多测试也能分别解析出结果）
 
-执行日志区域实时输出进度，完成后在界面底部 **结果摘要表格** 中直接展示关键指标（Input/Output/请求数/并发/吞吐/TTFT/TPOT/QPS/命中率，并标注 CSV 与日志路径），同时日志区也打印文本摘要表：
+执行日志区域实时输出进度（自动跟随最新输出，向上翻阅查看历史时不强制滚动），命令预览 / 执行日志 / 结果摘要区域可拖拽分隔条调整占比。完成后在界面底部 **结果摘要表格** 中直接展示关键指标（Input / Output / 请求数 / 最大并发 / 并发 / 输入吞吐 / 输出吞吐 / TTFT / TPOT / QPS / HBM 命中率 / 外部缓存命中率，并标注 CSV 与日志路径），同时日志区也打印文本摘要表：
 
 ```
 结果摘要:
---------------------------------------------------------------------------------
-  Input   Output   TTFT_avg    TPOT_avg      QPS   Ext_Hit%
-   16384     512       45.2        12.3     8.5       92.3
-   16384    1024       48.1        11.8     7.2       91.8
-   32768     512       52.6        13.1     6.1       95.1
---------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+   Input   Output    Req   Max_CC       CC    In_Tput   Out_Tput   TTFT_avg   TPOT_avg      QPS   HBM_Hit%   Ext_Hit%
+   16384      512    108       46       46     4523.1      312.5       45.2       12.3      8.5       92.3       91.8
+   16384     1024    108       45       45     4410.8      290.1       48.1       11.8      7.2       92.5       91.6
+   32768      512     54       23       23     3895.4      201.7       52.6       13.1      6.1       94.8       95.1
+-----------------------------------------------------------------------------------------------------------------------------
 ```
 
 ### 环境清理与退出
@@ -211,14 +215,14 @@ python log_parser.py
 # parse_log_directory("/path/to/test_logs", "results.csv")
 ```
 
-CSV 包含字段：input_len, output_len, total_req, max_cc, cc, hbm_hit_rate, external_hit_rate, TTFT_avg/min/max, TPOT_avg/min/max, E2EL_avg/min/max, output_throughput, E2E_throughput, qps, prefill_token_throughput 等。
+CSV 包含字段：input_len, output_len, total_req, max_cc, cc, hbm_hit_rate, external_hit_rate, TTFT_avg/min/max/P90, TPOT_avg/min/max/SLO_P90, E2E_time, E2EL_avg/min/max/P90, output_throughput, E2E_throughput, input_token_throughput, prefill_token_throughput, qps, qpm。
 
 ---
 
 ## 常见问题
 
 **Q: 镜像加载后无法自动识别镜像名？**
-A: 工具解析 `docker load` 输出的 `Loaded image:` 行。若镜像打包格式异常，可手动在步骤 3 日志中找到镜像名，重新部署。
+A: 工具优先在本地直接读取 tar 包内 `manifest.json` 获取镜像名（无需上传）；读取失败时再由 `docker load` 输出的 `Loaded image:` 行识别。可在步骤 3 日志中查看解析结果。
 
 **Q: 模型路径浏览看不到文件？**
 A: 远程目录浏览器默认从 `/` 开始，双击 `[DIR]` 进入子目录。部分目录可能因权限问题无法列出。

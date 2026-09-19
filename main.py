@@ -362,8 +362,9 @@ class WizardApp:
         self.content_container.bind('<Configure>', _on_content_configure)
         self._content_canvas.bind('<Configure>', _on_canvas_configure)
 
-        # 注: 不绑定全局滚轮, 界面整体不随滚轮滚动; 日志栏等Text组件
-        # 在Windows下自带滚轮滚动。窗口过小时可通过右侧滚动条拖动。
+        # 全局滚轮: 指针位于日志/表格等可滚动组件上时优先滚动其自身,
+        # 到达边界或指针位于普通区域时滚动整个步骤页面
+        self._content_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
         # 为每个步骤创建Frame
         self.step_frames = []
@@ -380,6 +381,27 @@ class WizardApp:
         self._build_step5_execute()
 
         self._show_step(0)
+
+    def _on_mousewheel(self, event):
+        """全局滚轮: 指针下可滚动组件优先, 滚到边界后滚动整页"""
+        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        target = None
+        while widget is not None and widget is not self._content_canvas:
+            if isinstance(widget, (tk.Text, ttk.Treeview, tk.Listbox)):
+                target = widget
+                break
+            widget = widget.master
+
+        if target is not None:
+            first, last = target.yview()
+            if (event.delta > 0 and first > 0.0) or \
+               (event.delta < 0 and last < 1.0):
+                # 组件自身可继续滚动; 事件已由其默认绑定处理时避免重复滚动
+                if event.widget is not target:
+                    target.yview_scroll(-1 * int(event.delta / 120), "units")
+                return
+
+        self._content_canvas.yview_scroll(-1 * int(event.delta / 120), "units")
 
     def _build_step_header(self, parent, title, desc=""):
         """构建步骤标题"""

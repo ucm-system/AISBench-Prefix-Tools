@@ -1446,7 +1446,7 @@ class WizardApp:
 
         formulas = [
             "并发数 = floor( total_kv_cache / (input_len + output_len) )",
-            "最小请求数 = max( floor(total_kv_cache / input_len / repeat_rate) + 1, 并发数 × 2 )",
+            "最小请求数 = floor(total_kv_cache / input_len / repeat_rate) + 1",
             "推荐请求数 = 最小请求数 × 2",
             "KV使用率 = 并发数 × (input_len + output_len) / total_kv_cache × 100%",
         ]
@@ -1602,7 +1602,7 @@ class WizardApp:
             total = case.input_len + case.output_len
             max_cc_raw = kv / total
             min_req_raw = kv / case.input_len / rate + 1
-            min_req = max(int(min_req_raw), case.concurrency_max * 2)
+            min_req = int(min_req_raw)
             rec_req = min_req * 2
             kv_usage = case.concurrency_recommended * total / kv * 100
             lines.append(f"用例{i}  input={case.input_len:,}  output={case.output_len:,}  dp={dp}  repeat_rate={rate*100:.0f}%")
@@ -1610,8 +1610,8 @@ class WizardApp:
             lines.append(f"              = floor({max_cc_raw:.2f}) = {case.concurrency_max}")
             if case.concurrency_recommended != case.concurrency_max:
                 lines.append(f"  并发数(实际) = {case.concurrency_recommended:,}  (用户手动调整)")
-            lines.append(f"  最小请求数 = max( floor({kv:,} / {case.input_len:,} / {rate}) + 1 , {case.concurrency_max}×2)")
-            lines.append(f"            = max({min_req_raw:.2f}, {case.concurrency_max*2}) = {min_req}")
+            lines.append(f"  最小请求数 = floor({kv:,} / {case.input_len:,} / {rate}) + 1")
+            lines.append(f"            = floor({min_req_raw:.2f}) = {min_req}")
             lines.append(f"  推荐请求数 = {min_req} × 2 = {rec_req}  (实际: {case.data_num_recommended:,})")
             lines.append(f"  KV使用率  = {case.concurrency_recommended} × {total:,} / {kv:,} × 100% = {kv_usage:.2f}%")
             lines.append("")

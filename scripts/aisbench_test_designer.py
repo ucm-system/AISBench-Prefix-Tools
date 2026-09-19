@@ -305,8 +305,7 @@ class InteractiveTestCaseDesigner:
                 max_concurrency = max(1, max_concurrency)
                 
                 min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
-                min_data_num = max(min_data_num, max_concurrency * 2)
-                
+
                 recommended_data_num = min_data_num * 2
                 
                 self.test_cases.append({
@@ -540,10 +539,7 @@ class InteractiveTestCaseDesigner:
         output_len = self.get_int_input("输出长度 (tokens)", min_val=1)
         
         max_concurrency = max(1, int(self.total_kv_cache / (input_len + output_len) * 0.9))
-        min_data_num = max(
-            int(self.total_kv_cache / input_len / self.repeat_rate) + 1,
-            max_concurrency * 2
-        )
+        min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
         recommended_data_num = min_data_num * 2
 
         self.print_info(f"推荐的请求数: {recommended_data_num:,} (最小: {min_data_num:,})")

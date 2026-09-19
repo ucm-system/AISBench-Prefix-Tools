@@ -97,7 +97,6 @@ class TestDesigner:
                 max_concurrency = max(1, max_concurrency)
 
                 min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
-                min_data_num = max(min_data_num, max_concurrency * 2)
 
                 recommended_data_num = min_data_num * 2
 
@@ -174,10 +173,7 @@ class TestDesigner:
                 f"超过模型最大上下文 ({self.max_request_length:,}), "
                 f"vLLM将返回Bad Request拒绝该请求")
         max_concurrency = max(1, int(self.total_kv_cache / (input_len + output_len)))
-        min_data_num = max(
-            int(self.total_kv_cache / input_len / self.repeat_rate) + 1,
-            max_concurrency * 2
-        )
+        min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
         recommended_data_num = min_data_num * 2
 
         if data_num is None:

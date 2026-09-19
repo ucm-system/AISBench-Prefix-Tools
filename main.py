@@ -205,6 +205,9 @@ class WizardApp:
             except Exception:
                 pass
 
+        # 点击窗口×按钮时同样走环境清理检查
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close_window)
+
         # 核心组件
         self.ssh = SSHManager()
         self.docker: Optional[DockerManager] = None
@@ -1443,7 +1446,7 @@ class WizardApp:
 
         formulas = [
             "并发数 = floor( total_kv_cache / (input_len + output_len) )",
-            "最小请求数 = max( floor(2 × total_kv_cache / input_len / repeat_rate) + 1, 并发数 × 2 )",
+            "最小请求数 = max( floor(total_kv_cache / input_len / repeat_rate) + 1, 并发数 × 2 )",
             "推荐请求数 = 最小请求数 × 2",
             "KV使用率 = 并发数 × (input_len + output_len) / total_kv_cache × 100%",
         ]
@@ -1598,7 +1601,7 @@ class WizardApp:
         for i, case in enumerate(self.designer.test_cases, 1):
             total = case.input_len + case.output_len
             max_cc_raw = kv / total
-            min_req_raw = 2 * kv / case.input_len / rate + 1
+            min_req_raw = kv / case.input_len / rate + 1
             min_req = max(int(min_req_raw), case.concurrency_max * 2)
             rec_req = min_req * 2
             kv_usage = case.concurrency_recommended * total / kv * 100
@@ -1607,7 +1610,7 @@ class WizardApp:
             lines.append(f"              = floor({max_cc_raw:.2f}) = {case.concurrency_max}")
             if case.concurrency_recommended != case.concurrency_max:
                 lines.append(f"  并发数(实际) = {case.concurrency_recommended:,}  (用户手动调整)")
-            lines.append(f"  最小请求数 = max( floor(2×{kv:,} / {case.input_len:,} / {rate}) + 1 , {case.concurrency_max}×2)")
+            lines.append(f"  最小请求数 = max( floor({kv:,} / {case.input_len:,} / {rate}) + 1 , {case.concurrency_max}×2)")
             lines.append(f"            = max({min_req_raw:.2f}, {case.concurrency_max*2}) = {min_req}")
             lines.append(f"  推荐请求数 = {min_req} × 2 = {rec_req}  (实际: {case.data_num_recommended:,})")
             lines.append(f"  KV使用率  = {case.concurrency_recommended} × {total:,} / {kv:,} × 100% = {kv_usage:.2f}%")
@@ -1782,7 +1785,14 @@ class WizardApp:
                     return
                 case.output_len = num_val
             elif field == 'data_num_recommended':
-                case.data_num_recommended = max(num_val, case.data_num_min)
+                case.data_num_recommended = num_val
+                if num_val < case.data_num_min:
+                    messagebox.showwarning(
+                        "请求数低于最小值",
+                        f"请求数 ({num_val:,}) 低于最小请求数 ({case.data_num_min:,})\n\n"
+                        f"低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
+                        f"不会在HBM之外的KV Cache缓存介质中命中。\n\n"
+                        f"如需覆盖HBM之外的缓存介质, 请将请求数提高至 {case.data_num_min:,} 及以上。")
             elif field == 'concurrency_recommended':
                 case.concurrency_recommended = num_val
 
@@ -1846,6 +1856,17 @@ class WizardApp:
             except ValueError as e:
                 messagebox.showwarning("参数超出限制", str(e), parent=dialog)
                 return
+            new_case = self.designer.test_cases[-1]
+            if new_case.data_num_recommended < new_case.data_num_min:
+                messagebox.showwarning(
+                    "请求数低于最小值",
+                    f"请求数 ({new_case.data_num_recommended:,}) 低于最小请求数 "
+                    f"({new_case.data_num_min:,})\n\n"
+                    f"低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
+                    f"不会在HBM之外的KV Cache缓存介质中命中。\n\n"
+                    f"如需覆盖HBM之外的缓存介质, 请将请求数提高至 "
+                    f"{new_case.data_num_min:,} 及以上。",
+                    parent=dialog)
             self._refresh_test_tree()
             dialog.destroy()
 
@@ -2428,9 +2449,9 @@ class WizardApp:
         """上一步"""
         self._show_step(max(0, self.current_step - 1))
 
-    def _finish(self):
-        """完成"""
-        # 检查容器是否仍在运行
+    def _exit_check_cleanup(self) -> bool:
+        """退出前检查远程环境是否已清理
+        返回True: 可立即退出; False: 用户取消或清理完成后自动退出"""
         if self.docker and self.docker.container_name and self.docker.container_is_running():
             msg = "检测到Docker容器仍在运行!\n\n"
             msg += f"  容器: {self.docker.container_name}\n"
@@ -2442,14 +2463,24 @@ class WizardApp:
 
             choice = messagebox.askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)
             if choice is None:
-                return  # 取消 - 不退出
+                return False  # 取消 - 不退出
             if choice:
                 # 清理后退出
                 self._exit_after_cleanup = True
                 self._cleanup_environment(skip_confirm=True)
-                return
+                return False
+        return True
 
-        if messagebox.askyesno("完成", "测试已完成，是否退出程序?"):
+    def _finish(self):
+        """完成"""
+        if self._exit_check_cleanup() and \
+                messagebox.askyesno("完成", "测试已完成，是否退出程序?"):
+            self.ssh.disconnect()
+            self.root.destroy()
+
+    def _on_close_window(self):
+        """点击窗口×按钮: 环境未清理时提醒后再退出"""
+        if self._exit_check_cleanup():
             self.ssh.disconnect()
             self.root.destroy()
 

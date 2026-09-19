@@ -304,7 +304,7 @@ class InteractiveTestCaseDesigner:
                 max_concurrency = int(self.total_kv_cache / (input_len + output_len) * 0.9)
                 max_concurrency = max(1, max_concurrency)
                 
-                min_data_num = int(2 * self.total_kv_cache / input_len / self.repeat_rate) + 1
+                min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
                 min_data_num = max(min_data_num, max_concurrency * 2)
                 
                 recommended_data_num = min_data_num * 2
@@ -348,7 +348,7 @@ class InteractiveTestCaseDesigner:
         for i, case in enumerate(self.test_cases, 1):
             max_conc = self.total_kv_cache // (case['input_len'] + case['output_len'])
             print(f"\n{Colors.BOLD}用例 #{i}: Input={case['input_len']:,}, Output={case['output_len']:,}{Colors.END}")
-            print(f"  • 请求数 ({case['data_num_recommended']:,}) > 2 × KV_cache({self.total_kv_cache:,}) / input_len({case['input_len']:,}) / repeat_rate({self.repeat_rate:.2f}) = {case['data_num_min']:,}")
+            print(f"  • 请求数 ({case['data_num_recommended']:,}) = 最小请求数 × 2;  最小请求数 = floor(KV_cache({self.total_kv_cache:,}) / input_len({case['input_len']:,}) / repeat_rate({self.repeat_rate:.2f})) + 1 = {case['data_num_min']:,}")
             print(f"  • 并发数 ({case['concurrency_recommended']:,}) < KV_cache({self.total_kv_cache:,}) / (input_len({case['input_len']:,}) + output_len({case['output_len']:,})) = {max_conc}")
             print(f"  • KV cache使用率: {kv_usage:.1f}%")
     
@@ -411,9 +411,14 @@ class InteractiveTestCaseDesigner:
         
         for case in self.test_cases:
             case['data_num_recommended'] = max(
-                int(case['data_num_recommended'] * factor),
-                case['data_num_min']
+                1,
+                int(case['data_num_recommended'] * factor)
             )
+            if case['data_num_recommended'] < case['data_num_min']:
+                self.print_warning(
+                    f"用例 Input={case['input_len']:,} 请求数 ({case['data_num_recommended']:,}) "
+                    f"低于最小值 ({case['data_num_min']:,}), 低于该值不会在HBM之外的KV Cache缓存介质中命中"
+                )
         
         self.print_success("已更新所有用例的请求数")
         self.print_test_cases()
@@ -463,7 +468,12 @@ class InteractiveTestCaseDesigner:
             min_val=0
         )
         if new_data_num > 0:
-            case['data_num_recommended'] = max(new_data_num, case['data_num_min'])
+            if new_data_num < case['data_num_min']:
+                self.print_warning(
+                    f"请求数 ({new_data_num:,}) 低于最小值 ({case['data_num_min']:,}), "
+                    f"低于该值不会在HBM之外的KV Cache缓存介质中命中"
+                )
+            case['data_num_recommended'] = new_data_num
         
         new_concurrency = self.get_int_input(
             "新的并发数 (输入0保持当前值)",
@@ -531,19 +541,24 @@ class InteractiveTestCaseDesigner:
         
         max_concurrency = max(1, int(self.total_kv_cache / (input_len + output_len) * 0.9))
         min_data_num = max(
-            int(2 * self.total_kv_cache / input_len / self.repeat_rate) + 1,
+            int(self.total_kv_cache / input_len / self.repeat_rate) + 1,
             max_concurrency * 2
         )
         recommended_data_num = min_data_num * 2
-        
+
         self.print_info(f"推荐的请求数: {recommended_data_num:,} (最小: {min_data_num:,})")
         self.print_info(f"推荐的并发数: {max_concurrency:,}")
-        
+
         data_num = self.get_int_input(
             "请求数",
             default=recommended_data_num,
-            min_val=min_data_num
+            min_val=1
         )
+        if data_num < min_data_num:
+            self.print_warning(
+                f"请求数 ({data_num:,}) 低于最小值 ({min_data_num:,}), "
+                f"低于该值不会在HBM之外的KV Cache缓存介质中命中"
+            )
         
         concurrency = self.get_int_input(
             "并发数",

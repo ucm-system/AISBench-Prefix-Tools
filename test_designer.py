@@ -96,7 +96,7 @@ class TestDesigner:
                 max_concurrency = int(self.total_kv_cache / (input_len + output_len))
                 max_concurrency = max(1, max_concurrency)
 
-                min_data_num = int(2 * self.total_kv_cache / input_len / self.repeat_rate) + 1
+                min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
                 min_data_num = max(min_data_num, max_concurrency * 2)
 
                 recommended_data_num = min_data_num * 2
@@ -113,11 +113,11 @@ class TestDesigner:
                 ))
 
     def adjust_data_num(self, factor: float):
-        """调整所有用例的请求数（乘系数）"""
+        """调整所有用例的请求数（乘系数; 允许低于最小请求数）"""
         for case in self.test_cases:
             case.data_num_recommended = max(
-                int(case.data_num_recommended * factor),
-                case.data_num_min
+                1,
+                int(case.data_num_recommended * factor)
             )
 
     def adjust_concurrency(self, factor: float):
@@ -129,12 +129,12 @@ class TestDesigner:
             )
 
     def adjust_single_case(self, idx: int, data_num: int = None, concurrency: int = None):
-        """修改单个用例的参数"""
+        """修改单个用例的参数 (请求数允许低于最小值, 由调用方提醒)"""
         if idx < 0 or idx >= len(self.test_cases):
             return
         case = self.test_cases[idx]
         if data_num is not None and data_num > 0:
-            case.data_num_recommended = max(data_num, case.data_num_min)
+            case.data_num_recommended = data_num
         if concurrency is not None and concurrency > 0:
             case.concurrency_recommended = max(1, concurrency)
 
@@ -175,15 +175,13 @@ class TestDesigner:
                 f"vLLM将返回Bad Request拒绝该请求")
         max_concurrency = max(1, int(self.total_kv_cache / (input_len + output_len)))
         min_data_num = max(
-            int(2 * self.total_kv_cache / input_len / self.repeat_rate) + 1,
+            int(self.total_kv_cache / input_len / self.repeat_rate) + 1,
             max_concurrency * 2
         )
         recommended_data_num = min_data_num * 2
 
         if data_num is None:
             data_num = recommended_data_num
-        else:
-            data_num = max(data_num, min_data_num)
 
         if concurrency is None:
             concurrency = max_concurrency

@@ -1,4 +1,4 @@
-# AISBench Deployer
+# AISBench-Prefix-Tools
 
 Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/执行 prefix cache 性能测试，自动提取结果生成 CSV。
 
@@ -12,13 +12,14 @@ Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/�
 | `config_manager.py` | config.py 配置文件生成与写入 |
 | `test_designer.py` | 测试用例设计（KV cache 计算、.sh 脚本生成） |
 | `log_parser.py` | 测试日志解析、CSV 结果生成 |
+| `scripts/aisbench_test_designer.py` | 交互式命令行版测试用例设计器（与 GUI 逻辑一致） |
 
 ## 快速开始
 
 ### 方式一：直接下载 EXE（最简单）
 
-- **最新稳定版**：从 [Releases](https://github.com/student-jhz/AISBench-Prefix-Tools/releases/latest) 页面下载（[直达链接](https://github.com/student-jhz/AISBench-Prefix-Tools/releases/latest/download/AISBench-Prefix-Tools.exe)）
-- **Nightly 构建**（main 最新代码，CI 每次推送自动覆盖更新）：[直达链接](https://github.com/student-jhz/AISBench-Prefix-Tools/releases/download/nightly/AISBench-Prefix-Tools.exe)
+- **最新稳定版**：从 [Releases](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest) 页面下载（[直达链接](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest/download/AISBench-Prefix-Tools.exe)）
+- **Nightly 构建**（main 最新代码，CI 每次推送自动覆盖更新）：[直达链接](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/download/nightly/AISBench-Prefix-Tools.exe)
 
 双击即可运行，**无需安装 Python 和任何依赖**。
 
@@ -125,19 +126,26 @@ build_exe.bat
 
 勾选测试的 **输入长度** 和 **输出长度**，点击 **生成测试用例**。
 
-工具自动计算：
-- **请求数** = `2 × total_kv_cache / input_len / repeat_rate`（确保覆盖 KV cache 容量的 2 倍）
-- **并发数** = `total_kv_cache / (input_len + output_len) × 0.9`（确保 KV cache 使用率 ≈ 90%）
+工具自动计算（下方"计算明细"面板展示每个用例的代入过程）：
+- **最小请求数** = `floor(total_kv_cache / input_len / repeat_rate) + 1`
+  （低于该值时请求前缀总量不会超出 HBM KV cache 容量，不会命中 HBM 之外的 KV cache 缓存介质）
+- **推荐请求数** = 最小请求数 × 2
+- **并发数** = `floor(total_kv_cache / (input_len + output_len))`（KV cache 使用率 ≈ 100%）
 
-可一键 **×0.5 / ×2** 批量调整请求数或并发数。
+生成的用例表格包含 **请求数(推荐) / 请求数(最小) / 并发数 / KV使用率** 列，支持：
+- **双击单元格** 编辑 Input / Output / 请求数 / 并发数
+- 请求数允许低于最小值，低于时仅弹窗提醒（提示不会命中 HBM 之外的缓存介质），不强制拦截
+- **添加用例 / 复制用例 / 删除用例** 按钮管理用例列表
 
 ---
 
 ### 步骤 6：执行测试（自动生成CSV）
 
-点击 **执行测试 → 生成CSV**，工具自动完成 4 个阶段：
+点击 **执行测试 → 生成CSV**，工具自动完成以下阶段：
 
 ```
+[0/4] 预检查: 验证容器内 MODEL_PATH
+        ↓ 路径存在且含 config.json，否则快速失败并提示原因
 [1/4] 生成 .sh 测试脚本
         ↓ test_designer 生成包含所有测试用例的 bash 脚本
 [2/4] 上传脚本到容器并执行
@@ -155,13 +163,16 @@ python3 aisbench_test.py \
   --prefix_test \
   --input_len 16384 \
   --output_len 512 \
-  --data_num 120 \
-  --prefix_num 120 \
-  --concurrency 10 \
+  --data_num 108 \
+  --prefix_num 108 \
+  --concurrency 46 \
   --dataset_type prefix_cache \
   --repeat_rate 90% \
-  --dp 4
+  --dp 4 \
+  --seed 385712
 ```
+
+其中 `--seed` 每次执行随机生成（数据集可复现、不同轮次不同）；请求发送速率 > 0 时还会追加 `--request_rate <速率>`。
 
 **本地结果保存目录**：步骤 6 界面上可选择 Windows 本地目录（默认 `C:\Users\<用户名>\aisbench_results`）。
 
@@ -180,6 +191,12 @@ python3 aisbench_test.py \
    32768     512       52.6        13.1     6.1       95.1
 --------------------------------------------------------------------------------
 ```
+
+### 环境清理与退出
+
+- 测试完成后会自动提醒是否清理远程环境（停止并删除容器 + 清理工作目录），本地结果不受影响
+- 也可随时点击 **清理环境** 按钮手动清理
+- 退出程序时（点击 **完成** 或窗口 **×**），若检测到容器仍在运行，会再次弹出清理提醒：清理后退出 / 保留环境直接退出 / 取消
 
 ---
 

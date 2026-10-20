@@ -562,7 +562,7 @@ class WizardApp:
         tk.Button(tar_frame, text="浏览...", command=self._browse_tar,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
         tk.Button(tar_frame, text="镜像下载链接", command=lambda: self._open_link(
-                "https://github.com/AISBench/benchmark/releases/tag/v3.1-20260630-master"),
+                "https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master"),
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
         row += 1

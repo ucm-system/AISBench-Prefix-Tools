@@ -12,6 +12,7 @@ Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/�
 | `config_manager.py` | config.py 配置文件生成与写入 |
 | `test_designer.py` | 测试用例设计（KV cache 计算、.sh 脚本生成） |
 | `log_parser.py` | 测试日志解析、CSV 结果生成 |
+| `log_tools.py` | 远程日志工具：选择宿主机/容器日志，筛选 KV cache 并一键填入，查看日志内容 |
 | `scripts/aisbench_test_designer.py` | 交互式命令行版测试用例设计器（与 GUI 逻辑一致） |
 
 ## 快速开始
@@ -118,7 +119,18 @@ build_exe.bat
 
 ### 步骤 5：设计测试用例
 
-填写 KV cache 信息（从 vLLM 启动日志获取，界面内置查询命令提示：`cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'`）：
+填写 KV cache 信息（从 vLLM 启动日志获取）。界面内置查询命令，点击 **复制** 后可直接在服务器上执行：
+
+```bash
+cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'
+```
+
+也可以点击 **从日志自动获取 / 查看日志** 打开远程日志工具：
+
+- **服务器**：当前执行机，或临时连接其他服务器（关闭对话框自动断开）
+- **日志来源**：宿主机文件 / 指定容器内文件（自动列出运行中容器）/ 容器 stdout（docker logs）
+- **筛选 KV cache**：对选定日志执行 grep，直接显示匹配行；解析出"单个DP组KV cache"与"模型最大上下文"后可**一键填入**，同时界面查询命令更新为实际执行命令
+- **查看日志**：独立窗口查看日志内容（文件取尾部 2MB，docker logs 取尾部 5000 行，支持横向滚动与一键复制）
 
 | 字段 | 说明 | 示例 |
 |------|------|------|

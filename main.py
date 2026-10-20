@@ -27,6 +27,7 @@ from docker_manager import DockerManager
 from config_manager import ConfigManager
 from test_designer import TestDesigner
 from log_parser import parse_log_directory
+from log_tools import RemoteLogBrowser, KV_GREP_COMMAND
 
 
 # ============================================================
@@ -238,6 +239,8 @@ class WizardApp:
         self.max_req_len_var = tk.StringVar()
         self.repeat_rate_var = tk.StringVar(value="0.9")
         self.request_rate_var = tk.StringVar(value="0")
+        # KV cache 查询命令 (可复制; 从日志工具筛选后自动更新为实际命令)
+        self.kv_grep_cmd_var = tk.StringVar(value=KV_GREP_COMMAND)
         self.input_length_vars = {}
         self.output_length_vars = {}
 
@@ -1474,17 +1477,36 @@ class WizardApp:
                            font=("Segoe UI", 9))
             entry.grid(row=i, column=1, padx=16, pady=6, sticky=tk.W)
 
-        # KV cache 查询方式提示
+        # KV cache 查询方式提示 (命令可复制, 支持从远程/容器日志直接筛选)
         hint_row = len(kv_fields)
         tk.Label(kv_frame, text="查询方式:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                font=("Segoe UI", 8)).grid(row=hint_row, column=0, sticky=tk.NW,
                                           padx=16, pady=(6, 0))
         hint_frame = tk.Frame(kv_frame, bg="#f0f5ff")
         hint_frame.grid(row=hint_row, column=1, padx=16, pady=(6, 8), sticky=tk.W)
-        tk.Label(hint_frame,
-                 text="cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'",
-                 bg="#f0f5ff", fg=COLOR_PRIMARY, font=("Consolas", 8),
-                 anchor=tk.W).pack(fill=tk.X)
+
+        cmd_row = tk.Frame(hint_frame, bg="#f0f5ff")
+        cmd_row.pack(fill=tk.X)
+        cmd_entry = tk.Entry(cmd_row, textvariable=self.kv_grep_cmd_var,
+                             state="readonly", readonlybackground="#f0f5ff",
+                             fg=COLOR_PRIMARY, font=("Consolas", 8), width=56)
+        cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        cmd_entry.bind("<Control-a>",
+                       lambda e: (cmd_entry.select_range(0, tk.END), "break")[1])
+        self.kv_copy_btn = tk.Button(cmd_row, text="复制", font=("Segoe UI", 8),
+                                     relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
+                                     padx=10, command=self._copy_kv_grep_command)
+        self.kv_copy_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+        btn_row = tk.Frame(hint_frame, bg="#f0f5ff")
+        btn_row.pack(fill=tk.X, pady=(4, 0))
+        tk.Button(btn_row, text="从日志自动获取 / 查看日志", font=("Segoe UI", 8),
+                  relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
+                  command=self._open_log_browser).pack(side=tk.LEFT)
+        tk.Label(btn_row, text="(选择服务器/容器日志, 筛选结果可一键填入)",
+                 bg="#f0f5ff", fg=COLOR_TEXT_MUTED,
+                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=8)
+
         tk.Label(hint_frame,
                  text="GPU KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
                  bg="#f0f5ff", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
@@ -1616,6 +1638,21 @@ class WizardApp:
             lines.append(f"  KV使用率  = {case.concurrency_recommended} × {total:,} / {kv:,} × 100% = {kv_usage:.2f}%")
             lines.append("")
         self.calc_detail_text.insert("1.0", "\n".join(lines).rstrip())
+
+    def _copy_kv_grep_command(self):
+        """复制KV cache查询命令到剪贴板"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.kv_grep_cmd_var.get())
+        self.root.update_idletasks()
+        self.kv_copy_btn.config(text="已复制")
+        self.root.after(1500, lambda: self.kv_copy_btn.config(text="复制"))
+
+    def _open_log_browser(self):
+        """打开远程日志工具: 选择服务器/容器日志文件, 筛选KV cache或查看日志"""
+        RemoteLogBrowser(self.root, self.ssh,
+                         kv_cache_var=self.kv_cache_var,
+                         max_req_len_var=self.max_req_len_var,
+                         on_command=self.kv_grep_cmd_var.set)
 
     def _generate_test_cases(self):
         """生成测试用例"""

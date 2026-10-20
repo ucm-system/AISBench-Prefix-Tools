@@ -28,6 +28,7 @@ from config_manager import ConfigManager
 from test_designer import TestDesigner
 from log_parser import parse_log_directory
 from log_tools import RemoteLogBrowser, KV_GREP_COMMAND
+from result_compare import ResultCompareDialog
 
 
 # ============================================================
@@ -2029,6 +2030,9 @@ class WizardApp:
                                          bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                                          font=("Segoe UI", 8))
         self.results_info_lbl.pack(side=tk.LEFT, padx=8)
+        tk.Button(res_header, text="结果对比分析", font=("Segoe UI", 8),
+                  relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
+                  command=self._open_result_compare).pack(side=tk.RIGHT)
 
         res_tree_frame = tk.Frame(res_pane)
         res_tree_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
@@ -2061,6 +2065,10 @@ class WizardApp:
         path = filedialog.askdirectory(title="选择本地结果保存目录")
         if path:
             self.local_output_var.set(path)
+
+    def _open_result_compare(self):
+        """打开结果对比分析: 选择两个测试结果目录, 按输入规模匹配并对比指标"""
+        ResultCompareDialog(self.root)
 
     def _sync_request_rate(self):
         """将界面上最新的请求发送速率同步到designer

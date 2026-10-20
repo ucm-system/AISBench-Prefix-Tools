@@ -194,6 +194,38 @@ CSV_FIELDS = [
 ]
 
 
+def result_to_csv_row(result: Dict) -> Dict:
+    """将parse_single_log的结果转换为CSV行(字段与CSV_FIELDS对齐)"""
+    return {
+        'input_len': result.get('input_len', ''),
+        'output_len': result.get('output_len', ''),
+        'total_req': result.get('total_req', ''),
+        'max_cc': result.get('max_cc', ''),
+        'cc': result.get('cc', ''),
+        'hbm_hit_rate': result.get('hbm_hit_rate', 0),
+        'external_hit_rate': result.get('external_hit_rate', 0),
+        'TTFT_avg': result.get('TTFT_avg', ''),
+        'TTFT_min': result.get('TTFT_min', ''),
+        'TTFT_max': result.get('TTFT_max', ''),
+        'TTFT_P90': result.get('TTFT P90', ''),
+        'TPOT_avg': result.get('TPOT_avg', ''),
+        'TPOT_min': result.get('TPOT_min', ''),
+        'TPOT_max': result.get('TPOT_max', ''),
+        'TPOT_SLO_P90': result.get('TPOT SLO_P90', ''),
+        'E2E_time': result.get('E2E_time', ''),
+        'output_throughput': result.get('output_throughput', ''),
+        'E2E_throughput': result.get('E2E_throughput', ''),
+        'qps': result.get('qps', ''),
+        'qpm': result.get('qpm', ''),
+        'input_token_throughput': result.get('input_token_throughput', ''),
+        'prefill_token_throughput': result.get('prefill_token_throughput', ''),
+        'E2EL_avg': result.get('E2EL_avg', ''),
+        'E2EL_min': result.get('E2EL_min', ''),
+        'E2EL_max': result.get('E2EL_max', ''),
+        'E2EL_P90': result.get('E2EL P90', ''),
+    }
+
+
 def parse_single_log(log_file: str) -> Optional[Dict]:
     """解析单个日志文件，提取第二次测试结果"""
     parser = LogParser(log_file)
@@ -249,34 +281,7 @@ def parse_log_directory(log_dir: str, output_csv: str,
         result = parse_single_log(str(log_file))
 
         if result:
-            row = {
-                'input_len': result.get('input_len', ''),
-                'output_len': result.get('output_len', ''),
-                'total_req': result.get('total_req', ''),
-                'max_cc': result.get('max_cc', ''),
-                'cc': result.get('cc', ''),
-                'hbm_hit_rate': result.get('hbm_hit_rate', 0),
-                'external_hit_rate': result.get('external_hit_rate', 0),
-                'TTFT_avg': result.get('TTFT_avg', ''),
-                'TTFT_min': result.get('TTFT_min', ''),
-                'TTFT_max': result.get('TTFT_max', ''),
-                'TTFT_P90': result.get('TTFT P90', ''),
-                'TPOT_avg': result.get('TPOT_avg', ''),
-                'TPOT_min': result.get('TPOT_min', ''),
-                'TPOT_max': result.get('TPOT_max', ''),
-                'TPOT_SLO_P90': result.get('TPOT SLO_P90', ''),
-                'E2E_time': result.get('E2E_time', ''),
-                'output_throughput': result.get('output_throughput', ''),
-                'E2E_throughput': result.get('E2E_throughput', ''),
-                'qps': result.get('qps', ''),
-                'qpm': result.get('qpm', ''),
-                'input_token_throughput': result.get('input_token_throughput', ''),
-                'prefill_token_throughput': result.get('prefill_token_throughput', ''),
-                'E2EL_avg': result.get('E2EL_avg', ''),
-                'E2EL_min': result.get('E2EL_min', ''),
-                'E2EL_max': result.get('E2EL_max', ''),
-                'E2EL_P90': result.get('E2EL P90', ''),
-            }
+            row = result_to_csv_row(result)
             results.append(row)
 
             if progress_callback:

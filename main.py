@@ -306,6 +306,21 @@ class WizardApp:
 
             self.step_buttons.append((indicator, label))
 
+        # 独立工具: 结果对比分析 (无需连接服务器, 随时可用)
+        tools_frame = tk.Frame(sidebar, bg=COLOR_CARD)
+        tools_frame.pack(fill=tk.X, padx=8, pady=(18, 0))
+        compare_btn = tk.Label(tools_frame, text="📊 结果对比分析",
+                               bg="#eff6ff", fg=COLOR_PRIMARY,
+                               font=("Segoe UI", 10, "bold"), cursor="hand2",
+                               padx=10, pady=6)
+        compare_btn.pack(fill=tk.X, ipady=3)
+        compare_btn.bind("<Button-1>", lambda _e: self._open_result_compare())
+        compare_btn.bind("<Enter>", lambda _e: compare_btn.config(bg="#dbeafe"))
+        compare_btn.bind("<Leave>", lambda _e: compare_btn.config(bg="#eff6ff"))
+        tk.Label(sidebar, text="无需连接服务器", bg=COLOR_CARD,
+                 fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7)
+                 ).pack(padx=18, anchor=tk.W)
+
         # 底部状态
         tk.Frame(sidebar, bg=COLOR_BORDER, height=1).pack(fill=tk.X, padx=12, pady=12)
         self.status_lbl = tk.Label(sidebar, text="● 未连接", bg=COLOR_CARD,

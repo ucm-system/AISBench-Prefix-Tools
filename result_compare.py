@@ -14,7 +14,7 @@ from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
 from typing import Dict, List, Optional, Tuple
 
-from log_parser import parse_single_log, result_to_csv_row
+from log_parser import CSV_FIELDS
 
 
 # 样式常量 (与 main.py 保持一致)
@@ -103,34 +103,39 @@ def format_value(value, decimals: int = 2) -> str:
     return f"{num:,.{decimals}f}"
 
 
-def load_result_rows(directory: str) -> List[Dict]:
-    """加载目录中的测试结果行: 优先results_*.csv, 其次其他csv, 无CSV回退test_*.log"""
-    rows: List[Dict] = []
-    path = Path(directory)
-    if not path.is_dir():
-        return rows
+def load_result_csv(file_path: str) -> Tuple[List[Dict], Optional[str]]:
+    """加载并校验结果CSV: 表头字段必须与工具生成的CSV_FIELDS完全一致
 
-    csv_files = sorted(path.glob("*.csv"))
-    ordered = ([f for f in csv_files if f.name.startswith("results_")]
-               + [f for f in csv_files if not f.name.startswith("results_")])
-    for csv_file in ordered:
-        try:
-            with open(csv_file, newline="", encoding="utf-8-sig") as handle:
-                for raw in csv.DictReader(handle):
-                    row = {k.strip(): v for k, v in raw.items() if k and k.strip()}
-                    if row:
-                        rows.append(row)
-        except (OSError, UnicodeDecodeError):
-            continue
+    返回 (rows, error); 成功时error为None
+    """
+    path = Path(file_path)
+    if not path.is_file():
+        return [], "文件不存在"
 
-    if rows:
-        return rows
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            header = [h.strip() for h in (reader.fieldnames or []) if h and h.strip()]
+            missing = [field for field in CSV_FIELDS if field not in header]
+            extra = [field for field in header if field not in CSV_FIELDS]
+            if missing or extra:
+                reasons = []
+                if missing:
+                    reasons.append(f"缺少字段: {', '.join(missing)}")
+                if extra:
+                    reasons.append(f"多余字段: {', '.join(extra)}")
+                return [], "不是工具生成的结果CSV格式 (" + "; ".join(reasons) + ")"
+            rows = []
+            for raw in reader:
+                row = {k.strip(): v for k, v in raw.items() if k and k.strip()}
+                if row:
+                    rows.append(row)
+    except (OSError, UnicodeDecodeError) as exc:
+        return [], f"读取失败: {exc}"
 
-    for log_file in sorted(path.glob("test_*.log")):
-        result = parse_single_log(str(log_file))
-        if result:
-            rows.append(result_to_csv_row(result))
-    return rows
+    if not rows:
+        return [], "CSV中没有数据行"
+    return rows, None
 
 
 def match_case_rows(rows_a: List[Dict], rows_b: List[Dict]):
@@ -233,7 +238,7 @@ class BarChartWidget(tk.Canvas):
         width = max(self.winfo_width(), 120)
         height = max(self.winfo_height(), 120)
 
-        left, right, top, bottom = 78, 16, 34, 46
+        left, right, top, bottom = 78, 16, 34, 62
         plot_w = width - left - right
         plot_h = height - top - bottom
         if plot_w < 40 or plot_h < 40:
@@ -295,8 +300,9 @@ class BarChartWidget(tk.Canvas):
                     self.create_text((x0 + x1) / 2, y_top - 8, text=text,
                                      fill=COLOR_TEXT_MUTED, font=("Segoe UI", 7))
 
-            self.create_text(center, top + plot_h + 16, text=label,
-                             fill=COLOR_TEXT, font=("Segoe UI", 8))
+            self.create_text(center, top + plot_h + 6, text=label,
+                             anchor=tk.N, justify=tk.CENTER,
+                             fill=COLOR_TEXT, font=("Segoe UI", 7))
 
         # 图例 (右上角)
         legend_x = left + plot_w - 150
@@ -351,31 +357,31 @@ class ResultCompareDialog:
         self._build_results_section()
 
     def _build_dir_section(self):
-        box = tk.LabelFrame(self.dialog, text=" 测试结果目录 ",
+        box = tk.LabelFrame(self.dialog, text=" 结果CSV文件 (工具生成, 格式自动校验) ",
                             bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.X, padx=10, pady=(10, 4))
 
         row_a = tk.Frame(box, bg=COLOR_CARD)
         row_a.pack(fill=tk.X, padx=10, pady=(8, 2))
-        tk.Label(row_a, text="目录A (基准):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        tk.Label(row_a, text="文件A (基准):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
-        self.dir_a_var = tk.StringVar()
-        tk.Entry(row_a, textvariable=self.dir_a_var, font=("Segoe UI", 9)
+        self.file_a_var = tk.StringVar()
+        tk.Entry(row_a, textvariable=self.file_a_var, font=("Segoe UI", 9)
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        tk.Button(row_a, text="浏览...", font=("Segoe UI", 8),
-                  command=lambda: self._browse_dir(self.dir_a_var)
+        tk.Button(row_a, text="选择CSV...", font=("Segoe UI", 8),
+                  command=lambda: self._browse_csv(self.file_a_var)
                   ).pack(side=tk.LEFT, padx=4)
 
         row_b = tk.Frame(box, bg=COLOR_CARD)
         row_b.pack(fill=tk.X, padx=10, pady=2)
-        tk.Label(row_b, text="目录B (对比):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        tk.Label(row_b, text="文件B (对比):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
-        self.dir_b_var = tk.StringVar()
-        tk.Entry(row_b, textvariable=self.dir_b_var, font=("Segoe UI", 9)
+        self.file_b_var = tk.StringVar()
+        tk.Entry(row_b, textvariable=self.file_b_var, font=("Segoe UI", 9)
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        tk.Button(row_b, text="浏览...", font=("Segoe UI", 8),
-                  command=lambda: self._browse_dir(self.dir_b_var)
+        tk.Button(row_b, text="选择CSV...", font=("Segoe UI", 8),
+                  command=lambda: self._browse_csv(self.file_b_var)
                   ).pack(side=tk.LEFT, padx=4)
 
         action_row = tk.Frame(box, bg=COLOR_CARD)
@@ -383,7 +389,7 @@ class ResultCompareDialog:
         tk.Button(action_row, text="加载数据", font=("Segoe UI", 9, "bold"),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=14,
                   command=self._load_data).pack(side=tk.LEFT)
-        self.load_status_lbl = tk.Label(action_row, text="选择两个包含 results_*.csv 或 test_*.log 的目录",
+        self.load_status_lbl = tk.Label(action_row, text="选择两个工具生成的 results_*.csv 文件",
                                         bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                         font=("Segoe UI", 8))
         self.load_status_lbl.pack(side=tk.LEFT, padx=10)
@@ -549,8 +555,10 @@ class ResultCompareDialog:
     #  数据加载 / 匹配
     # ============================================================
 
-    def _browse_dir(self, var: tk.StringVar):
-        path = filedialog.askdirectory(parent=self.dialog, title="选择测试结果目录")
+    def _browse_csv(self, var: tk.StringVar):
+        path = filedialog.askopenfilename(
+            parent=self.dialog, title="选择结果CSV文件",
+            filetypes=[("CSV文件", "*.csv"), ("所有文件", "*.*")])
         if path:
             var.set(path)
 
@@ -559,33 +567,31 @@ class ResultCompareDialog:
             var.set(enabled)
 
     def _load_data(self):
-        dir_a = self.dir_a_var.get().strip()
-        dir_b = self.dir_b_var.get().strip()
-        if not dir_a or not dir_b:
-            messagebox.showwarning("提示", "请先选择目录A和目录B", parent=self.dialog)
+        file_a = self.file_a_var.get().strip()
+        file_b = self.file_b_var.get().strip()
+        if not file_a or not file_b:
+            messagebox.showwarning("提示", "请先选择文件A和文件B", parent=self.dialog)
             return
-        if not os.path.isdir(dir_a) or not os.path.isdir(dir_b):
-            messagebox.showwarning("提示", "目录不存在, 请检查路径", parent=self.dialog)
+        if not os.path.isfile(file_a) or not os.path.isfile(file_b):
+            messagebox.showwarning("提示", "文件不存在, 请检查路径", parent=self.dialog)
             return
-        if os.path.normpath(dir_a) == os.path.normpath(dir_b):
-            messagebox.showwarning("提示", "目录A和目录B相同, 请选择两个不同的测试目录",
+        if os.path.normpath(file_a) == os.path.normpath(file_b):
+            messagebox.showwarning("提示", "文件A和文件B相同, 请选择两个不同的结果CSV",
                                    parent=self.dialog)
             return
 
-        self.rows_a = load_result_rows(dir_a)
-        self.rows_b = load_result_rows(dir_b)
+        self.rows_a, error_a = load_result_csv(file_a)
+        self.rows_b, error_b = load_result_csv(file_b)
 
-        if not self.rows_a or not self.rows_b:
-            empty = []
-            if not self.rows_a:
-                empty.append("目录A")
-            if not self.rows_b:
-                empty.append("目录B")
-            messagebox.showwarning(
-                "提示", f"{'和'.join(empty)} 中未找到结果数据 "
-                        f"(需要 results_*.csv / *.csv / test_*.log)",
-                parent=self.dialog)
-            self._set_load_status(f"{'和'.join(empty)} 无结果数据", COLOR_ERROR)
+        errors = []
+        if error_a:
+            errors.append(f"文件A: {error_a}")
+        if error_b:
+            errors.append(f"文件B: {error_b}")
+        if errors:
+            messagebox.showwarning("格式校验失败", "\n".join(errors),
+                                   parent=self.dialog)
+            self._set_load_status("CSV格式校验失败", COLOR_ERROR)
             return
 
         self.matches, unmatched_a, unmatched_b = match_case_rows(self.rows_a,
@@ -622,8 +628,11 @@ class ResultCompareDialog:
                            else f"A:{format_len(key_a[1])} B:{format_len(key_b[1])}")
             req_a = format_value(match["row_a"].get("total_req"), 0)
             req_b = format_value(match["row_b"].get("total_req"), 0)
+            cc_a = format_value(match["row_a"].get("max_cc"), 0)
+            cc_b = format_value(match["row_b"].get("max_cc"), 0)
             label = (f"{index}. 输入 {format_len(key_a[0])}  输出 {output_text}"
-                     f"  [{match_text}]  req {req_a}/{req_b}")
+                     f"  [{match_text}]  req {req_a}/{req_b}"
+                     f"  max_cc {cc_a}/{cc_b}")
             tk.Checkbutton(self.cases_inner, text=label, variable=var,
                            bg=COLOR_CARD, fg=COLOR_TEXT, anchor=tk.W,
                            font=("Segoe UI", 8)).pack(fill=tk.X, pady=1)
@@ -677,8 +686,9 @@ class ResultCompareDialog:
         for child in self.table_container.winfo_children():
             child.destroy()
 
-        columns = ["match", "input", "output"]
-        headings = [("匹配", 52), ("Input", 70), ("Output", 76)]
+        columns = ["match", "input", "output", "req", "max_cc"]
+        headings = [("匹配", 52), ("Input", 70), ("Output", 76),
+                    ("Req A/B", 86), ("Max_CC A/B", 96)]
         for field, name, _unit, _decimals in selected_metrics:
             columns.extend([f"{field}_a", f"{field}_b",
                             f"{field}_diff", f"{field}_pct"])
@@ -711,9 +721,16 @@ class ResultCompareDialog:
                 values.append(format_len(key_a[1]))
             else:
                 values.append(f"{format_len(key_a[1])}/{format_len(key_b[1])}")
+            req_a = format_value(match["row_a"].get("total_req"), 0)
+            req_b = format_value(match["row_b"].get("total_req"), 0)
+            cc_a = format_value(match["row_a"].get("max_cc"), 0)
+            cc_b = format_value(match["row_b"].get("max_cc"), 0)
+            values.append(f"{req_a}/{req_b}")
+            values.append(f"{cc_a}/{cc_b}")
 
             row_record = {"match": values[0], "input": values[1],
-                          "output": values[2]}
+                          "output": values[2], "Req A/B": values[3],
+                          "Max_CC A/B": values[4]}
             for field, name, _unit, decimals in selected_metrics:
                 result = compute_comparison(match, field)
                 values.extend([
@@ -740,23 +757,17 @@ class ResultCompareDialog:
         for child in self.charts_inner.winfo_children():
             child.destroy()
 
-        dir_a = os.path.normpath(self.dir_a_var.get().strip())
-        dir_b = os.path.normpath(self.dir_b_var.get().strip())
-        name_a = os.path.basename(dir_a) or "A"
-        name_b = os.path.basename(dir_b) or "B"
+        name_a = (os.path.splitext(os.path.basename(
+            self.file_a_var.get().strip()))[0]) or "A"
+        name_b = (os.path.splitext(os.path.basename(
+            self.file_b_var.get().strip()))[0]) or "B"
 
         for field, name, unit, decimals in selected_metrics:
             labels = []
             values_a = []
             values_b = []
             for match in selected_matches:
-                key_a = _case_key(match["row_a"])
-                key_b = _case_key(match["row_b"])
-                if match["exact"]:
-                    label = f"{format_len(key_a[0])}/{format_len(key_a[1])}"
-                else:
-                    label = f"{format_len(key_a[0])}"
-                labels.append(label)
+                labels.append(self._chart_label(match))
                 result = compute_comparison(match, field)
                 values_a.append(result["a"])
                 values_b.append(result["b"])
@@ -766,6 +777,25 @@ class ResultCompareDialog:
                                    name_a=f"A: {name_a}", name_b=f"B: {name_b}",
                                    unit=unit, decimals=decimals)
             chart.pack(fill=tk.X, padx=2, pady=6)
+
+    @staticmethod
+    def _chart_label(match: Dict) -> str:
+        """柱状图横坐标: 输入/输出 + 请求数 + Max_CC (两侧不同用 A↔B 标注)"""
+        row_a = match["row_a"]
+        row_b = match["row_b"]
+        input_len = format_len(row_a.get("input_len"))
+        out_a = format_len(row_a.get("output_len"))
+        out_b = format_len(row_b.get("output_len"))
+        line1 = (f"{input_len}/{out_a}" if out_a == out_b
+                 else f"{input_len} {out_a}↔{out_b}")
+
+        req_a = format_value(row_a.get("total_req"), 0)
+        req_b = format_value(row_b.get("total_req"), 0)
+        cc_a = format_value(row_a.get("max_cc"), 0)
+        cc_b = format_value(row_b.get("max_cc"), 0)
+        req_part = req_a if req_a == req_b else f"{req_a}↔{req_b}"
+        cc_part = cc_a if cc_a == cc_b else f"{cc_a}↔{cc_b}"
+        return f"{line1}\nr{req_part} c{cc_part}"
 
     def _export_csv(self):
         if not getattr(self, "compare_rows", None):
@@ -780,7 +810,7 @@ class ResultCompareDialog:
         if not path:
             return
 
-        fieldnames = ["match", "input", "output"]
+        fieldnames = ["match", "input", "output", "Req A/B", "Max_CC A/B"]
         for metric in self.compare_metrics:
             fieldnames.extend([f"{metric} A", f"{metric} B",
                                f"{metric} Δ", f"{metric} Δ%"])

@@ -1,6 +1,7 @@
 # AISBench-Prefix-Tools
 
 [📚 在线使用文档](https://ucm-system.github.io/AISBench-Prefix-Tools/)
+[🧭 在线设计文档](https://ucm-system.github.io/AISBench-Prefix-Tools/design.html)
 
 Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/执行 prefix cache 性能测试，自动提取结果生成 CSV。
 

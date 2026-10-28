@@ -5,11 +5,10 @@ AISBenchPrefixTools - Windows GUI应用程序
 
 功能流程:
   1. 连接远程执行机 (SSH)
-  2. 选择镜像tar包、代码zip包、模型路径
-  3. Docker加载镜像并创建容器
-  4. 配置config.py
-  5. 设计测试用例
-  6. 执行测试并收集结果
+  2. 选择执行机已有镜像或上传镜像tar包, 配置模型并部署容器
+  3. 配置config.py
+  4. 设计测试用例
+  5. 执行测试并收集结果
 """
 
 import os
@@ -183,7 +182,6 @@ class WizardApp:
 
     STEP_TITLES = [
         "SSH连接",
-        "文件与模型",
         "Docker部署",
         "配置文件",
         "测试用例",
@@ -221,6 +219,9 @@ class WizardApp:
         self.config_data = {}
         self.code_host_path = ""
         self.remote_tar_path = ""
+        self.remote_images = []
+        self.image_source_var = tk.StringVar(value="existing")
+        self.remote_image_var = tk.StringVar()
 
         # 日志处理器 + 取消标志（解决后台线程阻塞UI）
         self._cancel_flag = threading.Event()
@@ -397,7 +398,7 @@ class WizardApp:
         # 构建各步骤内容
         self._build_step0_connection()
         self._build_step1_files()
-        self._build_step2_docker()
+        self._build_step1_docker_section()
         self._build_step3_config()
         self._build_step4_testcases()
         self._build_step5_execute()
@@ -553,33 +554,68 @@ class WizardApp:
             messagebox.showerror("连接失败", msg)
 
     # ============================================================
-    #  Step 1: 文件与模型选择
+    #  Step 1: Docker部署与模型配置
     # ============================================================
 
     def _build_step1_files(self):
         frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 2: 选择文件与模型",
-                                "选择AISBench镜像tar包和模型路径, 测试代码可选内置或本地zip")
+        self._build_step_header(frame, "步骤 2: Docker部署与模型配置",
+                                "选择执行机已有AISBench镜像或上传tar包, 配置模型/vLLM服务后一键部署容器")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
-        form.pack(fill=tk.BOTH, expand=True, pady=8)
+        form.pack(fill=tk.X, pady=8)
 
         row = 0
 
-        # 镜像tar
-        tk.Label(form, text="AISBench 镜像 tar 包:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        # AISBench镜像来源: 优先复用执行机已有镜像; 没有可用镜像时再上传tar包
+        tk.Label(form, text="AISBench 镜像来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tar_frame = tk.Frame(form, bg=COLOR_CARD)
-        tar_frame.grid(row=row, column=1, columnspan=2, padx=16, pady=8, sticky=tk.EW)
+        source_frame = tk.Frame(form, bg=COLOR_CARD)
+        source_frame.grid(row=row, column=1, columnspan=2,
+                          padx=16, pady=(8, 2), sticky=tk.W)
+        tk.Radiobutton(source_frame, text="执行机已有镜像", variable=self.image_source_var,
+                       value="existing", bg=COLOR_CARD, font=("Segoe UI", 9),
+                       command=self._on_image_source_change).pack(side=tk.LEFT)
+        tk.Radiobutton(source_frame, text="上传本地镜像tar包", variable=self.image_source_var,
+                       value="upload", bg=COLOR_CARD, font=("Segoe UI", 9),
+                       command=self._on_image_source_change).pack(side=tk.LEFT, padx=(12, 0))
+
+        row += 1
+
+        # 已有镜像选择 / 本地tar上传 (同格切换显示)
+        image_choice_frame = tk.Frame(form, bg=COLOR_CARD)
+        image_choice_frame.grid(row=row, column=1, columnspan=2,
+                                padx=16, pady=(0, 8), sticky=tk.EW)
+        self.remote_image_frame = tk.Frame(image_choice_frame, bg=COLOR_CARD)
+        self.remote_image_frame.grid(row=0, column=0, sticky=tk.EW)
+        remote_combo_row = tk.Frame(self.remote_image_frame, bg=COLOR_CARD)
+        remote_combo_row.pack(fill=tk.X)
+        self.remote_image_combo = ttk.Combobox(remote_combo_row,
+                                               textvariable=self.remote_image_var,
+                                               width=48, font=("Segoe UI", 9),
+                                               state="readonly")
+        self.remote_image_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.remote_image_combo.bind("<<ComboboxSelected>>", self._on_remote_image_selected)
+        tk.Button(remote_combo_row, text="查看已有镜像", font=("Segoe UI", 8),
+                  command=self._refresh_remote_images).pack(side=tk.LEFT, padx=(4, 0))
+
+        self.tar_upload_frame = tk.Frame(image_choice_frame, bg=COLOR_CARD)
+        self.tar_upload_frame.grid(row=0, column=0, sticky=tk.EW)
+        self.tar_upload_frame.grid_remove()
         self.tar_path = tk.StringVar()
-        tk.Entry(tar_frame, textvariable=self.tar_path, width=50,
-               font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(tar_frame, text="浏览...", command=self._browse_tar,
-                font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
-        tk.Button(tar_frame, text="镜像下载链接", command=lambda: self._open_link(
+        tk.Entry(self.tar_upload_frame, textvariable=self.tar_path, width=50,
+                 font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(self.tar_upload_frame, text="浏览...", command=self._browse_tar,
+                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
+        tk.Button(self.tar_upload_frame, text="镜像下载链接", command=lambda: self._open_link(
                 "https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master"),
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
+
+        self.image_list_status = tk.Label(image_choice_frame, text="尚未查询",
+                                          bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+                                          font=("Segoe UI", 8), anchor=tk.W)
+        self.image_list_status.grid(row=1, column=0, sticky=tk.EW, pady=(2, 0))
 
         row += 1
 
@@ -667,6 +703,78 @@ class WizardApp:
                font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
 
         form.columnconfigure(1, weight=1)
+
+    def _on_image_source_change(self):
+        """切换镜像来源: 执行机已有镜像 / 本地tar包"""
+        if self.image_source_var.get() == "existing":
+            self.tar_upload_frame.grid_remove()
+            self.remote_image_frame.grid()
+        else:
+            self.remote_image_frame.grid_remove()
+            self.tar_upload_frame.grid()
+
+    def _refresh_remote_images(self):
+        """查询并填充执行机上已有的Docker镜像"""
+        if not self.ssh.connected:
+            messagebox.showwarning("提示", "请先连接到远程主机")
+            return
+
+        if not self.docker:
+            self.docker = DockerManager(self.ssh)
+
+        self.image_list_status.config(text="正在查询执行机镜像...", fg=COLOR_TEXT_MUTED)
+        try:
+            images = self.docker.list_images()
+        except Exception as e:
+            self.remote_images = []
+            self.remote_image_combo.config(values=[])
+            self.remote_image_var.set("")
+            self.image_source_var.set("upload")
+            self._on_image_source_change()
+            self.image_list_status.config(
+                text=f"查询失败: {e}。可先上传tar包，部署时会检查Docker。",
+                fg=COLOR_ERROR)
+            return
+
+        self.remote_images = images
+        names = [item["name"] for item in images]
+        self.remote_image_combo.config(values=names)
+
+        if not names:
+            self.remote_image_var.set("")
+            self.image_source_var.set("upload")
+            self._on_image_source_change()
+            self.image_list_status.config(
+                text="未发现可用镜像，请上传本地AISBench镜像tar包。",
+                fg=COLOR_WARNING)
+            return
+
+        selected = self.remote_image_var.get().strip()
+        if selected not in names:
+            # 只自动选择名称明显属于AISBench的镜像; 其他镜像交给用户确认
+            preferred = next((name for name in names
+                              if "aisbench" in name.lower() or "ais-bench" in name.lower()
+                              or "benchmark" in name.lower()), "")
+            self.remote_image_var.set(preferred)
+            selected = preferred
+        self.image_source_var.set("existing")
+        self._on_image_source_change()
+        if selected:
+            self._on_remote_image_selected()
+        else:
+            self.image_list_status.config(
+                text=f"发现 {len(names)} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
+                fg=COLOR_WARNING)
+
+    def _on_remote_image_selected(self, event=None):
+        """更新已选镜像的详情提示"""
+        selected = self.remote_image_var.get().strip()
+        item = next((img for img in self.remote_images if img["name"] == selected), None)
+        if not item:
+            self.image_list_status.config(text="请选择执行机上的镜像", fg=COLOR_WARNING)
+            return
+        detail = f"ID {item['id']} · 创建于 {item['created']} · 大小 {item['size']}"
+        self.image_list_status.config(text=f"已选择 {selected} ({detail})", fg=COLOR_SUCCESS)
 
     def _browse_tar(self):
         path = filedialog.askopenfilename(
@@ -789,14 +897,19 @@ class WizardApp:
         dialog.destroy()
 
     # ============================================================
-    #  Step 2: Docker部署
+    #  Step 1: Docker部署区 (与文件/模型配置合并展示)
     # ============================================================
 
-    def _build_step2_docker(self):
-        frame = self.step_frames[2]
+    def _build_step1_docker_section(self):
+        frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 3: Docker部署",
-                               "上传文件、加载镜像、创建容器")
+        deploy_header = tk.Frame(frame, bg=COLOR_BG)
+        deploy_header.pack(fill=tk.X, pady=(12, 8))
+        tk.Label(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
+                 font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
+        tk.Label(deploy_header,
+                 text="确认远程工作目录后开始部署；已有镜像直接复用，上传镜像时自动加载",
+                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9)).pack(anchor=tk.W)
 
         # 远程工作目录
         workdir_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -830,7 +943,7 @@ class WizardApp:
 
         self.docker_info_labels = {}
         info_items = [
-            ("镜像文件:", "tar"),
+            ("镜像:", "tar"),
             ("代码包:", "zip"),
             ("模型路径:", "model"),
             ("容器名称:", "container"),
@@ -985,6 +1098,8 @@ class WizardApp:
             messagebox.showwarning("提示", "请先连接到远程主机")
             return
 
+        image_mode = self.image_source_var.get()
+        selected_image = self.remote_image_var.get().strip()
         tar = self.tar_path.get().strip()
         model = self.model_path_var.get().strip()
         work_dir = self.work_dir_var.get().strip()
@@ -1003,8 +1118,20 @@ class WizardApp:
                 messagebox.showwarning("提示", f"zip包不存在: {zipf}")
                 return
 
-        if not tar or not model:
-            messagebox.showwarning("提示", "请先完成镜像包和模型路径选择")
+        if image_mode == "existing":
+            if not selected_image:
+                messagebox.showwarning("提示", "请先查看并选择执行机上的镜像")
+                return
+        else:
+            if not tar:
+                messagebox.showwarning("提示", "请选择要上传的AISBench镜像tar包")
+                return
+            if not os.path.isfile(tar):
+                messagebox.showwarning("提示", f"镜像tar包不存在: {tar}")
+                return
+
+        if not model:
+            messagebox.showwarning("提示", "请先完成模型路径选择")
             return
         if not work_dir:
             messagebox.showwarning("提示", "请输入远程工作目录路径")
@@ -1045,7 +1172,11 @@ class WizardApp:
         self._flush_timer_id = self.root.after(200, self._flush_log_buffer)
 
         def _do_deploy():
-            self._deploy_sequence(tar, model)
+            self._deploy_sequence(
+                model,
+                tar if image_mode == "upload" else "",
+                selected_image if image_mode == "existing" else "",
+            )
             # 结束后恢复UI
             def _restore():
                 self.deploy_btn.config(state=tk.NORMAL, text="重新部署")
@@ -1061,7 +1192,7 @@ class WizardApp:
 
         threading.Thread(target=_do_deploy, daemon=True).start()
 
-    def _deploy_sequence(self, tar_path, model_path):
+    def _deploy_sequence(self, model_path, tar_path, selected_image):
         """部署序列"""
         # DockerManager已在_start_deploy中初始化，保持remote_work_base设置
         work_dir = self.work_dir_var.get().strip()
@@ -1080,54 +1211,66 @@ class WizardApp:
             self._log_docker("  ⚹ 已取消\n")
             return
 
-        # Step 2: 检查镜像是否已存在，避免重复上传和加载
-        self._log_docker("[2/4] 检查镜像是否已存在...\n")
-        tar_name = os.path.basename(tar_path)
-        self.root.after(0, lambda: self.docker_info_labels["tar"].config(text=tar_name))
-
         # 确保工作目录存在（无论镜像是否已存在都需要）
         self.ssh.mkdir_p(self.docker.remote_work_base)
 
-        # 从本地tar包读取镜像名（不上传，直接读manifest.json）
-        image_name = DockerManager.get_image_name_from_tar(tar_path)
+        # Step 2: 优先复用执行机已有镜像; 仅在上传模式下加载tar包
+        self._log_docker("[2/4] 准备AISBench镜像...\n")
+        if selected_image:
+            self.root.after(0, lambda n=selected_image: self.docker_info_labels["tar"].config(text=n))
+            if not self.docker.image_exists(selected_image):
+                self._log_docker(f"  ✗ 镜像不存在: {selected_image}\n")
+                self._log_docker("  → 请返回本步骤重新查看已有镜像，或改用上传模式\n")
+                return
 
-        if image_name and self.docker.image_exists(image_name):
-            # 镜像已存在，跳过上传和加载
-            self._log_docker(f"  ✓ 镜像已存在: {image_name}\n")
-            self._log_docker(f"  → 跳过上传和docker load\n\n")
+            image_name = selected_image
+            self._log_docker(f"  ✓ 复用执行机已有镜像: {image_name}\n")
+            self._log_docker("  → 跳过镜像上传和docker load\n\n")
             self.docker.image_name = image_name
         else:
-            # 镜像不存在，需要上传和加载
-            if image_name:
-                self._log_docker(f"  镜像 {image_name} 不存在，需要上传并加载\n")
+            tar_name = os.path.basename(tar_path)
+            self.root.after(0, lambda n=tar_name: self.docker_info_labels["tar"].config(text=n))
+
+            # 从本地tar包读取镜像名（不上传，直接读manifest.json）
+            image_name = DockerManager.get_image_name_from_tar(tar_path)
+
+            if image_name and self.docker.image_exists(image_name):
+                # 镜像已存在，跳过上传和加载
+                self._log_docker(f"  ✓ 镜像已存在: {image_name}\n")
+                self._log_docker(f"  → 跳过上传和docker load\n\n")
+                self.docker.image_name = image_name
             else:
-                self._log_docker(f"  无法从tar包预读镜像名，将上传后由docker load识别\n")
+                # 镜像不存在，需要上传和加载
+                if image_name:
+                    self._log_docker(f"  镜像 {image_name} 不存在，需要上传并加载\n")
+                else:
+                    self._log_docker(f"  无法从tar包预读镜像名，将上传后由docker load识别\n")
 
-            tar_size = os.path.getsize(tar_path)
-            self._log_docker(f"  上传镜像tar包 ({tar_size//1024//1024}MB)...\n")
-            self.remote_tar_path = f"{self.docker.remote_work_base}/{tar_name}"
+                tar_size = os.path.getsize(tar_path)
+                self._log_docker(f"  上传镜像tar包 ({tar_size//1024//1024}MB)...\n")
+                self.remote_tar_path = f"{self.docker.remote_work_base}/{tar_name}"
 
-            def _upload_progress(transferred, total):
-                pct = transferred * 100 // total if total > 0 else 0
-                self._log_docker(f"\r  上传中: {transferred//1024//1024}MB / {total//1024//1024}MB ({pct}%)")
+                def _upload_progress(transferred, total):
+                    pct = transferred * 100 // total if total > 0 else 0
+                    self._log_docker(f"\r  上传中: {transferred//1024//1024}MB / {total//1024//1024}MB ({pct}%)")
 
-            ok = self.ssh.upload_file(tar_path, self.remote_tar_path, _upload_progress)
-            self._log_docker("\n")
-            if not ok:
-                self._log_docker("  ✗ 镜像上传失败\n")
-                return
-            self._log_docker("  ✓ 镜像上传完成\n")
+                ok = self.ssh.upload_file(tar_path, self.remote_tar_path, _upload_progress)
+                self._log_docker("\n")
+                if not ok:
+                    self._log_docker("  ✗ 镜像上传失败\n")
+                    return
+                self._log_docker("  ✓ 镜像上传完成\n")
 
-            # Docker load
-            self._log_docker("  加载Docker镜像...\n")
-            ok, image_name = self.docker.load_image(
-                self.remote_tar_path,
-                callback=lambda t: self._log_docker(t)
-            )
-            if not ok:
-                self._log_docker(f"  ✗ 镜像加载失败: {image_name}\n")
-                return
-            self._log_docker("\n")
+                # Docker load
+                self._log_docker("  加载Docker镜像...\n")
+                ok, image_name = self.docker.load_image(
+                    self.remote_tar_path,
+                    callback=lambda t: self._log_docker(t)
+                )
+                if not ok:
+                    self._log_docker(f"  ✗ 镜像加载失败: {image_name}\n")
+                    return
+                self._log_docker("\n")
 
         self.root.after(0, lambda n=image_name: self.docker_info_labels["image"].config(text=n))
 
@@ -1207,9 +1350,9 @@ class WizardApp:
     # ============================================================
 
     def _build_step3_config(self):
-        frame = self.step_frames[3]
+        frame = self.step_frames[2]
 
-        self._build_step_header(frame, "步骤 4: 配置 config.py",
+        self._build_step_header(frame, "步骤 3: 配置 config.py",
                                 "配置aisbench_auto_tools_prefix的测试参数")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -1450,9 +1593,9 @@ class WizardApp:
     # ============================================================
 
     def _build_step4_testcases(self):
-        frame = self.step_frames[4]
+        frame = self.step_frames[3]
 
-        self._build_step_header(frame, "步骤 5: 设计测试用例",
+        self._build_step_header(frame, "步骤 4: 设计测试用例",
                                "根据KV cache信息生成测试参数")
 
         # 计算公式说明
@@ -1967,9 +2110,9 @@ class WizardApp:
     # ============================================================
 
     def _build_step5_execute(self):
-        frame = self.step_frames[5]
+        frame = self.step_frames[4]
 
-        self._build_step_header(frame, "步骤 6: 执行测试",
+        self._build_step_header(frame, "步骤 5: 执行测试",
                                "生成.sh脚本 → 容器内执行 → 下载日志 → 解析结果CSV")
 
         # 摘要
@@ -2477,9 +2620,11 @@ class WizardApp:
             self.next_btn.config(text="下一步 >", command=self._next_step)
 
         # 步骤特定的刷新
-        if step == 3:
+        if step == 1 and self.ssh.connected and not self.remote_images:
+            self._refresh_remote_images()
+        if step == 2:
             self._sync_config_vars()
-        if step == 5:
+        if step == 4:
             self._refresh_commands()
             if hasattr(self, 'cleanup_btn') and self.docker and self.docker.container_name:
                 self.cleanup_btn.config(state=tk.NORMAL)
@@ -2490,16 +2635,19 @@ class WizardApp:
             messagebox.showwarning("提示", "请先连接到远程主机")
             return
         if self.current_step == 1:
-            if not self.tar_path.get() or not self.model_path_var.get():
-                messagebox.showwarning("提示", "请完成镜像包和模型路径选择")
+            image_mode = self.image_source_var.get()
+            image_ready = (image_mode == "existing" and self.remote_image_var.get().strip()) or \
+                          (image_mode == "upload" and self.tar_path.get().strip())
+            if not image_ready or not self.model_path_var.get():
+                messagebox.showwarning("提示", "请完成镜像和模型路径选择")
                 return
             if self.code_source_var.get() == "zip" and not self.zip_path.get().strip():
                 messagebox.showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
                 return
-        if self.current_step == 2 and (not self.docker or not self.docker.container_is_running()):
-            if not messagebox.askyesno("提示", "Docker容器尚未部署，是否继续?"):
-                return
-        if self.current_step == 4 and not self.designer.test_cases:
+            if not self.docker or not self.docker.container_is_running():
+                if not messagebox.askyesno("提示", "Docker容器尚未部署，是否继续?"):
+                    return
+        if self.current_step == 3 and not self.designer.test_cases:
             if not messagebox.askyesno("提示", "尚未生成测试用例，是否继续?"):
                 return
 

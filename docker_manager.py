@@ -79,6 +79,36 @@ class DockerManager:
         )
         return bool(out.strip())
 
+    def list_images(self) -> List[dict]:
+        """列出执行机上已存在的Docker镜像
+
+        返回 [{"name": "repository:tag", "id": "...", "created": "...", "size": "..."}]
+        只返回可被用户直接选择的带名称镜像；无名镜像无法稳定判断是否为 AISBench。
+        """
+        code, out, err = self.ssh.execute("docker image ls --format '{{json .}}'")
+        if code != 0:
+            message = err.strip() or out.strip() or f"docker image ls 失败 (exit_code={code})"
+            raise RuntimeError(message)
+
+        images = []
+        for line in out.splitlines():
+            try:
+                item = json.loads(line)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            repository = str(item.get("Repository", "")).strip()
+            tag = str(item.get("Tag", "")).strip()
+            name = f"{repository}:{tag}" if tag else repository
+            if not name or name.startswith("<none>"):
+                continue
+            images.append({
+                "name": name,
+                "id": str(item.get("ID", "")).strip(),
+                "created": str(item.get("CreatedSince", "")).strip(),
+                "size": str(item.get("Size", "")).strip(),
+            })
+        return images
+
     def load_image(self, remote_tar_path: str,
                    callback: Callable[[str], None] = None) -> Tuple[bool, str]:
         """

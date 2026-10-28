@@ -156,7 +156,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
     <h3>3.1 输入</h3>
     <ul>
       <li>远程执行机 SSH 信息：IP、端口、用户名、密码或密钥。</li>
-      <li>AISBench Docker 镜像 tar 包，或程序内置测试代码。</li>
+      <li>执行机已有的 AISBench Docker 镜像或可上传的镜像 tar 包，以及程序内置测试代码。</li>
       <li>模型权重路径、模型名称、vLLM 服务地址和鉴权信息。</li>
       <li>KV cache 参数：单个 DP 组容量、DP 组数、最大请求长度、前缀命中率、请求发送速率。</li>
       <li>结果对比模式下的两个 CSV 文件。</li>
@@ -175,8 +175,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>3.3 用户主流程</h3>
   <div class="flow">
     <span class="node">连接服务器</span><span class="arrow">→</span>
-    <span class="node">选择镜像与模型</span><span class="arrow">→</span>
-    <span class="node">自动部署容器</span><span class="arrow">→</span>
+    <span class="node">选择镜像/模型并部署容器</span><span class="arrow">→</span>
     <span class="node">生成配置</span><span class="arrow">→</span>
     <span class="node">设计用例</span><span class="arrow">→</span>
     <span class="node">执行测试</span><span class="arrow">→</span>
@@ -203,7 +202,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <table>
     <thead><tr><th>层次</th><th>职责</th><th>关键内容</th></tr></thead>
     <tbody>
-      <tr><td>交互层</td><td>接收用户输入，展示流程与结果</td><td>六步向导、日志工具、结果对比窗口</td></tr>
+      <tr><td>交互层</td><td>接收用户输入，展示流程与结果</td><td>五步向导、日志工具、结果对比窗口</td></tr>
       <tr><td>流程编排层</td><td>控制步骤顺序与状态流转</td><td>步骤校验、任务调度、错误提示</td></tr>
       <tr><td>远程执行层</td><td>管理远程主机与容器</td><td>SSH/SFTP、Docker 部署、脚本上传与执行</td></tr>
       <tr><td>数据生成层</td><td>生成配置和测试脚本</td><td>config.py、run_tests.sh、用例参数计算</td></tr>
@@ -225,9 +224,9 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <table>
     <thead><tr><th>模块</th><th>核心职责</th><th>主要协作对象</th></tr></thead>
     <tbody>
-      <tr><td><code>main.py</code></td><td>GUI 主程序，六步向导与任务编排</td><td>所有业务模块</td></tr>
+      <tr><td><code>main.py</code></td><td>GUI 主程序，五步向导与任务编排</td><td>所有业务模块</td></tr>
       <tr><td><code>ssh_manager.py</code></td><td>SSH/SFTP 连接、命令执行、文件传输</td><td>GUI、Docker 管理器</td></tr>
-      <tr><td><code>docker_manager.py</code></td><td>镜像加载、容器创建、脚本上传运行、日志下载</td><td>SSH 管理器</td></tr>
+      <tr><td><code>docker_manager.py</code></td><td>执行机镜像列表查询、已有镜像复用、tar上传加载、容器创建、脚本上传运行、日志下载</td><td>SSH 管理器</td></tr>
       <tr><td><code>config_manager.py</code></td><td>生成并写入 config.py</td><td>GUI、容器</td></tr>
       <tr><td><code>test_designer.py</code></td><td>计算 KV cache 相关参数，生成测试用例与脚本</td><td>GUI、日志工具</td></tr>
       <tr><td><code>log_parser.py</code></td><td>解析测试日志，生成结构化 CSV</td><td>执行流程</td></tr>
@@ -243,11 +242,10 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
 
 <section id="workflow">
   <h2>6. 执行流程设计</h2>
-  <h3>6.1 六步向导</h3>
+  <h3>6.1 五步向导</h3>
   <ol>
     <li><b>SSH 连接</b>：校验远程主机可达性和认证方式。</li>
-    <li><b>文件与模型</b>：选择镜像、代码来源、模型路径和 vLLM 服务。</li>
-    <li><b>Docker 部署</b>：检查 Docker、加载镜像、上传代码、启动容器。</li>
+    <li><b>Docker 部署与模型配置</b>：查看并选择执行机已有镜像；无可用镜像时上传 tar 包，同时配置代码、模型路径和 vLLM 服务，并一键部署容器。</li>
     <li><b>配置生成</b>：写入 config.py，并支持回读校验。</li>
     <li><b>用例设计</b>：根据 KV cache 参数自动生成测试用例。</li>
     <li><b>执行测试</b>：上传脚本、执行、下载日志并生成 CSV。</li>
@@ -255,7 +253,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>6.2 状态与容错</h3>
   <ul>
     <li>每一步完成后再进入下一步，避免在连接失败时继续部署。</li>
-    <li>镜像已存在时跳过上传与加载，降低重复部署耗时。</li>
+    <li>优先复用执行机已有镜像；仅在上传模式或镜像缺失时执行 SFTP 上传与 docker load。</li>
     <li>同名容器自动清理后重建，保证测试环境一致。</li>
     <li>执行完成后自动下载日志，本地结果不受远程清理影响。</li>
   </ul>
@@ -396,7 +394,7 @@ qpm</code></pre>
     <li>客户端：Windows 10/11。</li>
     <li>执行机：Linux，具备 Docker 和 SSH 访问权限。</li>
     <li>推理服务：可访问的 vLLM 服务地址。</li>
-    <li>资源：AISBench 镜像和模型权重。</li>
+    <li>资源：执行机已有 AISBench 镜像或可上传的镜像 tar 包，以及模型权重。</li>
   </ul>
 </section>
 

@@ -167,11 +167,10 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <a class="nav-link" href="#quickstart">快速开始</a>
     <div class="nav-group">使用流程</div>
     <a class="nav-link" href="#step1"><span class="num">1</span>SSH 连接</a>
-    <a class="nav-link" href="#step2"><span class="num">2</span>文件与模型</a>
-    <a class="nav-link" href="#step3"><span class="num">3</span>Docker 部署</a>
-    <a class="nav-link" href="#step4"><span class="num">4</span>配置 config.py</a>
-    <a class="nav-link" href="#step5"><span class="num">5</span>设计测试用例</a>
-    <a class="nav-link" href="#step6"><span class="num">6</span>执行测试</a>
+    <a class="nav-link" href="#step2"><span class="num">2</span>Docker 部署与模型</a>
+    <a class="nav-link" href="#step3"><span class="num">3</span>配置 config.py</a>
+    <a class="nav-link" href="#step4"><span class="num">4</span>设计测试用例</a>
+    <a class="nav-link" href="#step5"><span class="num">5</span>执行测试</a>
     <div class="nav-group">分析工具</div>
     <a class="nav-link" href="#logtools">远程日志工具</a>
     <a class="nav-link" href="#compare">结果对比分析</a>
@@ -197,11 +196,11 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
 <div class="container">
 <section id="intro">
   <h2>工具简介</h2>
-  <p>AISBench-Prefix-Tools 是面向 Windows 用户的 prefix cache 性能测试工具。它通过 SSH 管理远程 Linux 执行机，自动完成镜像加载、容器创建、配置生成、测试脚本设计、测试执行、日志下载与 CSV 提取，并提供独立的结果对比分析能力。</p>
+  <p>AISBench-Prefix-Tools 是面向 Windows 用户的 prefix cache 性能测试工具。它通过 SSH 管理远程 Linux 执行机，自动完成已有镜像复用或镜像上传加载、容器创建、配置生成、测试脚本设计、测试执行、日志下载与 CSV 提取，并提供独立的结果对比分析能力。</p>
   <div class="toc-features">
     <div class="feature">
       <div class="icon">🚀</div>
-      <h4>六步向导</h4>
+      <h4>五步向导</h4>
       <p>从 SSH 连接到生成结果 CSV，一条流程完成远程环境部署与测试执行。</p>
     </div>
     <div class="feature">
@@ -223,8 +222,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
   <h3>整体流程</h3>
   <div class="flow">
     <span class="node">连接执行机</span><span class="arrow">→</span>
-    <span class="node">选择文件与模型</span><span class="arrow">→</span>
-    <span class="node">Docker 部署</span><span class="arrow">→</span>
+    <span class="node">选择镜像与模型并部署</span><span class="arrow">→</span>
     <span class="node">写入 config.py</span><span class="arrow">→</span>
     <span class="node">设计用例</span><span class="arrow">→</span>
     <span class="node">执行测试</span><span class="arrow">→</span>
@@ -249,16 +247,16 @@ python main.py</code></pre>
 build_exe.bat</code></pre>
   <div class="callout">
     <b>开始前请准备</b>
-    远程 Linux 执行机的 SSH 地址、端口、账号和密码或密钥；AISBench Docker 镜像 tar 包；可访问的模型权重目录；已启动的 vLLM 推理服务。
+    远程 Linux 执行机的 SSH 地址、端口、账号和密码或密钥；执行机上已有的 AISBench Docker 镜像，或需要上传的镜像 tar 包；可访问的模型权重目录；已启动的 vLLM 推理服务。
   </div>
   <div class="callout warn">
     <b>镜像下载</b>
-    当前推荐镜像：AISBench v3.1-20261013-master。可在步骤 2 点击“镜像下载链接”，或直接访问 GitHub Releases 下载。
+    当前推荐镜像：AISBench v3.1-20261013-master。若执行机没有可用镜像，可在步骤 2 的上传模式点击“镜像下载链接”，或直接访问 GitHub Releases 下载。
   </div>
 </section>
 <section id="step1">
   <h2>步骤 1：SSH 连接执行机</h2>
-  <span class="step-badge">STEP 1 / 6</span>
+  <span class="step-badge">STEP 1 / 5</span>
   <p>输入执行机连接信息，点击“测试连接”。连接成功后即可进入下一步。</p>
   <figure class="figure">
     <img src="images/step1-connection.png" alt="步骤 1：SSH 连接执行机界面">
@@ -280,17 +278,19 @@ build_exe.bat</code></pre>
 </section>
 
 <section id="step2">
-  <h2>步骤 2：选择文件与模型</h2>
-  <span class="step-badge">STEP 2 / 6</span>
-  <p>选择本地镜像 tar 包，指定测试代码来源，并填写模型与 vLLM 服务信息。</p>
+  <h2>步骤 2：Docker 部署与模型配置</h2>
+  <span class="step-badge">STEP 2 / 5</span>
+  <p>优先查看并选择执行机上已有的 AISBench 镜像；没有可用镜像时切换为上传 tar 包。同一页面完成模型与 vLLM 服务配置，并一键部署容器。</p>
   <figure class="figure">
-    <img src="images/step2-files.png" alt="步骤 2：选择镜像、代码和模型信息">
-    <figcaption>镜像、代码来源、模型路径和 vLLM 服务信息均在这一页配置</figcaption>
+    <img src="images/step2-docker.png" alt="步骤 2：Docker 部署与模型配置界面">
+    <figcaption>镜像选择、模型信息、工作目录和部署日志合并为一个步骤</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th></tr></thead>
     <tbody>
-      <tr><td>镜像 tar 包</td><td>本地 AISBench Docker 镜像文件；可点击“镜像下载链接”直达 Releases。</td></tr>
+      <tr><td>AISBench 镜像来源</td><td>点击“查看已有镜像”读取执行机镜像列表并选择；未发现镜像时自动切换到上传模式。</td></tr>
+      <tr><td>镜像 tar 包</td><td>上传模式专用，选择本地 AISBench Docker 镜像文件；可点击“镜像下载链接”直达 Releases。</td></tr>
+      <tr><td>远程工作目录</td><td>默认 <code>/tmp/AISBench_Prefix_Tools</code>，支持检查与清理，非空目录会提醒。</td></tr>
       <tr><td>测试代码来源</td><td>默认使用程序内置代码，也可选择本地 zip 包。</td></tr>
       <tr><td>模型路径</td><td>远程执行机上的模型权重目录，可点击“浏览远程目录”定位。</td></tr>
       <tr><td>模型名称</td><td>对应 vLLM 的 <code>--served-model-name</code> 参数。</td></tr>
@@ -298,24 +298,17 @@ build_exe.bat</code></pre>
       <tr><td>API Key</td><td>服务鉴权令牌；未开启鉴权时留空。</td></tr>
     </tbody>
   </table>
-</section>
-<section id="step3">
-  <h2>步骤 3：Docker 部署</h2>
-  <span class="step-badge">STEP 3 / 6</span>
-  <p>确认远程工作目录后点击“开始部署”。工具会自动检查 Docker 环境、加载镜像、上传代码并启动容器。</p>
-  <figure class="figure">
-    <img src="images/step3-docker.png" alt="步骤 3：Docker 自动部署界面">
-    <figcaption>部署进度和远程命令输出实时显示在右侧日志区域</figcaption>
-  </figure>
+
   <h3>自动执行流程</h3>
   <div class="flow">
     <span class="node">检查 Docker</span><span class="arrow">→</span>
-    <span class="node">检查或加载镜像</span><span class="arrow">→</span>
+    <span class="node">复用已有镜像或上传加载</span><span class="arrow">→</span>
     <span class="node">上传测试代码</span><span class="arrow">→</span>
     <span class="node">创建并启动容器</span>
   </div>
   <ul>
-    <li>默认远程工作目录：<code>/tmp/AISBench_Prefix_Tools</code>。</li>
+    <li>已有镜像模式会先校验镜像仍存在，然后跳过上传与 <code>docker load</code>。</li>
+    <li>上传模式会优先读取 tar 包 <code>manifest.json</code>；镜像已存在时同样跳过重复加载。</li>
     <li>容器自动命名：<code>aisbench-test-MMDDHHMM</code>。</li>
     <li>模型路径按原路径挂载，代码目录挂载到容器内 benchmark 路径。</li>
     <li>部署前可检查或清理目录；目录非空时工具会提醒，避免误覆盖。</li>
@@ -325,13 +318,12 @@ build_exe.bat</code></pre>
     同名旧容器会自动删除并重建；也可以先手动清理容器后再点击部署。
   </div>
 </section>
-
-<section id="step4">
-  <h2>步骤 4：配置 config.py</h2>
-  <span class="step-badge">STEP 4 / 6</span>
+<section id="step3">
+  <h2>步骤 3：配置 config.py</h2>
+  <span class="step-badge">STEP 3 / 5</span>
   <p>确认自动生成的配置字段，点击“保存配置到容器”。保存后可点击“验证配置”回读容器内文件并与界面值比对。</p>
   <figure class="figure">
-    <img src="images/step4-config.png" alt="步骤 4：config.py 配置界面">
+    <img src="images/step4-config.png" alt="步骤 3：config.py 配置界面">
     <figcaption>左侧编辑配置字段，右侧实时预览完整 config.py</figcaption>
   </figure>
   <table>
@@ -346,12 +338,12 @@ build_exe.bat</code></pre>
     </tbody>
   </table>
 </section>
-<section id="step5">
-  <h2>步骤 5：设计测试用例</h2>
-  <span class="step-badge">STEP 5 / 6</span>
+<section id="step4">
+  <h2>步骤 4：设计测试用例</h2>
+  <span class="step-badge">STEP 4 / 5</span>
   <p>填写 KV cache 信息并选择输入、输出长度，点击“生成测试用例”。工具会自动计算推荐请求数、最小请求数、并发数和 KV 使用率。</p>
   <figure class="figure">
-    <img src="images/step5-testcases.png" alt="步骤 5：测试用例设计界面">
+    <img src="images/step5-testcases.png" alt="步骤 4：测试用例设计界面">
     <figcaption>截图示例中单个 DP 组 KV cache 为 198469，DP 组数为 4</figcaption>
   </figure>
   <table>
@@ -379,12 +371,12 @@ build_exe.bat</code></pre>
     界面会给出可复制的 grep 命令；也可以点击“从日志自动获取”打开远程日志工具自动解析。
   </div>
 </section>
-<section id="step6">
-  <h2>步骤 6：执行测试并生成 CSV</h2>
-  <span class="step-badge">STEP 6 / 6</span>
+<section id="step5">
+  <h2>步骤 5：执行测试并生成 CSV</h2>
+  <span class="step-badge">STEP 5 / 5</span>
   <p>确认本地结果保存目录后，点击“执行测试 → 生成CSV”。工具会自动预检查模型路径、生成脚本、上传执行、下载日志并解析结果。</p>
   <figure class="figure">
-    <img src="images/step6-execute.png" alt="步骤 6：测试执行与结果摘要界面">
+    <img src="images/step6-execute.png" alt="步骤 5：测试执行与结果摘要界面">
     <figcaption>执行完成后，底部直接展示结果摘要和 CSV、日志文件路径</figcaption>
   </figure>
   <div class="flow">
@@ -407,7 +399,7 @@ build_exe.bat</code></pre>
 </section>
 <section id="logtools">
   <h2>远程日志工具</h2>
-  <p>在步骤 5 点击“从日志自动获取”或“查看日志”，即可打开远程日志工具。它支持选择服务器、日志来源和具体日志文件，并直接给出筛选结果。</p>
+  <p>在步骤 4 点击“从日志自动获取”或“查看日志”，即可打开远程日志工具。它支持选择服务器、日志来源和具体日志文件，并直接给出筛选结果。</p>
   <figure class="figure">
     <img src="images/log-tools.png" alt="远程日志工具和 KV cache 筛选结果">
     <figcaption>选择日志来源后一键筛选 KV cache 关键行，并可一键填入测试参数</figcaption>
@@ -441,7 +433,7 @@ build_exe.bat</code></pre>
 </section>
 <section id="compare">
   <h2>结果对比分析</h2>
-  <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 6 的结果摘要右侧打开。</p>
+  <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 5 的结果摘要右侧打开。</p>
   <figure class="figure">
     <img src="images/result-compare.png" alt="结果对比分析界面">
     <figcaption>选择两个结果 CSV 后，可勾选用例与指标并生成差异表格和柱状图</figcaption>
@@ -490,8 +482,10 @@ build_exe.bat</code></pre>
 
 <section id="faq">
   <h2>常见问题</h2>
-  <h3>镜像加载后无法自动识别镜像名？</h3>
-  <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在步骤 3 部署日志中查看结果。</p>
+  <h3>执行机已有镜像，还需要上传 tar 包吗？</h3>
+  <p>不需要。在步骤 2 点击“查看已有镜像”并选择镜像，部署时会校验该镜像仍存在，然后跳过上传与 docker load。未发现可用镜像时才切换到上传模式。</p>
+  <h3>上传镜像后无法自动识别镜像名？</h3>
+  <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在步骤 2 部署日志中查看结果。</p>
   <h3>模型路径浏览看不到文件？</h3>
   <p>远程目录浏览器默认从根目录开始，双击 DIR 进入子目录。部分目录可能因权限问题无法列出。</p>
   <h3>POD_INFO 应该怎么填？</h3>

@@ -229,6 +229,10 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <span class="node">生成 CSV</span><span class="arrow">→</span>
     <span class="node">对比分析</span>
   </div>
+  <div class="callout">
+    <b>截图说明</b>
+    本页步骤截图已同步至 2026-10-28 的五步向导界面；如浏览器仍显示旧图，请强制刷新页面。
+  </div>
 </section>
 
 <section id="quickstart">
@@ -257,10 +261,10 @@ build_exe.bat</code></pre>
 <section id="step1">
   <h2>步骤 1：SSH 连接执行机</h2>
   <span class="step-badge">STEP 1 / 5</span>
-  <p>输入执行机连接信息，点击“测试连接”。连接成功后即可进入下一步。</p>
+  <p>填写执行机 IP、SSH 端口、用户名以及密码或密钥，点击“测试连接”。状态栏确认连接成功后，左侧步骤 2 才会进入可用状态。</p>
   <figure class="figure">
-    <img src="images/step1-connection.png" alt="步骤 1：SSH 连接执行机界面">
-    <figcaption>输入 IP、端口、用户名和认证信息，并先执行测试连接</figcaption>
+    <img src="images/step1-connection-20261028.png?v=20261028" alt="步骤 1：SSH 连接执行机界面">
+    <figcaption>连接成功状态示例：192.168.1.30:22，用户 root，密码认证</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th><th>示例</th></tr></thead>
@@ -280,10 +284,10 @@ build_exe.bat</code></pre>
 <section id="step2">
   <h2>步骤 2：Docker 部署与模型配置</h2>
   <span class="step-badge">STEP 2 / 5</span>
-  <p>优先查看并选择执行机上已有的 AISBench 镜像；没有可用镜像时切换为上传 tar 包。同一页面完成模型与 vLLM 服务配置，并一键部署容器。</p>
+  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像；未发现可用镜像时自动切换为上传 tar 包。模型、vLLM 服务、代码来源、远程工作目录与部署日志都在同一页面完成。</p>
   <figure class="figure">
-    <img src="images/step2-docker.png" alt="步骤 2：Docker 部署与模型配置界面">
-    <figcaption>镜像选择、模型信息、工作目录和部署日志合并为一个步骤</figcaption>
+    <img src="images/step2-docker-20261028.png?v=20261028" alt="步骤 2：Docker 部署与模型配置界面">
+    <figcaption>部署完成示例：已复用执行机镜像 aisbench:v3.1-20261013-master 并启动容器</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th></tr></thead>
@@ -321,10 +325,10 @@ build_exe.bat</code></pre>
 <section id="step3">
   <h2>步骤 3：配置 config.py</h2>
   <span class="step-badge">STEP 3 / 5</span>
-  <p>确认自动生成的配置字段，点击“保存配置到容器”。保存后可点击“验证配置”回读容器内文件并与界面值比对。</p>
+  <p>模型与服务字段会从步骤 2 自动带入。确认或修改配置后点击“保存配置到容器”，再用“验证配置”回读容器内文件并与界面值逐项比对。</p>
   <figure class="figure">
-    <img src="images/step4-config.png" alt="步骤 3：config.py 配置界面">
-    <figcaption>左侧编辑配置字段，右侧实时预览完整 config.py</figcaption>
+    <img src="images/step3-config-20261028.png?v=20261028" alt="步骤 3：config.py 配置界面">
+    <figcaption>配置示例：ds 模型、远程模型路径、vLLM 服务 192.168.1.30:8000</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>默认值 / 示例</th><th>说明</th></tr></thead>
@@ -332,6 +336,7 @@ build_exe.bat</code></pre>
       <tr><td>MODEL_NAME</td><td><code>ds</code></td><td>步骤 2 中填写的模型名称。</td></tr>
       <tr><td>MODEL_PATH</td><td>模型目录</td><td>模型权重在远程机上的路径。</td></tr>
       <tr><td>HOST_IP / HOST_PORT</td><td><code>8000</code></td><td>vLLM 服务地址。</td></tr>
+      <tr><td>DATASET_PATH</td><td>自动填充</td><td>步骤 2 部署的测试代码在容器内的挂载路径。</td></tr>
       <tr><td>DEFAULT_PERFORMANCE_TEST</td><td><code>default_perf</code></td><td>稳态测试填写 <code>stable_stage</code>。</td></tr>
       <tr><td>OUTPUT_DIR</td><td><code>./outputs/default</code></td><td>容器内日志输出目录。</td></tr>
       <tr><td>POD_INFO</td><td><code>[]</code></td><td>多 DP 场景必填，格式如 <code>ip:port,ip:port</code>。</td></tr>
@@ -341,17 +346,17 @@ build_exe.bat</code></pre>
 <section id="step4">
   <h2>步骤 4：设计测试用例</h2>
   <span class="step-badge">STEP 4 / 5</span>
-  <p>填写 KV cache 信息并选择输入、输出长度，点击“生成测试用例”。工具会自动计算推荐请求数、最小请求数、并发数和 KV 使用率。</p>
+  <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、最小请求数、并发数和 KV 使用率。</p>
   <figure class="figure">
-    <img src="images/step5-testcases.png" alt="步骤 4：测试用例设计界面">
-    <figcaption>截图示例中单个 DP 组 KV cache 为 198469，DP 组数为 4</figcaption>
+    <img src="images/step4-testcases-20261028.png?v=20261028" alt="步骤 4：测试用例设计界面">
+    <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th><th>示例</th></tr></thead>
     <tbody>
       <tr><td>单个 DP 组 KV cache</td><td>从 vLLM 日志解析或手动填写</td><td><code>198469</code></td></tr>
       <tr><td>DP 组数</td><td>data-parallel-size</td><td><code>4</code></td></tr>
-      <tr><td>最大请求长度</td><td>单条请求最大 token 数</td><td><code>32768</code></td></tr>
+      <tr><td>最大请求长度</td><td>单条请求最大 token 数</td><td><code>131072</code></td></tr>
       <tr><td>前缀命中率</td><td>repeat_rate，范围 0~1</td><td><code>0.9</code></td></tr>
       <tr><td>请求发送速率</td><td>0 表示 Burst；大于 0 表示固定速率</td><td><code>0</code></td></tr>
     </tbody>
@@ -374,10 +379,10 @@ build_exe.bat</code></pre>
 <section id="step5">
   <h2>步骤 5：执行测试并生成 CSV</h2>
   <span class="step-badge">STEP 5 / 5</span>
-  <p>确认本地结果保存目录后，点击“执行测试 → 生成CSV”。工具会自动预检查模型路径、生成脚本、上传执行、下载日志并解析结果。</p>
+  <p>确认本地结果保存目录后，点击“执行测试 → 生成CSV”。工具会生成脚本、上传到容器、先检查模型路径、逐用例执行、下载日志并在本地解析 CSV。</p>
   <figure class="figure">
-    <img src="images/step6-execute.png" alt="步骤 5：测试执行与结果摘要界面">
-    <figcaption>执行完成后，底部直接展示结果摘要和 CSV、日志文件路径</figcaption>
+    <img src="images/step5-execute-20261028.png?v=20261028" alt="步骤 5：测试执行与结果摘要界面">
+    <figcaption>执行完成示例：4 个用例的吞吐、延迟与命中率摘要，并标注 CSV 和日志路径</figcaption>
   </figure>
   <div class="flow">
     <span class="node">预检查模型路径</span><span class="arrow">→</span>
@@ -401,7 +406,7 @@ build_exe.bat</code></pre>
   <h2>远程日志工具</h2>
   <p>在步骤 4 点击“从日志自动获取”或“查看日志”，即可打开远程日志工具。它支持选择服务器、日志来源和具体日志文件，并直接给出筛选结果。</p>
   <figure class="figure">
-    <img src="images/log-tools.png" alt="远程日志工具和 KV cache 筛选结果">
+    <img src="images/log-tools.png?v=20261028" alt="远程日志工具和 KV cache 筛选结果">
     <figcaption>选择日志来源后一键筛选 KV cache 关键行，并可一键填入测试参数</figcaption>
   </figure>
   <h3>支持的日志来源</h3>
@@ -427,7 +432,7 @@ build_exe.bat</code></pre>
   <h3>查看指定日志文件</h3>
   <p>选择日志后点击“查看日志”，会在独立窗口展示内容。宿主机与容器内文件取尾部 2MB，容器 stdout 取尾部 5000 行，支持横向滚动和一键复制。</p>
   <figure class="figure">
-    <img src="images/log-viewer.png" alt="日志查看器窗口">
+    <img src="images/log-viewer.png?v=20261028" alt="日志查看器窗口">
     <figcaption>日志查看器适合快速定位启动参数和异常信息</figcaption>
   </figure>
 </section>
@@ -435,7 +440,7 @@ build_exe.bat</code></pre>
   <h2>结果对比分析</h2>
   <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 5 的结果摘要右侧打开。</p>
   <figure class="figure">
-    <img src="images/result-compare.png" alt="结果对比分析界面">
+    <img src="images/result-compare.png?v=20261028" alt="结果对比分析界面">
     <figcaption>选择两个结果 CSV 后，可勾选用例与指标并生成差异表格和柱状图</figcaption>
   </figure>
   <h3>使用步骤</h3>

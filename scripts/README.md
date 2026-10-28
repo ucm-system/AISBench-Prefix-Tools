@@ -108,6 +108,32 @@ CSV 包含以下字段：
 
 ---
 
+## generate_docs_screenshots.py — 使用文档截图生成器
+
+### 用途
+
+自动启动当前 GUI，填充示例状态并截取 5 个向导步骤，输出到 `docs/images/`，用于刷新在线使用文档中的程序运行截图。
+
+### 运行方式
+
+```bash
+python scripts/generate_docs_screenshots.py
+```
+
+### 输出
+
+| 文件 | 对应步骤 |
+|------|----------|
+| `step1-connection-20261028.png` | SSH 连接 |
+| `step2-docker-20261028.png` | Docker 部署与模型配置 |
+| `step3-config-20261028.png` | 配置 `config.py` |
+| `step4-testcases-20261028.png` | 设计测试用例 |
+| `step5-execute-20261028.png` | 执行测试并生成 CSV |
+
+脚本只填充示例数据，不会连接远程主机或启动容器。
+
+---
+
 ## 典型使用流程
 
 ```bash

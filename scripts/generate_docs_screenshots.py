@@ -25,9 +25,6 @@ class FakeDockerManager:
 
     container_name = "aisbench-test-10281120"
     image_name = "aisbench:v3.1-20261013-master"
-    code_host_path = (
-        "/tmp/AISBench_Prefix_Tools/aisbench_auto_tools_prefix-main"
-    )
     code_mount_path = (
         "/benchmark/ais_bench/aisbench_auto_tools_prefix-main"
     )
@@ -96,7 +93,8 @@ def populate_step2(app):
     app.host_port_var.set("8000")
     app.api_key_var.set("")
     app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
-    app.work_dir_status.config(text="已存在(空)", fg=COLOR_SUCCESS)
+    app.work_dir_status.config(text="部署后已自动清理", fg=COLOR_SUCCESS)
+    app.residual_status_lbl.config(text="无残留容器", fg=COLOR_SUCCESS)
 
     app.docker = FakeDockerManager()
     app.docker_info_labels["tar"].config(
@@ -118,18 +116,22 @@ def populate_step2(app):
     app.docker_log.insert(
         "1.0",
         "\n".join([
-            "[1/4] 检查Docker环境...",
+            "[1/5] 检查Docker环境...",
             "  ✓ Docker version 27.3.1, build 6d40811d5c",
             "",
-            "[2/4] 准备AISBench镜像...",
+            "[2/5] 准备AISBench镜像...",
             "  ✓ 复用执行机已有镜像: aisbench:v3.1-20261013-master",
             "  → 跳过镜像上传和docker load",
             "",
-            "[3/4] 上传内置测试代码...",
-            "  ✓ 代码已就绪: /tmp/AISBench_Prefix_Tools/aisbench_auto_tools_prefix-main",
+            "[3/5] 暂存内置测试代码...",
+            "  ✓ 代码暂存完成: /tmp/AISBench_Prefix_Tools/aisbench_auto_tools_prefix-main",
             "",
-            "[4/4] 创建并启动容器...",
+            "[4/5] 创建并启动容器...",
             "  ✓ 容器 aisbench-test-10281120 已启动运行",
+            "",
+            "[5/5] 导入测试代码到容器并清理暂存目录...",
+            "  ✓ 代码已就绪(容器内): /benchmark/ais_bench/aisbench_auto_tools_prefix-main",
+            "  ✓ 已删除宿主机临时目录",
             "  ✓ 部署完成!",
         ]),
     )
@@ -192,16 +194,17 @@ def populate_step5(app):
     app.exec_log.insert(
         "1.0",
         "\n".join([
-            "[1/5] 上传测试脚本: run_tests.sh",
-            "  ✓ 上传完成",
-            "[2/5] 预检查模型路径...",
-            "  ✓ 预检查通过: MODEL_PATH=/mnt/models/DeepSeek-V4-Flash-w8a8-mtp",
-            "[3/5] 执行测试 #1: input_len=16384, output_len=512",
-            "  ✓ 测试完成",
-            "[4/5] 下载远程日志...",
-            "  ✓ 已下载 4 个日志文件",
-            "[5/5] 解析日志并生成CSV...",
-            "  ✓ CSV生成完成: results_test_logs_20261028_1120.csv",
+            "[0/4] 预检查: 验证容器内MODEL_PATH...",
+            "  ✓ OK: MODEL_PATH=/mnt/models/DeepSeek-V4-Flash-w8a8-mtp",
+            "[1/4] 生成测试脚本...",
+            "  ✓ run_tests.sh (写入容器内部)",
+            "[2/4] 写入测试脚本到容器并执行...",
+            "  ✓ 测试脚本执行完成",
+            "[3/4] 下载测试日志到本地...",
+            "  容器内日志目录: /benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_20261029_1120",
+            "  共下载 4 个日志文件",
+            "[4/4] 解析日志生成CSV结果...",
+            "  ✓ CSV生成完成: results_test_logs_20261029_1120.csv",
         ]),
     )
 
@@ -216,8 +219,8 @@ def populate_step5(app):
     for row in sample_results:
         app.results_tree.insert("", "end", values=row)
     app.results_info_lbl.config(
-        text="共 4 条记录  |  CSV: results_test_logs_20261028_1120.csv  |  "
-             "日志: test_logs_20261028_1120"
+        text="共 4 条记录  |  CSV: results_test_logs_20261029_1120.csv  |  "
+             "日志: test_logs_20261029_1120"
     )
 
 
@@ -230,19 +233,19 @@ def main():
 
     populate_step1(app)
     app._show_step(0)
-    capture(app, "step1-connection-20261028.png")
+    capture(app, "step1-connection-20261029.png")
 
     populate_step2(app)
-    capture(app, "step2-docker-20261028.png")
+    capture(app, "step2-docker-20261029.png")
 
     populate_step3(app)
-    capture(app, "step3-config-20261028.png")
+    capture(app, "step3-config-20261029.png")
 
     populate_step4(app)
-    capture(app, "step4-testcases-20261028.png")
+    capture(app, "step4-testcases-20261029.png")
 
     populate_step5(app)
-    capture(app, "step5-execute-20261028.png")
+    capture(app, "step5-execute-20261029.png")
 
     app.root.destroy()
 

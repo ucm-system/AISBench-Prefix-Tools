@@ -11,8 +11,8 @@ Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/�
 |------|------|
 | `main.py` | GUI 主程序（5步向导） |
 | `ssh_manager.py` | SSH/SFTP 远程连接、命令执行、文件传输 |
-| `docker_manager.py` | 执行机镜像列表查询、已有镜像复用、tar 镜像加载、容器管理、脚本上传运行、日志下载 |
-| `config_manager.py` | config.py 配置文件生成与写入 |
+| `docker_manager.py` | 执行机镜像列表查询、已有镜像复用、tar 镜像加载、容器管理、代码导入容器、容器内脚本写入、日志下载、残留容器清理 |
+| `config_manager.py` | config.py 配置文件生成并直接写入容器内部 |
 | `test_designer.py` | 测试用例设计（KV cache 计算、.sh 脚本生成） |
 | `log_parser.py` | 测试日志解析、CSV 结果生成 |
 | `log_tools.py` | 远程日志工具：选择宿主机/容器日志，筛选 KV cache 并一键填入，查看日志内容 |
@@ -72,34 +72,37 @@ build_exe.bat
 | 模型名称 | 对应 vLLM 的 `--served-model-name` 参数 |
 | vLLM 服务 IP / 端口 | 模型推理服务地址 |
 | API Key | 鉴权令牌，未开启鉴权则留空 |
-| 远程工作目录 | 默认 `/tmp/AISBench_Prefix_Tools`，可检查或清理；部署前非空目录会提醒 |
+| 临时部署目录 | 默认 `/tmp/AISBench_Prefix_Tools`；仅部署期间暂存镜像tar/代码，代码导入容器后自动删除，不保留在宿主机 |
+| 残留容器清理 | 点击“清理残留容器”可查看并删除上次退出时未清理的 `aisbench-test-*` 容器 |
 
 ---
 
 点击 **开始部署**，工具自动执行：
 
 ```
-[1/4] 检查远程机 Docker 环境
-[2/4] 准备 AISBench 镜像
+[1/5] 检查远程机 Docker 环境
+[2/5] 准备 AISBench 镜像
         ↓ 已有镜像模式: 校验执行机镜像存在后直接复用
         ↓ 上传模式: 预读 manifest.json, 已存在则跳过, 否则 SFTP 上传并 docker load -i
-[3/4] 上传测试代码到远程工作目录（程序内置 或 本地 zip 包）
-[4/4] 创建并启动容器:
+[3/5] 暂存测试代码（程序内置 或 本地 zip 包）
+[4/5] 创建并启动容器(仅挂载模型路径):
         docker run -itd \
           --name aisbench-test-MMDDHHMM  \  ← 自动生成容器名
           --shm-size=1g --net=host \
+          --label org.aisbench-prefix-tools.managed=true \
           -v <模型路径>:<模型路径> \
-          -v <代码目录>:/benchmark/ais_bench/aisbench_auto_tools_prefix-main \
           <镜像名> python3
+[5/5] docker cp 导入测试代码到容器内 /benchmark/ais_bench/aisbench_auto_tools_prefix-main
+        → 删除宿主机临时目录（部署成功后不再保留）
 ```
 
-全程日志实时输出，部署完成后容器自动运行。
+全程日志实时输出，部署完成后容器自动运行；后续 config.py、测试脚本与日志全部位于容器内部。
 
 ---
 
 ### 步骤 3：配置 config.py
 
-工具自动生成配置文件并写入容器，需确认以下字段：
+工具自动生成配置文件并直接写入容器内部工作区（不依赖宿主机目录挂载），需确认以下字段：
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
@@ -108,7 +111,7 @@ build_exe.bat
 | HOST_IP | - | 来自步骤 2 |
 | HOST_PORT | `8000` | 来自步骤 2 |
 | API_KEY | 空 | 鉴权令牌 |
-| DATASET_PATH | 自动填充 | 代码包在容器内的挂载路径 |
+| DATASET_PATH | 自动填充 | 测试代码在容器内的工作区路径 |
 | WORK_PATH | `/benchmark` | aisbench 工作路径 |
 | DEFAULT_PERFORMANCE_TEST | `default_perf` | 稳态测试填 `stable_stage` |
 | OUTPUT_DIR | `./outputs/default` | 日志输出路径 |
@@ -165,10 +168,10 @@ cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'
         ↓ 路径存在且含 config.json，否则快速失败并提示原因
 [1/4] 生成 .sh 测试脚本
         ↓ test_designer 生成包含所有测试用例的 bash 脚本
-[2/4] 上传脚本到容器并执行
-        ↓ docker write_script → docker run_script (容器内 bash run_tests.sh)
+[2/4] 写入测试脚本到容器内部并执行
+        ↓ base64 编码写入 run_tests.sh → 容器内 bash run_tests.sh
 [3/4] 下载测试日志到本地
-        ↓ SFTP 下载 test_*.log 文件到 Windows 本地目录
+        ↓ docker cp 容器日志 → SFTP 下载到 Windows 本地目录
 [4/4] 解析日志生成 CSV
         ↓ log_parser 解析第二次测试结果，输出 CSV 到本地
 ```
@@ -227,9 +230,11 @@ python3 aisbench_test.py \
 
 ### 环境清理与退出
 
-- 测试完成后会自动提醒是否清理远程环境（停止并删除容器 + 清理工作目录），本地结果不受影响
+- 测试完成后会自动提醒是否清理远程环境（停止并删除容器 + 删除残留暂存文件），本地结果不受影响
 - 也可随时点击 **清理环境** 按钮手动清理
 - 退出程序时（点击 **完成** 或窗口 **×**），若检测到容器仍在运行，会再次弹出清理提醒：清理后退出 / 保留环境直接退出 / 取消
+- 若上次退出时未清理容器，本次连接成功后会自动扫描 `aisbench-test-*` 容器并提醒；也可在步骤 2 点击 **清理残留容器** 勾选删除（支持同时清理旧版遗留的临时目录）
+- 残留容器清理只识别本工具创建的容器（`aisbench-test-` 前缀或管理 label），不会影响执行机上的其他容器
 
 ---
 
@@ -264,6 +269,12 @@ A: 单 DP 场景留空即可（自动使用 HOST_IP:HOST_PORT）。多 DP 场景
 
 **Q: 如何重新部署？**
 A: 再次点击 **开始部署** 会自动删除同名旧容器并重新创建。也可手动 `docker rm -f <容器名>` 后重试。
+
+**Q: 上次退出没有清理，怎么删除遗留容器？**
+A: 重新连接执行机后，工具会自动扫描 `aisbench-test-*` 容器并提醒；也可以在步骤 2 点击 **清理残留容器**，在列表中勾选要删除的容器（可同时清理旧版本遗留的 `/tmp/AISBench_Prefix_Tools` 临时目录）。清理只针对本工具创建的容器。
+
+**Q: 远程的 /tmp/AISBench_Prefix_Tools 目录为什么部署后不见了？**
+A: 该目录现在只是部署过程的临时暂存区，用于上传镜像 tar/测试代码。代码通过 `docker cp` 导入容器后，工具会自动删除该目录；后续 config.py、测试脚本和日志都保存在容器内部，不再依赖宿主机目录。
 
 **Q: SSH 连接超时？**
 A: 检查防火墙、安全组是否放行 SSH 端口；确认 IP 和端口正确；如使用密钥，确保密钥格式为 RSA 或 Ed25519。

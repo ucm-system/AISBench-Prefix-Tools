@@ -6,9 +6,9 @@ AISBenchPrefixTools - Windows GUI应用程序
 功能流程:
   1. 连接远程执行机 (SSH)
   2. 选择执行机已有镜像或上传镜像tar包, 配置模型并部署容器
-  3. 配置config.py
+  3. 配置config.py (直接写入容器内部)
   4. 设计测试用例
-  5. 执行测试并收集结果
+  5. 执行测试并收集结果 (测试代码/日志均在容器内, 宿主机临时目录部署后自动删除)
 """
 
 import os
@@ -217,7 +217,6 @@ class WizardApp:
         # 状态变量
         self.current_step = 0
         self.config_data = {}
-        self.code_host_path = ""
         self.remote_tar_path = ""
         self.remote_images = []
         self.image_source_var = tk.StringVar(value="existing")
@@ -549,6 +548,8 @@ class WizardApp:
             self.status_lbl.config(text="● 已连接", fg=COLOR_SUCCESS)
             self.host_ip_var.set(self.conn_vars["host"].get().strip())
             messagebox.showinfo("成功", msg)
+            # 连接成功后自动扫描上次退出可能遗留的容器
+            self._start_residual_scan(prompt_if_found=True)
         else:
             self.conn_status_lbl.config(text=msg, fg=COLOR_ERROR)
             messagebox.showerror("连接失败", msg)
@@ -908,14 +909,14 @@ class WizardApp:
         tk.Label(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
                  font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
         tk.Label(deploy_header,
-                 text="确认远程工作目录后开始部署；已有镜像直接复用，上传镜像时自动加载",
+                 text="已有镜像直接复用；代码先暂存宿主机，容器创建后导入容器并自动删除暂存目录",
                  bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9)).pack(anchor=tk.W)
 
-        # 远程工作目录
+        # 临时部署目录(仅部署过程暂存镜像tar/代码, 容器创建后自动删除)
         workdir_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         workdir_frame.pack(fill=tk.X, pady=(8, 4))
 
-        tk.Label(workdir_frame, text="远程工作目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        tk.Label(workdir_frame, text="临时部署目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=0, column=0, sticky=tk.W, padx=16, pady=8)
 
         self.work_dir_var = tk.StringVar(value="/tmp/AISBench_Prefix_Tools")
@@ -936,6 +937,24 @@ class WizardApp:
                 bg=COLOR_ERROR, fg="white", relief=tk.FLAT,
                 command=self._clean_work_dir, state=tk.DISABLED)
         self.clean_work_dir_btn.pack(side=tk.LEFT, padx=2)
+
+        tk.Label(workdir_frame,
+                 text="仅部署期间暂存镜像tar/测试代码，代码导入容器后自动删除，不保留在宿主机",
+                 bg=COLOR_CARD, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)
+                 ).grid(row=1, column=0, columnspan=4, sticky=tk.W, padx=16, pady=(0, 6))
+
+        # 残留容器清理: 支持清理上次未清理的 aisbench-test-* 容器
+        residual_frame = tk.Frame(workdir_frame, bg=COLOR_CARD)
+        residual_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W,
+                            padx=16, pady=(0, 8))
+        tk.Button(residual_frame, text="清理残留容器", font=("Segoe UI", 8),
+                  bg=COLOR_ERROR, fg="white", relief=tk.FLAT,
+                  command=self._open_residual_container_dialog
+                  ).pack(side=tk.LEFT)
+        self.residual_status_lbl = tk.Label(residual_frame, text="未扫描",
+                                             bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+                                             font=("Segoe UI", 8))
+        self.residual_status_lbl.pack(side=tk.LEFT, padx=8)
 
         # 部署信息展示
         info_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -998,14 +1017,14 @@ class WizardApp:
             messagebox.showerror("打开失败", f"无法打开链接: {url}\n{e}")
 
     def _check_work_dir(self):
-        """检查远程工作目录是否存在"""
+        """检查临时部署目录是否存在(旧版本/失败部署可能残留)"""
         if not self.ssh.connected:
             messagebox.showwarning("提示", "请先连接到远程主机")
             return
 
         work_dir = self.work_dir_var.get().strip()
         if not work_dir:
-            messagebox.showwarning("提示", "请输入远程工作目录路径")
+            messagebox.showwarning("提示", "请输入临时部署目录路径")
             return
 
         # 临时设置 remote_work_base 来检查
@@ -1022,12 +1041,13 @@ class WizardApp:
                     text="⚠ 已存在且有内容", fg=COLOR_ERROR)
                 self.clean_work_dir_btn.config(state=tk.NORMAL)
                 choice = messagebox.askyesnocancel(
-                    "目录已存在",
-                    f"远程目录已存在且有内容:\n{work_dir}\n\n"
+                    "临时目录已存在",
+                    f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
                     f"目录内容:\n{out[:200]}\n\n"
-                    f"是 - 清理目录（删除后重建）\n"
-                    f"否 - 更换为其他路径\n"
-                    f"取消 - 保持现状继续部署",
+                    f"通常是上次部署失败或旧版本遗留的暂存文件。\n\n"
+                    f"是 - 删除残留暂存文件\n"
+                    f"否 - 忽略并继续部署(会覆盖同名文件)\n"
+                    f"取消 - 保持现状",
                     icon=messagebox.WARNING)
                 if choice is True:
                     self._do_clean_work_dir()
@@ -1040,7 +1060,7 @@ class WizardApp:
             self.clean_work_dir_btn.config(state=tk.DISABLED)
 
     def _do_clean_work_dir(self):
-        """执行清理工作目录"""
+        """执行清理临时部署目录"""
         work_dir = self.work_dir_var.get().strip()
         if not self.docker:
             self.docker = DockerManager(self.ssh)
@@ -1054,7 +1074,7 @@ class WizardApp:
         if self.docker.container_name and self.docker.container_is_running():
             self.docker.stop_and_remove()
 
-        ok = self.docker.clean_work_dir()
+        ok = self.docker.remove_work_dir()
         if ok:
             self.work_dir_status.config(text="已清理", fg=COLOR_SUCCESS)
             messagebox.showinfo("成功", f"已清理: {work_dir}")
@@ -1063,19 +1083,246 @@ class WizardApp:
             messagebox.showerror("失败", f"清理失败: {work_dir}")
 
     def _clean_work_dir(self):
-        """清理工作目录按钮回调"""
+        """清理临时部署目录按钮回调"""
         if not self.ssh.connected:
             messagebox.showwarning("提示", "请先连接到远程主机")
             return
 
         work_dir = self.work_dir_var.get().strip()
         if not messagebox.askyesno("确认清理",
-                                   f"确定要清理远程工作目录吗?\n\n{work_dir}\n\n"
-                                   f"这将删除目录下所有文件（镜像tar、代码、日志等），\n"
-                                   f"并停止正在运行的容器。",
+                                   f"确定要清理临时部署目录吗?\n\n{work_dir}\n\n"
+                                   f"这将删除残留的暂存文件（镜像tar、代码包等），\n"
+                                   f"并停止当前会话创建的容器。\n"
+                                   f"容器内的测试代码和日志不受影响。",
                                    icon=messagebox.WARNING):
             return
         self._do_clean_work_dir()
+
+    def _start_residual_scan(self, prompt_if_found: bool = False):
+        """后台扫描执行机上本工具创建/遗留的容器"""
+        if not self.ssh.connected:
+            return
+        if not self.docker:
+            self.docker = DockerManager(self.ssh)
+
+        def _do_scan():
+            try:
+                containers = self.docker.list_managed_containers()
+            except Exception:
+                self.root.after(0, lambda: self.residual_status_lbl.config(
+                    text="扫描失败(可稍后重试)", fg=COLOR_ERROR))
+                return
+            self.root.after(0, lambda: self._on_residual_scan_result(
+                containers, prompt_if_found))
+
+        self.residual_status_lbl.config(text="正在扫描残留容器...", fg=COLOR_TEXT_MUTED)
+        threading.Thread(target=_do_scan, daemon=True).start()
+
+    def _on_residual_scan_result(self, containers, prompt_if_found: bool):
+        """展示残留容器扫描结果; 发现历史容器时提醒用户"""
+        current = self.docker.container_name if self.docker else None
+        residuals = [c for c in containers if c["name"] != current]
+        if not containers:
+            self.residual_status_lbl.config(text="无残留容器", fg=COLOR_SUCCESS)
+            return
+
+        suffix = " (含当前容器)" if current else ""
+        self.residual_status_lbl.config(
+            text=f"发现 {len(containers)} 个本工具容器{suffix}",
+            fg=COLOR_WARNING if residuals else COLOR_TEXT_MUTED)
+
+        if prompt_if_found and residuals:
+            listing = "\n".join(
+                f"  {c['name']}  [{c['status']}]" for c in residuals[:10])
+            if len(residuals) > 10:
+                listing += "\n  ..."
+            if messagebox.askyesno(
+                    "发现残留容器",
+                    f"检测到 {len(residuals)} 个本工具创建的历史容器:\n\n"
+                    f"{listing}\n\n"
+                    f"这些容器可能是上次退出时未清理的。\n"
+                    f"是否打开清理窗口进行选择清理?",
+                    icon=messagebox.WARNING):
+                self._open_residual_container_dialog()
+
+    def _open_residual_container_dialog(self):
+        """打开残留容器清理窗口(支持跨会话清理 aisbench-test-* 容器)"""
+        if not self.ssh.connected:
+            messagebox.showwarning("提示", "请先连接到远程主机")
+            return
+        if not self.docker:
+            self.docker = DockerManager(self.ssh)
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("清理残留容器")
+        dialog.geometry("900x560")
+        dialog.transient(self.root)
+        dialog.configure(bg=COLOR_BG)
+
+        tk.Label(dialog, text="本工具创建的容器 (aisbench-test-*)",
+                 bg=COLOR_BG, fg=COLOR_TEXT,
+                 font=("Segoe UI", 12, "bold")).pack(anchor=tk.W, padx=16, pady=(12, 4))
+        tk.Label(dialog,
+                 text="点击行切换勾选，可清理上次退出时未删除的容器；仅显示本工具创建的容器",
+                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
+                 font=("Segoe UI", 9)).pack(anchor=tk.W, padx=16)
+
+        list_frame = tk.Frame(dialog, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
+
+        columns = ("name", "image", "status", "created")
+        tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
+        for col, (text, width) in {
+            "name": ("容器名", 200),
+            "image": ("镜像", 240),
+            "status": ("状态", 150),
+            "created": ("创建时间", 140),
+        }.items():
+            tree.heading(col, text=text)
+            tree.column(col, width=width, anchor=tk.W)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.tag_configure("checked", background="#dcfce7")
+
+        checked = set()
+
+        def _toggle_row(event):
+            item = tree.identify_row(event.y)
+            if not item:
+                return
+            name = tree.set(item, "name")
+            if name in checked:
+                checked.discard(name)
+                tree.item(item, tags=())
+            else:
+                checked.add(name)
+                tree.item(item, tags=("checked",))
+
+        tree.bind("<ButtonRelease-1>", _toggle_row)
+
+        option_frame = tk.Frame(dialog, bg=COLOR_BG)
+        option_frame.pack(fill=tk.X, padx=16, pady=(0, 8))
+        clean_temp_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(option_frame, text="同时删除临时部署目录残留文件",
+                       variable=clean_temp_var, bg=COLOR_BG,
+                       font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        status_lbl = tk.Label(option_frame, text="", bg=COLOR_BG,
+                              fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
+        status_lbl.pack(side=tk.LEFT, padx=12)
+
+        log_box = scrolledtext.ScrolledText(dialog, height=8,
+                                            font=("Consolas", 9),
+                                            bg="#1e1e1e", fg="#d4d4d4")
+        log_box.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 8))
+
+        def _log(text):
+            log_box.insert(tk.END, text)
+            log_box.see(tk.END)
+
+        def _log_async(text):
+            dialog.after(0, lambda t=text: _log(t))
+
+        def _refresh_list():
+            status_lbl.config(text="正在刷新...", fg=COLOR_TEXT_MUTED)
+
+            def _do_refresh():
+                try:
+                    containers = self.docker.list_managed_containers()
+                except Exception as e:
+                    dialog.after(0, lambda: status_lbl.config(
+                        text=f"查询失败: {e}", fg=COLOR_ERROR))
+                    return
+
+                def _fill():
+                    tree.delete(*tree.get_children())
+                    checked.clear()
+                    for c in containers:
+                        tree.insert("", tk.END, values=(
+                            c["name"], c["image"], c["status"], c["created"]))
+                    count = len(containers)
+                    status_lbl.config(
+                        text=f"共 {count} 个容器" if count else "无残留容器",
+                        fg=COLOR_WARNING if count else COLOR_SUCCESS)
+                    self.residual_status_lbl.config(
+                        text=f"发现 {count} 个本工具容器" if count else "无残留容器",
+                        fg=COLOR_WARNING if count else COLOR_SUCCESS)
+
+                dialog.after(0, _fill)
+
+            threading.Thread(target=_do_refresh, daemon=True).start()
+
+        def _select_all():
+            for item in tree.get_children():
+                checked.add(tree.set(item, "name"))
+                tree.item(item, tags=("checked",))
+
+        def _select_none():
+            checked.clear()
+            for item in tree.get_children():
+                tree.item(item, tags=())
+
+        def _clean_selected():
+            if not checked:
+                messagebox.showwarning("提示", "请先点击列表行勾选要清理的容器",
+                                       parent=dialog)
+                return
+            names = sorted(checked)
+            confirm_msg = ("确定停止并删除以下容器?\n\n"
+                           + "\n".join(f"  {n}" for n in names))
+            if clean_temp_var.get():
+                confirm_msg += f"\n\n同时删除临时部署目录:\n  {self.work_dir_var.get().strip()}"
+            if not messagebox.askyesno("确认清理", confirm_msg,
+                                       icon=messagebox.WARNING, parent=dialog):
+                return
+
+            clean_btn.config(state=tk.DISABLED, text="清理中...")
+            status_lbl.config(text="清理中...", fg=COLOR_TEXT_MUTED)
+
+            def _do_clean():
+                for name in names:
+                    _log(f"停止并删除容器: {name}\n")
+                    self.docker.remove_container(name, callback=_log_async)
+                    if self.docker.container_name == name:
+                        self.docker.container_name = None
+                        self.config_mgr = None
+                    checked.discard(name)
+                if clean_temp_var.get():
+                    work_dir = self.work_dir_var.get().strip()
+                    if work_dir:
+                        self.docker.remote_work_base = work_dir
+                    self.docker.remove_work_dir(callback=_log_async)
+                _log("✓ 清理完成\n")
+
+                def _done():
+                    clean_btn.config(state=tk.NORMAL, text="清理选中")
+                    self.work_dir_status.config(
+                        text="临时目录已清理" if clean_temp_var.get() else "",
+                        fg=COLOR_SUCCESS if clean_temp_var.get() else COLOR_TEXT_MUTED)
+                    _refresh_list()
+
+                dialog.after(0, _done)
+
+            threading.Thread(target=_do_clean, daemon=True).start()
+
+        action_frame = tk.Frame(dialog, bg=COLOR_BG)
+        action_frame.pack(fill=tk.X, padx=16, pady=(0, 8))
+        tk.Button(action_frame, text="刷新", command=_refresh_list,
+                  font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        tk.Button(action_frame, text="全选", command=_select_all,
+                  font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=6)
+        tk.Button(action_frame, text="取消全选", command=_select_none,
+                  font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        clean_btn = tk.Button(action_frame, text="清理选中", bg=COLOR_ERROR,
+                              fg="white", font=("Segoe UI", 9, "bold"),
+                              relief=tk.FLAT, command=_clean_selected)
+        clean_btn.pack(side=tk.LEFT, padx=12)
+        tk.Button(action_frame, text="关闭", command=dialog.destroy,
+                  font=("Segoe UI", 9)).pack(side=tk.RIGHT)
+
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        _refresh_list()
 
     def _flush_log_buffer(self):
         """主线程定时刷新部署日志缓冲区到UI（每200ms）"""
@@ -1134,27 +1381,25 @@ class WizardApp:
             messagebox.showwarning("提示", "请先完成模型路径选择")
             return
         if not work_dir:
-            messagebox.showwarning("提示", "请输入远程工作目录路径")
+            messagebox.showwarning("提示", "请输入临时部署目录路径")
             return
 
-        # 部署前检查工作目录
+        # 部署前检查临时目录(仅用于暂存镜像tar/代码)
         self.docker = DockerManager(self.ssh)
         self.docker.remote_work_base = work_dir
         if self.docker.work_dir_exists():
             code, out, _ = self.ssh.execute(f"ls -A {work_dir} 2>/dev/null")
             if out.strip():
                 choice = messagebox.askyesnocancel(
-                    "工作目录已存在",
-                    f"远程工作目录已存在且有内容:\n{work_dir}\n\n"
-                    f"是 - 清理目录后继续部署\n"
-                    f"否 - 使用当前目录直接部署（覆盖同名文件）\n"
+                    "临时目录已存在",
+                    f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
+                    f"通常是上次部署中断或旧版本遗留的暂存文件。\n\n"
+                    f"是 - 删除残留后继续部署\n"
+                    f"否 - 忽略并继续部署（覆盖同名文件）\n"
                     f"取消 - 终止部署",
                     icon=messagebox.WARNING)
                 if choice is True:
-                    # 清理目录
-                    if self.docker.container_name and self.docker.container_is_running():
-                        self.docker.stop_and_remove()
-                    self.docker.clean_work_dir()
+                    self.docker.remove_work_dir()
                 elif choice is None:
                     return
                 # choice is False: 直接部署
@@ -1200,7 +1445,7 @@ class WizardApp:
             self.docker.remote_work_base = work_dir
 
         # Step 1: 检查Docker
-        self._log_docker("[1/4] 检查Docker环境...\n")
+        self._log_docker("[1/5] 检查Docker环境...\n")
         ok, msg = self.docker.check_docker_installed()
         if not ok:
             self._log_docker(f"  ✗ {msg}\n")
@@ -1211,11 +1456,11 @@ class WizardApp:
             self._log_docker("  ⚹ 已取消\n")
             return
 
-        # 确保工作目录存在（无论镜像是否已存在都需要）
+        # 确保临时部署目录存在（仅部署期间暂存镜像tar/代码）
         self.ssh.mkdir_p(self.docker.remote_work_base)
 
         # Step 2: 优先复用执行机已有镜像; 仅在上传模式下加载tar包
-        self._log_docker("[2/4] 准备AISBench镜像...\n")
+        self._log_docker("[2/5] 准备AISBench镜像...\n")
         if selected_image:
             self.root.after(0, lambda n=selected_image: self.docker_info_labels["tar"].config(text=n))
             if not self.docker.image_exists(selected_image):
@@ -1278,9 +1523,9 @@ class WizardApp:
             self._log_docker("  ⚹ 已取消\n")
             return
 
-        # Step 3: 上传测试代码 (内置目录 / 本地zip包)
+        # Step 3: 暂存测试代码 (内置目录 / 本地zip包)
         if self.code_source_var.get() == "builtin":
-            self._log_docker("[3/4] 上传内置测试代码...\n")
+            self._log_docker("[3/5] 暂存内置测试代码...\n")
             code_src_dir = self._get_bundled_code_dir()
             extracted_path = f"{self.docker.remote_work_base}/aisbench_auto_tools_prefix-main"
 
@@ -1293,7 +1538,7 @@ class WizardApp:
                 return
             self.root.after(0, lambda: self.docker_info_labels["zip"].config(text="内置代码包"))
         else:
-            self._log_docker("[3/4] 上传并解压代码zip包...\n")
+            self._log_docker("[3/5] 暂存并解压代码zip包...\n")
             zipf = self.zip_path.get().strip()
             zip_name = os.path.basename(zipf)
             remote_zip = f"{self.docker.remote_work_base}/{zip_name}"
@@ -1313,18 +1558,17 @@ class WizardApp:
                 return
             self.root.after(0, lambda n=zip_name: self.docker_info_labels["zip"].config(text=n))
 
-        self.code_host_path = extracted_path
-        self._log_docker(f"  ✓ 代码已就绪: {extracted_path}\n\n")
+        self._log_docker(f"  ✓ 代码暂存完成: {extracted_path}\n\n")
 
         if self._cancel_flag.is_set():
             self._log_docker("  ⚹ 已取消\n")
             return
 
-        # Step 5: 创建容器
-        self._log_docker("[4/4] 创建并启动容器...\n")
+        # Step 4: 创建容器(仅挂载模型路径, 代码随后导入)
+        self._log_docker("[4/5] 创建并启动容器...\n")
         container_name = self.docker.generate_container_name()
         ok, msg = self.docker.create_container(
-            image_name, model_path, extracted_path, container_name,
+            image_name, model_path, container_name,
             callback=lambda t: self._log_docker(t)  # 直接写缓冲区
         )
         if not ok:
@@ -1334,7 +1578,24 @@ class WizardApp:
         self.root.after(0, lambda n=container_name: self.docker_info_labels["container"].config(text=n))
         self.root.after(0, lambda m=model_path: self.docker_info_labels["model"].config(text=m))
         self._log_docker(f"\n  ✓ 容器 {container_name} 已启动运行\n")
-        self._log_docker(f"  ✓ 部署完成!\n")
+
+        # Step 5: 导入代码到容器并删除宿主机暂存目录
+        self._log_docker("[5/5] 导入测试代码到容器并清理暂存目录...\n")
+        ok, msg = self.docker.copy_code_into_container(
+            extracted_path,
+            callback=lambda t: self._log_docker(t)
+        )
+        if not ok:
+            self._log_docker(f"  ✗ {msg}\n")
+            self._log_docker("  → 暂存目录暂不删除，可用于排障；修复后可重新部署\n")
+            return
+
+        self._log_docker(f"  清理宿主机临时目录: {self.docker.remote_work_base}\n")
+        self.docker.remove_work_dir(callback=lambda t: self._log_docker(t))
+        self.docker.code_host_path = ""
+        self.root.after(0, lambda: self.work_dir_status.config(
+            text="部署后已自动清理", fg=COLOR_SUCCESS))
+        self._log_docker(f"  ✓ 部署完成! 代码工作区: {self.docker.code_mount_path} (容器内)\n")
 
         # 初始化ConfigManager
         self.config_mgr = ConfigManager(self.docker)
@@ -1454,10 +1715,9 @@ class WizardApp:
         """更新config.py路径显示"""
         if not hasattr(self, 'config_path_lbl'):
             return
-        if self.docker and self.docker.code_host_path:
-            host_path = f"{self.docker.code_host_path}/config.py"
+        if self.docker and self.docker.container_name:
             container_path = f"{self.docker.code_mount_path}/config.py"
-            text = f"config.py 位置:\n  宿主机: {host_path}\n  容器内: {container_path}"
+            text = f"config.py 位置(容器内): {container_path}"
             self.config_path_lbl.config(text=text, fg=COLOR_TEXT)
         else:
             self.config_path_lbl.config(text="config.py 位置: 尚未部署（请先完成Docker部署）",
@@ -1523,11 +1783,9 @@ class WizardApp:
                                    "config.py 已写入，但回读发现以下不一致:\n\n" + "\n".join(mismatches))
         else:
             self.config_status_lbl.config(text="✓ 配置已保存并验证一致", fg=COLOR_SUCCESS)
-            host_path = f"{self.docker.code_host_path}/config.py"
             container_path = f"{self.docker.code_mount_path}/config.py"
             messagebox.showinfo("成功",
                                f"config.py 已写入并回读验证一致!\n\n"
-                               f"宿主机路径: {host_path}\n"
                                f"容器内路径: {container_path}\n\n"
                                f"关键配置:\n"
                                f"  MODEL_PATH = {saved_values.get('MODEL_PATH', '?')}\n"
@@ -2354,16 +2612,16 @@ class WizardApp:
             '    sys.exit(1)\n'
             'print(f"OK: MODEL_PATH={p}")\n'
         )
-        check_host_path = f"{self.docker.code_host_path}/_check_model_path.py"
-        if not self.ssh.write_file(check_host_path, check_script):
-            return False, "无法写入预检查脚本到容器挂载目录"
+        check_container_path = f"{self.docker.code_mount_path}/_check_model_path.py"
+        if not self.docker.write_file_in_container(check_container_path, check_script):
+            return False, "无法写入预检查脚本到容器内部"
 
         cmd = (
             f"docker exec -w {self.docker.code_mount_path} {self.docker.container_name} "
             f"python3 _check_model_path.py"
         )
         code, out, err = self.ssh.execute(cmd)
-        self.ssh.execute(f"rm -f {check_host_path}")
+        self.docker.remove_file_in_container(check_container_path)
 
         out = out.strip()
         if code == 0 and "OK:" in out:
@@ -2386,9 +2644,12 @@ class WizardApp:
         script_content, log_dir_name = self.designer.generate_shell_script()
         self._log_exec(f"  日志目录名: {log_dir_name}\n")
 
-        # ===== 阶段2: 上传并运行脚本 =====
-        self._log_exec("\n[2/4] 上传脚本到容器并执行...\n")
+        # ===== 阶段2: 写入并运行脚本(容器内部) =====
+        self._log_exec("\n[2/4] 写入测试脚本到容器并执行...\n")
         container_script = self.docker.write_script(script_content, "run_tests.sh")
+        if not container_script:
+            self._log_exec("  ✗ 无法将测试脚本写入容器内部\n")
+            return
         self._log_exec(f"  脚本路径(容器内): {container_script}\n")
         self._log_exec("  开始执行测试 (这可能需要较长时间)...\n\n")
 
@@ -2406,17 +2667,17 @@ class WizardApp:
         # ===== 阶段3: 下载日志 =====
         self._log_exec("\n[3/4] 下载测试日志到本地...\n")
 
-        remote_log_dir = self.docker.find_latest_log_dir()
-        if not remote_log_dir:
-            remote_log_dir = f"{self.docker.code_host_path}/{log_dir_name}"
+        container_log_dir = self.docker.find_latest_log_dir()
+        if not container_log_dir:
+            container_log_dir = f"{self.docker.code_mount_path}/{log_dir_name}"
 
-        self._log_exec(f"  远程日志目录: {remote_log_dir}\n")
+        self._log_exec(f"  容器内日志目录: {container_log_dir}\n")
 
         local_log_dir = os.path.join(local_dir, log_dir_name)
         os.makedirs(local_log_dir, exist_ok=True)
 
         local_log_files = self.docker.download_logs(
-            remote_log_dir, local_log_dir,
+            container_log_dir, local_log_dir,
             callback=lambda t: self._log_exec(t)  # 直接写缓冲区
         )
 
@@ -2512,16 +2773,16 @@ class WizardApp:
         msg = "测试已完成! 建议清理远程环境:\n\n"
         msg += f"  - Docker容器: {self.docker.container_name}\n"
         if work_dir:
-            msg += f"  - 远程工作目录: {work_dir}\n"
+            msg += f"  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n"
         msg += "\n是否立即清理?\n"
-        msg += "(是: 停止并删除容器 + 清理工作目录, 本地结果不受影响)\n"
+        msg += "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
         msg += "(否: 稍后可点击\"清理环境\"按钮手动清理)"
 
         if messagebox.askyesno("清理提醒", msg, icon=messagebox.QUESTION):
             self._cleanup_environment()
 
     def _cleanup_environment(self, skip_confirm=False):
-        """清理Docker容器和远程工作目录"""
+        """清理Docker容器和可能残留的临时部署目录"""
         if not self.docker:
             return
 
@@ -2532,8 +2793,8 @@ class WizardApp:
             if self.docker.container_name:
                 msg += f"  Docker容器: {self.docker.container_name}\n"
             if work_dir:
-                msg += f"  远程工作目录: {work_dir}\n"
-            msg += "\n清理后容器将停止删除, 工作目录文件将被清除。\n"
+                msg += f"  临时部署目录: {work_dir} (如有残留)\n"
+            msg += "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
             msg += "本地下载的测试结果不受影响。\n"
             if not messagebox.askyesno("确认清理", msg, icon=messagebox.WARNING):
                 return
@@ -2551,15 +2812,31 @@ class WizardApp:
             else:
                 self._log_exec("  (无容器需要清理)\n")
 
-            # 2. 清理工作目录
+            # 2. 清理可能残留的临时部署目录(部署成功时已自动删除)
             if work_dir:
                 self.docker.remote_work_base = work_dir
-                self._log_exec(f"  清理工作目录: {work_dir}\n")
-                ok = self.docker.clean_work_dir(callback=lambda t: self._log_exec(t))
-                if ok:
-                    self._log_exec("  ✓ 工作目录已清理\n")
+                if self.docker.work_dir_exists():
+                    self._log_exec(f"  清理临时部署目录: {work_dir}\n")
+                    ok = self.docker.remove_work_dir(callback=lambda t: self._log_exec(t))
+                    if ok:
+                        self._log_exec("  ✓ 临时部署目录已清理\n")
+                    else:
+                        self._log_exec("  ✗ 临时部署目录清理失败\n")
                 else:
-                    self._log_exec("  ✗ 工作目录清理失败\n")
+                    self._log_exec("  (临时部署目录无残留)\n")
+
+            # 3. 提示是否仍有历史容器残留(可在步骤2清理)
+            try:
+                leftovers = [
+                    c for c in self.docker.list_managed_containers()
+                    if c["name"] != self.docker.container_name
+                ]
+                if leftovers:
+                    names = ", ".join(c["name"] for c in leftovers[:5])
+                    self._log_exec(f"  ⚠ 仍有 {len(leftovers)} 个历史容器残留: {names}\n")
+                    self._log_exec("    → 可在步骤2点击\"清理残留容器\"进行清理\n")
+            except Exception:
+                pass
 
             self._log_exec("\n✓ 环境清理完成!\n")
             local_dir = self.local_output_var.get().strip()
@@ -2572,7 +2849,7 @@ class WizardApp:
                     self.root.destroy()
                 else:
                     messagebox.showinfo("清理完成",
-                        "环境清理完成!\n容器和工作目录已清理。\n本地测试结果不受影响。")
+                        "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。")
 
             self.root.after(0, _restore_cleanup)
 
@@ -2665,9 +2942,10 @@ class WizardApp:
             msg += f"  容器: {self.docker.container_name}\n"
             work_dir = self.work_dir_var.get().strip()
             if work_dir:
-                msg += f"  工作目录: {work_dir}\n"
+                msg += f"  临时部署目录残留: {work_dir} (如有)\n"
             msg += "\n退出前是否清理远程环境?\n"
-            msg += "(是: 清理后退出  否: 直接退出保留环境  取消: 不退出)"
+            msg += "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
+            msg += "(未清理的容器下次连接时可通过步骤2\"清理残留容器\"删除)"
 
             choice = messagebox.askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)
             if choice is None:

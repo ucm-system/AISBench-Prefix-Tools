@@ -7,6 +7,8 @@ import time
 import os
 import json
 import tarfile
+import base64
+import shlex
 from datetime import datetime
 from typing import Optional, Tuple, List, Callable
 from ssh_manager import SSHManager
@@ -14,6 +16,10 @@ from ssh_manager import SSHManager
 
 class DockerManager:
     """通过SSH管理Docker容器"""
+
+    # 本工具创建的容器统一带此前缀; 新版本还会附加管理label
+    MANAGED_NAME_PREFIX = "aisbench-test-"
+    MANAGED_LABEL = "org.aisbench-prefix-tools.managed=true"
 
     def __init__(self, ssh: SSHManager):
         self.ssh = ssh
@@ -35,9 +41,9 @@ class DockerManager:
         return self.ssh.file_exists(self.remote_work_base)
 
     def clean_work_dir(self, callback: Callable[[str], None] = None) -> bool:
-        """清理远程工作目录"""
+        """清理并重建临时部署目录(仅部署过程中短暂使用)"""
         if callback:
-            callback(f"清理工作目录: {self.remote_work_base}\n")
+            callback(f"清理临时部署目录: {self.remote_work_base}\n")
         code, _, _ = self.ssh.execute(f"rm -rf {self.remote_work_base}")
         if code == 0:
             self.ssh.mkdir_p(self.remote_work_base)
@@ -46,6 +52,21 @@ class DockerManager:
             return True
         if callback:
             callback("  ✗ 清理失败\n")
+        return False
+
+    def remove_work_dir(self, callback: Callable[[str], None] = None) -> bool:
+        """彻底删除临时部署目录(不重建)"""
+        if not self.ssh.file_exists(self.remote_work_base):
+            return True
+        if callback:
+            callback(f"删除临时部署目录: {self.remote_work_base}\n")
+        code, _, _ = self.ssh.execute(f"rm -rf {self.remote_work_base}")
+        if code == 0:
+            if callback:
+                callback("  ✓ 已删除宿主机临时目录\n")
+            return True
+        if callback:
+            callback("  ✗ 临时目录删除失败\n")
         return False
 
     @staticmethod
@@ -179,11 +200,10 @@ class DockerManager:
         return True
 
     def create_container(self, image_name: str, model_path: str,
-                         code_host_path: str,
                          container_name: str = None,
                          callback: Callable[[str], None] = None) -> Tuple[bool, str]:
         """
-        创建并启动Docker容器
+        创建并启动Docker容器(仅挂载模型路径, 代码稍后通过docker cp导入)
         """
         if container_name is None:
             container_name = self.generate_container_name()
@@ -199,9 +219,8 @@ class DockerManager:
             f"--name {container_name} "
             f"--shm-size=1g "
             f"--net=host "
+            f"--label {self.MANAGED_LABEL} "
             f"-v {model_path}:{model_path} "
-            f"-v {code_host_path}:{self.code_mount_path} "
-            f"-w {self.code_mount_path} "
             f"{image_name} python3"
         )
 
@@ -220,12 +239,87 @@ class DockerManager:
         )
         if "Up" in out:
             self.container_name = container_name
-            self.code_host_path = code_host_path
+            self.code_host_path = ""
             if callback:
                 callback(f"\n容器 {container_name} 已启动运行\n")
             return True, container_name
         else:
             return False, f"容器启动失败，状态: {out}"
+
+    def list_managed_containers(self) -> List[dict]:
+        """列出本工具创建/遗留的容器(含已停止的)
+
+        识别规则: 容器名以 aisbench-test- 开头, 或带管理label。
+        旧版本容器没有label, 只能靠名称前缀识别。
+        """
+        code, out, err = self.ssh.execute("docker ps -a --format '{{json .}}'")
+        if code != 0:
+            message = err.strip() or out.strip() or f"docker ps 失败 (exit_code={code})"
+            raise RuntimeError(message)
+
+        containers = []
+        for line in out.splitlines():
+            try:
+                item = json.loads(line)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            name = str(item.get("Names", "")).strip()
+            labels = str(item.get("Labels", "")).strip()
+            if not name:
+                continue
+            if not (name.startswith(self.MANAGED_NAME_PREFIX)
+                    or self.MANAGED_LABEL in labels):
+                continue
+            containers.append({
+                "name": name,
+                "id": str(item.get("ID", "")).strip(),
+                "image": str(item.get("Image", "")).strip(),
+                "status": str(item.get("Status", "")).strip(),
+                "created": str(item.get("RunningFor", "")).strip(),
+            })
+        containers.sort(key=lambda c: c["name"])
+        return containers
+
+    def copy_code_into_container(self, host_code_path: str,
+                                 callback: Callable[[str], None] = None) -> Tuple[bool, str]:
+        """将宿主机暂存代码复制到容器内工作区"""
+        if not self.container_name:
+            return False, "容器未创建"
+        if not host_code_path:
+            return False, "宿主机代码暂存路径为空"
+
+        parent_dir = self.code_mount_path.rsplit("/", 1)[0]
+        if callback:
+            callback(f"容器内创建工作区: {parent_dir}\n")
+        code, _, _ = self.ssh.execute(
+            f"docker exec {self.container_name} mkdir -p {parent_dir}"
+        )
+        if code != 0:
+            return False, "容器内创建工作区失败"
+
+        if callback:
+            callback(
+                f"导入测试代码到容器: docker cp {host_code_path}/. "
+                f"{self.container_name}:{self.code_mount_path}\n"
+            )
+        cmd = (
+            f"docker cp {host_code_path}/. "
+            f"{self.container_name}:{self.code_mount_path}"
+        )
+        exit_code = self.ssh.execute_with_callback(cmd, callback, timeout=300)
+        if exit_code != 0:
+            return False, f"代码导入容器失败 (exit_code={exit_code})"
+
+        # 验证代码目录已就绪
+        code, out, _ = self.ssh.execute(
+            f"docker exec {self.container_name} test -d {self.code_mount_path} "
+            f"&& docker exec {self.container_name} ls {self.code_mount_path}"
+        )
+        if code != 0 or not out.strip():
+            return False, "代码导入后校验失败"
+        if callback:
+            callback(f"  ✓ 代码已就绪(容器内): {self.code_mount_path}\n")
+        return True, self.code_mount_path
 
     def upload_directory(self, local_dir: str, remote_dir: str,
                          callback: Callable[[str], None] = None) -> Tuple[bool, str]:
@@ -385,6 +479,51 @@ class DockerManager:
         code, _, _ = self.ssh.execute(cmd, timeout=120)
         return code == 0
 
+    def write_file_in_container(self, container_path: str, content: str) -> bool:
+        """直接将文本文件写入容器内部(内容经base64编码, 避免引号转义问题)"""
+        if not self.container_name:
+            return False
+        directory = container_path.rsplit("/", 1)[0] or "/"
+        payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        inner = (
+            f"mkdir -p {shlex.quote(directory)} && "
+            f"printf '%s' {shlex.quote(payload)} | base64 -d "
+            f"> {shlex.quote(container_path)}"
+        )
+        cmd = f"docker exec {self.container_name} sh -c {shlex.quote(inner)}"
+        code, _, _ = self.ssh.execute(cmd, timeout=60)
+        return code == 0
+
+    def read_file_in_container(self, container_path: str) -> Optional[str]:
+        """读取容器内的文本文件内容"""
+        if not self.container_name:
+            return None
+        inner = f"base64 {shlex.quote(container_path)}"
+        cmd = f"docker exec {self.container_name} sh -c {shlex.quote(inner)}"
+        code, out, _ = self.ssh.execute(cmd, timeout=60)
+        if code != 0:
+            return None
+        try:
+            return base64.b64decode(out.strip()).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+
+    def file_exists_in_container(self, container_path: str) -> bool:
+        """检查容器内文件/目录是否存在"""
+        if not self.container_name:
+            return False
+        cmd = f"docker exec {self.container_name} test -e {container_path}"
+        code, _, _ = self.ssh.execute(cmd, timeout=30)
+        return code == 0
+
+    def remove_file_in_container(self, container_path: str) -> bool:
+        """删除容器内文件(容错处理)"""
+        if not self.container_name:
+            return False
+        cmd = f"docker exec {self.container_name} rm -f {container_path}"
+        code, _, _ = self.ssh.execute(cmd, timeout=30)
+        return code == 0
+
     def stop_and_remove(self, callback: Callable[[str], None] = None):
         """停止并删除容器"""
         if self.container_name:
@@ -397,13 +536,17 @@ class DockerManager:
 
     def write_script(self, script_content: str, filename: str = "run_tests.sh") -> str:
         """
-        将测试脚本写入到宿主机挂载目录（容器内可访问）
-        返回容器内脚本路径
+        将测试脚本直接写入容器内部
+        成功返回容器内脚本路径, 失败返回空字符串
         """
-        host_path = f"{self.code_host_path}/{filename}"
-        self.ssh.write_file(host_path, script_content)
-        self.ssh.execute(f"chmod +x {host_path}")
-        return f"{self.code_mount_path}/{filename}"
+        container_path = f"{self.code_mount_path}/{filename}"
+        if not self.write_file_in_container(container_path, script_content):
+            return ""
+        self.ssh.execute(
+            f"docker exec {self.container_name} chmod +x {container_path}",
+            timeout=30,
+        )
+        return container_path
 
     def run_script(self, script_name: str = "run_tests.sh",
                    callback: Callable[[str], None] = None,
@@ -417,48 +560,63 @@ class DockerManager:
 
     def find_latest_log_dir(self) -> Optional[str]:
         """
-        查找最新的 test_logs_* 目录（宿主机路径）
-        返回宿主机路径，如 /tmp/AISBench_Prefix_Tools/aisbench_auto_tools_prefix-main/test_logs_20260909_200012
+        查找容器内最新的 test_logs_* 目录
+        返回容器内路径，如 /benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_20260909_200012
         """
-        code, out, _ = self.ssh.execute(
-            f"ls -dt {self.code_host_path}/test_logs_*/ 2>/dev/null | head -1"
+        inner = (
+            f"ls -1dt {shlex.quote(self.code_mount_path)}/test_logs_* "
+            f"2>/dev/null | head -1"
         )
+        cmd = f"docker exec {self.container_name} sh -c {shlex.quote(inner)}"
+        code, out, _ = self.ssh.execute(cmd, timeout=60)
         result = out.strip().rstrip('/')
         if result:
             return result
         return None
 
-    def download_logs(self, remote_log_dir: str, local_dir: str,
+    def download_logs(self, container_log_dir: str, local_dir: str,
                       callback: Callable[[str], None] = None) -> List[str]:
         """
-        从远程宿主机下载日志文件到本地Windows目录
+        从容器内下载日志文件到本地Windows目录
+        过程: docker cp 到宿主机临时目录, 再SFTP下载到本地, 最后删除临时目录
         返回本地日志文件路径列表
         """
-        if not self.ssh.connected or not self.ssh.sftp:
+        if not self.container_name or not self.ssh.connected or not self.ssh.sftp:
             if callback:
                 callback("错误: SSH未连接\n")
             return []
 
         os.makedirs(local_dir, exist_ok=True)
 
-        # 列出远程日志文件
-        entries = self.ssh.list_dir(remote_log_dir)
-        log_files = [e['name'] for e in entries if e['type'] == 'file' and e['name'].endswith('.log')]
+        # 列出容器内日志文件
+        inner = f"ls -1 {shlex.quote(container_log_dir)} 2>/dev/null"
+        cmd = f"docker exec {self.container_name} sh -c {shlex.quote(inner)}"
+        code, out, _ = self.ssh.execute(cmd, timeout=60)
+        log_files = sorted(
+            name for name in out.split() if name.endswith('.log')
+        )
 
         local_paths = []
-        for fname in sorted(log_files):
-            remote_path = f"{remote_log_dir}/{fname}"
-            local_path = os.path.join(local_dir, fname)
+        if log_files:
+            temp_dir = f"/tmp/aisbench_logs_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            self.ssh.mkdir_p(temp_dir)
+            try:
+                for fname in log_files:
+                    container_path = f"{container_log_dir}/{fname}"
+                    local_path = os.path.join(local_dir, fname)
+                    if callback:
+                        callback(f"下载: {fname}\n")
+                    ok = self._download_container_file(container_path, local_path, temp_dir)
+                    if ok:
+                        local_paths.append(local_path)
+                    elif callback:
+                        callback(f"  ✗ 下载失败: {fname}\n")
+            finally:
+                self.ssh.execute(f"rm -rf {temp_dir}")
 
+        if code != 0 and not log_files:
             if callback:
-                callback(f"下载: {fname}\n")
-
-            ok = self.ssh.upload_file(remote_path, local_path) if False else self._sftp_download(remote_path, local_path)
-            if ok:
-                local_paths.append(local_path)
-            else:
-                if callback:
-                    callback(f"  ✗ 下载失败: {fname}\n")
+                callback(f"  ✗ 容器内日志目录不存在: {container_log_dir}\n")
 
         if callback:
             callback(f"共下载 {len(local_paths)} 个日志文件到 {local_dir}\n")
@@ -468,11 +626,11 @@ class DockerManager:
     def download_extra_files(self, filenames: List[str], local_dir: str,
                              callback: Callable[[str], None] = None) -> List[str]:
         """
-        从代码目录(容器工作目录)下载指定附加文件
+        从容器工作目录下载指定附加文件
         如 aisbench_all.log / aisbench_result.csv
         返回本地文件路径列表
         """
-        if not self.ssh.connected or not self.ssh.sftp:
+        if not self.container_name or not self.ssh.connected or not self.ssh.sftp:
             if callback:
                 callback("错误: SSH未连接\n")
             return []
@@ -480,22 +638,35 @@ class DockerManager:
         os.makedirs(local_dir, exist_ok=True)
 
         local_paths = []
-        for fname in filenames:
-            remote_path = f"{self.code_host_path}/{fname}"
-            if not self.ssh.file_exists(remote_path):
+        temp_dir = f"/tmp/aisbench_extra_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.ssh.mkdir_p(temp_dir)
+        try:
+            for fname in filenames:
+                container_path = f"{self.code_mount_path}/{fname}"
+                if not self.file_exists_in_container(container_path):
+                    if callback:
+                        callback(f"跳过(容器内不存在): {fname}\n")
+                    continue
+                local_path = os.path.join(local_dir, fname)
                 if callback:
-                    callback(f"跳过(不存在): {fname}\n")
-                continue
-            local_path = os.path.join(local_dir, fname)
-            if callback:
-                callback(f"下载: {fname}\n")
-            if self._sftp_download(remote_path, local_path):
-                local_paths.append(local_path)
-            else:
-                if callback:
+                    callback(f"下载: {fname}\n")
+                if self._download_container_file(container_path, local_path, temp_dir):
+                    local_paths.append(local_path)
+                elif callback:
                     callback(f"  ✗ 下载失败: {fname}\n")
+        finally:
+            self.ssh.execute(f"rm -rf {temp_dir}")
 
         return local_paths
+
+    def _download_container_file(self, container_path: str, local_path: str,
+                                 temp_dir: str) -> bool:
+        """docker cp容器文件到宿主机临时目录, 再SFTP下载到本地"""
+        fname = container_path.rsplit("/", 1)[-1] or "download"
+        host_temp_path = f"{temp_dir}/{fname}"
+        if not self.copy_from_container(container_path, host_temp_path):
+            return False
+        return self._sftp_download(host_temp_path, local_path)
 
     def _sftp_download(self, remote_path: str, local_path: str) -> bool:
         """SFTP下载单个文件"""

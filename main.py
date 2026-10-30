@@ -243,6 +243,7 @@ class WizardApp:
         self.config_data = {}
         self.remote_tar_path = ""
         self.remote_images = []
+        self.deployed = False
         self.image_source_var = tk.StringVar(value="existing")
         self.remote_image_var = tk.StringVar()
 
@@ -386,14 +387,82 @@ class WizardApp:
         self._rebuild_ui_for_language()
 
     def _rebuild_ui_for_language(self):
-        """按当前语言重建主界面(保留业务状态和日志内容)"""
+        """按当前语言重建主界面(完整保留步骤、输入与结果状态)"""
         self.language_var.set(SUPPORTED_LANGUAGES.get(get_language(), "中文"))
-        docker_text = ""
-        exec_text = ""
+
+        # ---- 切换前快照: 所有用户输入 / 状态 / 结果 ----
+        snapshot = {}
         if hasattr(self, "docker_log"):
-            docker_text = self.docker_log.get("1.0", "end-1c")
+            snapshot["docker_log"] = self.docker_log.get("1.0", "end-1c")
         if hasattr(self, "exec_log"):
-            exec_text = self.exec_log.get("1.0", "end-1c")
+            snapshot["exec_log"] = self.exec_log.get("1.0", "end-1c")
+        if hasattr(self, "conn_vars"):
+            snapshot["conn_values"] = {
+                k: v.get() for k, v in self.conn_vars.items()}
+        if hasattr(self, "conn_password"):
+            snapshot["conn_password"] = self.conn_password.get()
+        if hasattr(self, "conn_key"):
+            snapshot["conn_key"] = self.conn_key.get()
+        if hasattr(self, "conn_status_lbl"):
+            snapshot["conn_status"] = (
+                self.conn_status_lbl.cget("text"), self.conn_status_lbl.cget("fg"))
+        if hasattr(self, "remote_images") and self.remote_images:
+            snapshot["remote_images"] = [
+                dict(item) for item in self.remote_images]
+        if hasattr(self, "image_list_status"):
+            snapshot["image_status"] = (
+                self.image_list_status.cget("text"), self.image_list_status.cget("fg"))
+        if hasattr(self, "tar_path"):
+            snapshot["tar_path"] = self.tar_path.get()
+        if hasattr(self, "zip_path"):
+            snapshot["zip_path"] = self.zip_path.get()
+        if hasattr(self, "work_dir_var"):
+            snapshot["work_dir"] = self.work_dir_var.get()
+        if hasattr(self, "work_dir_status"):
+            snapshot["work_dir_status"] = (
+                self.work_dir_status.cget("text"), self.work_dir_status.cget("fg"))
+        if hasattr(self, "docker_info_labels"):
+            snapshot["docker_info"] = {
+                k: lbl.cget("text")
+                for k, lbl in self.docker_info_labels.items()}
+        if hasattr(self, "deploy_btn"):
+            snapshot["deploy_text"] = self.deploy_btn.cget("text")
+        if hasattr(self, "config_entry_vars"):
+            snapshot["config_values"] = {
+                k: v.get() for k, v in self.config_entry_vars.items()}
+        if hasattr(self, "config_status_lbl"):
+            snapshot["config_status"] = (
+                self.config_status_lbl.cget("text"), self.config_status_lbl.cget("fg"))
+        if hasattr(self, "config_preview"):
+            snapshot["config_preview"] = self.config_preview.get("1.0", "end-1c")
+        if hasattr(self, "residual_status_lbl"):
+            snapshot["residual_status"] = (
+                self.residual_status_lbl.cget("text"),
+                self.residual_status_lbl.cget("fg"))
+        if hasattr(self, "test_tree"):
+            snapshot["test_rows"] = [
+                self.test_tree.item(iid)["values"]
+                for iid in self.test_tree.get_children()
+            ]
+        if hasattr(self, "results_tree"):
+            snapshot["result_rows"] = [
+                self.results_tree.item(iid)["values"]
+                for iid in self.results_tree.get_children()
+            ]
+        if hasattr(self, "results_info_lbl"):
+            snapshot["results_info"] = self.results_info_lbl.cget("text")
+        if hasattr(self, "calc_detail_text"):
+            snapshot["calc_detail"] = self.calc_detail_text.get("1.0", "end-1c")
+        if hasattr(self, "commands_text"):
+            snapshot["commands"] = self.commands_text.get("1.0", "end-1c")
+        if hasattr(self, "summary_text"):
+            snapshot["summary"] = self.summary_text.cget("text")
+        if hasattr(self, "local_output_var"):
+            snapshot["local_output"] = self.local_output_var.get()
+        if hasattr(self, "deployed"):
+            snapshot["deployed"] = self.deployed
+        if hasattr(self, "_content_canvas"):
+            snapshot["scroll"] = self._content_canvas.yview()
 
         if hasattr(self, "main_frame"):
             self.main_frame.destroy()
@@ -405,11 +474,99 @@ class WizardApp:
         self._build_ui()
         self._docker_log_handler = LiveLogHandler(self.docker_log)
         self._exec_log_handler = LiveLogHandler(self.exec_log)
-        if docker_text:
-            self.docker_log.insert("1.0", docker_text)
-        if exec_text:
-            self.exec_log.insert("1.0", exec_text)
+
+        # ---- 恢复日志 ----
+        if snapshot.get("docker_log"):
+            self.docker_log.insert("1.0", snapshot["docker_log"])
+        if snapshot.get("exec_log"):
+            self.exec_log.insert("1.0", snapshot["exec_log"])
+
+        # ---- 恢复步骤1: SSH连接信息 ----
+        if snapshot.get("conn_values"):
+            for key, value in snapshot["conn_values"].items():
+                if key in self.conn_vars:
+                    self.conn_vars[key].set(value)
+        if "conn_password" in snapshot:
+            self.conn_password.set(snapshot["conn_password"])
+        if "conn_key" in snapshot:
+            self.conn_key.set(snapshot["conn_key"])
+        if snapshot.get("conn_status"):
+            text, color = snapshot["conn_status"]
+            self.conn_status_lbl.config(text=text, fg=color)
+
+        # ---- 恢复步骤2: 镜像/代码/模型/部署状态 ----
+        if snapshot.get("remote_images"):
+            self.remote_images = snapshot["remote_images"]
+            self.remote_image_combo.config(
+                values=[item["name"] for item in self.remote_images])
+        self._on_image_source_change()
+        self._on_code_source_change()
+        if "tar_path" in snapshot:
+            self.tar_path.set(snapshot["tar_path"])
+        if "zip_path" in snapshot:
+            self.zip_path.set(snapshot["zip_path"])
+        if "work_dir" in snapshot:
+            self.work_dir_var.set(snapshot["work_dir"])
+        if snapshot.get("work_dir_status"):
+            text, color = snapshot["work_dir_status"]
+            self.work_dir_status.config(text=text, fg=color)
+        if snapshot.get("docker_info"):
+            for key, text in snapshot["docker_info"].items():
+                if key in self.docker_info_labels:
+                    self.docker_info_labels[key].config(text=text)
+        if snapshot.get("image_status"):
+            text, color = snapshot["image_status"]
+            self.image_list_status.config(text=text, fg=color)
+        if snapshot.get("deploy_text"):
+            self.deploy_btn.config(text=snapshot["deploy_text"])
+
+        # ---- 恢复步骤3: 配置状态与预览 ----
+        if snapshot.get("config_values"):
+            for key, value in snapshot["config_values"].items():
+                if key in self.config_entry_vars:
+                    self.config_entry_vars[key].set(value)
+        self._update_config_path_label()
+        self._update_config_preview()
+        if "config_preview" in snapshot and snapshot["config_preview"]:
+            self.config_preview.delete(1.0, tk.END)
+            self.config_preview.insert("1.0", snapshot["config_preview"])
+        if snapshot.get("config_status"):
+            text, color = snapshot["config_status"]
+            self.config_status_lbl.config(text=text, fg=color)
+
+        # ---- 恢复步骤4: 测试用例与计算明细 ----
+        if snapshot.get("test_rows"):
+            for values in snapshot["test_rows"]:
+                self.test_tree.insert("", tk.END, values=values)
+        if "calc_detail" in snapshot and snapshot["calc_detail"]:
+            self.calc_detail_text.insert("1.0", snapshot["calc_detail"])
+
+        # ---- 恢复步骤5: 命令/结果 ----
+        if "commands" in snapshot and snapshot["commands"]:
+            self.commands_text.insert("1.0", snapshot["commands"])
+        if snapshot.get("summary"):
+            self.summary_text.config(text=snapshot["summary"])
+        if snapshot.get("result_rows"):
+            for values in snapshot["result_rows"]:
+                self.results_tree.insert("", tk.END, values=values)
+        if snapshot.get("results_info"):
+            self.results_info_lbl.config(text=snapshot["results_info"])
+        if "local_output" in snapshot:
+            self.local_output_var.set(snapshot["local_output"])
+
+        # ---- 恢复侧边栏/残留容器状态 ----
+        if self.ssh.connected:
+            self.status_lbl.config(text="● 已连接", fg=COLOR_SUCCESS)
+        if snapshot.get("residual_status"):
+            text, color = snapshot["residual_status"]
+            self.residual_status_lbl.config(text=text, fg=color)
+        if self.docker and self.docker.container_name:
+            self.cleanup_btn.config(state=tk.NORMAL)
+
+        # ---- 回到原步骤(不跳转) 并恢复滚动位置 ----
         self._show_step(self.current_step)
+        if snapshot.get("scroll") and hasattr(self, "_content_canvas"):
+            self._content_canvas.yview_moveto(snapshot["scroll"][0])
         self.root.update_idletasks()
 
     def _build_content_area(self, parent):
@@ -483,7 +640,10 @@ class WizardApp:
         self._build_step4_testcases()
         self._build_step5_execute()
 
-        self._show_step(0)
+        # 首次构建显示第1步; 语言切换重建时保持当前步骤(由调用方恢复)
+        if not hasattr(self, "current_step"):
+            self.current_step = 0
+        self._show_step(self.current_step)
 
     def _on_mousewheel(self, event):
         """全局滚轮: 指针下可滚动组件优先, 滚到边界后滚动整页"""
@@ -1689,6 +1849,7 @@ class WizardApp:
 
         # 初始化ConfigManager
         self.config_mgr = ConfigManager(self.docker)
+        self.deployed = True
 
         # 设置DATASET_PATH
         self.dataset_path_var.set(self.docker.code_mount_path)
@@ -2934,6 +3095,7 @@ class WizardApp:
                 self._log_exec(f"  停止并删除容器: {self.docker.container_name}\n")
                 self.docker.stop_and_remove(callback=lambda t: self._log_exec(t))
                 self._log_exec("  ✓ 容器已清理\n")
+                self.deployed = False
             else:
                 self._log_exec("  (无容器需要清理)\n")
 

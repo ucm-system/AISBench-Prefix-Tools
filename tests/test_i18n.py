@@ -221,5 +221,96 @@ class DynamicMessageI18nTests(unittest.TestCase):
         self.assertEqual(mgr.execute("ls"), (-1, "", "Not connected to the remote host"))
 
 
+class LanguageSwitchPreservesStateTests(unittest.TestCase):
+    """Language switching must only change presentation, never wizard state."""
+
+    def tearDown(self):
+        i18n.set_language("zh")
+
+    def test_language_switch_keeps_step_and_login_info(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path", return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.current_step = 1
+                    app.conn_vars["host"].set("192.168.1.30")
+                    app.conn_vars["port"].set("2222")
+                    app.conn_vars["user"].set("deployer")
+                    app.conn_password.set("secret-pass")
+                    app.conn_key.set("C:/keys/id_rsa")
+                    app.tar_path.set("D:/images/aisbench.tar")
+                    app.zip_path.set("D:/code/test.zip")
+                    app.model_path_var.set("/mnt/models/deepseek")
+                    app.ssh._connected = True
+                    app.conn_status_lbl.config(
+                        text="Connected: 192.168.1.30:2222", fg="#16a34a")
+                    app.status_lbl.config(text="● 已连接", fg="#16a34a")
+
+                    app.language_var.set("English")
+                    app._on_language_change()
+
+                    self.assertEqual(app.current_step, 1)
+                    self.assertEqual(app.conn_vars["host"].get(), "192.168.1.30")
+                    self.assertEqual(app.conn_vars["port"].get(), "2222")
+                    self.assertEqual(app.conn_vars["user"].get(), "deployer")
+                    self.assertEqual(app.conn_password.get(), "secret-pass")
+                    self.assertEqual(app.conn_key.get(), "C:/keys/id_rsa")
+                    self.assertEqual(app.tar_path.get(), "D:/images/aisbench.tar")
+                    self.assertEqual(app.zip_path.get(), "D:/code/test.zip")
+                    self.assertEqual(app.model_path_var.get(), "/mnt/models/deepseek")
+                    self.assertEqual(
+                        app.conn_status_lbl.cget("text"),
+                        "Connected: 192.168.1.30:2222")
+                    self.assertEqual(app.status_lbl.cget("text"), "● Connected")
+
+                    app.language_var.set("中文")
+                    app._on_language_change()
+                    self.assertEqual(app.current_step, 1)
+                    self.assertEqual(app.conn_vars["host"].get(), "192.168.1.30")
+                    self.assertEqual(app.conn_password.get(), "secret-pass")
+                    self.assertEqual(app.status_lbl.cget("text"), "● 已连接")
+                finally:
+                    app.root.destroy()
+
+    def test_language_switch_restores_results_and_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path", return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.current_step = 4
+                    app.deployed = True
+                    app.local_output_var.set("D:/results/run1")
+                    app.results_tree.insert("", tk.END, values=(
+                        "4,096", "1,024", "10,000", "100", "50",
+                        "12.34", "56.78", "0.12", "0.03", "9.87",
+                        "85.2", "12.3"))
+                    app.results_info_lbl.config(
+                        text="1 records  |  CSV: r.csv  |  Log: logs")
+                    app.config_status_lbl.config(
+                        text="✓ Config saved and verified", fg="#16a34a")
+                    app.deploy_btn.config(text="Redeploy")
+
+                    app.language_var.set("English")
+                    app._on_language_change()
+
+                    self.assertEqual(app.current_step, 4)
+                    self.assertEqual(app.local_output_var.get(), "D:/results/run1")
+                    first = app.results_tree.get_children()[0]
+                    self.assertEqual(
+                        app.results_tree.item(first)["values"][0], "4,096")
+                    self.assertEqual(
+                        app.results_info_lbl.cget("text"),
+                        "1 records  |  CSV: r.csv  |  Log: logs")
+                    self.assertEqual(
+                        app.config_status_lbl.cget("text"),
+                        "✓ Config saved and verified")
+                    self.assertEqual(app.deploy_btn.cget("text"), "Redeploy")
+                    self.assertTrue(app.deployed)
+                finally:
+                    app.root.destroy()
+
+
 if __name__ == "__main__":
     unittest.main()

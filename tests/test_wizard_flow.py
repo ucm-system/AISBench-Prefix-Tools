@@ -98,7 +98,7 @@ class DeploySequenceTests(unittest.TestCase):
             app.model_path_var.set("/mnt/models/ds")
             app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
 
-            with mock.patch("main.messagebox.showinfo"):
+            with mock.patch("main.showinfo"):
                 app._deploy_sequence(
                     "/mnt/models/ds", "", "aisbench:v3.1"
                 )

@@ -63,6 +63,9 @@ TRANSLATIONS = {
         "刷新命令": "Refresh command",
         "前往": "Go",
         "取消": "Cancel",
+        "确定": "OK",
+        "是": "Yes",
+        "否": "No",
         "取消全选": "Clear selection",
         "同时删除临时部署目录残留文件": "Also delete temporary deploy directory leftovers",
         "复制": "Copy",
@@ -452,6 +455,126 @@ class LocalizedLabelFrame(tk.LabelFrame):
     config = configure
 
 
+# ---------------------------------------------------------------------------
+#  自绘模态对话框
+#  tkinter.messagebox 在 Windows 上调用系统原生对话框, 按钮(确定/取消/是/否)
+#  文字由操作系统语言决定, 无法通过 tr() 控制。这里改用自绘 Tk 对话框,
+#  使标题、正文与按钮文字全部跟随程序语言。
+# ---------------------------------------------------------------------------
+
+_DIALOG_ICON_GLYPHS = {
+    "info": "ℹ",
+    "warning": "⚠",
+    "error": "✗",
+    "question": "?",
+}
+
+_DIALOG_ICON_COLORS = {
+    "info": "#2563eb",
+    "warning": "#d97706",
+    "error": "#dc2626",
+    "question": "#2563eb",
+}
+
+
+def _resolve_dialog_icon(kind: str, icon) -> str:
+    """把 messagebox 的 icon 常量(字符串)映射为对话框图标类型。"""
+    if isinstance(icon, str) and icon in _DIALOG_ICON_GLYPHS:
+        return icon
+    return kind
+
+
+def _dialog_buttons(kind: str):
+    """返回 (按钮列表, 默认值, 取消值); 按钮文字随当前语言翻译。"""
+    if kind == "askyesno":
+        return ([(tr("是"), True), (tr("否"), False)], True, False)
+    if kind == "askyesnocancel":
+        return ([(tr("是"), True), (tr("否"), False), (tr("取消"), None)],
+                True, None)
+    return ([(tr("确定"), "ok")], "ok", "ok")
+
+
+def _run_dialog(title, message, icon_kind, parent,
+                buttons, default_value, escape_value):
+    """显示自绘模态对话框并返回所按按钮对应的值。"""
+    holder = {"done": False, "value": escape_value}
+
+    root = parent if parent is not None else getattr(tk, "_default_root", None)
+    dialog = tk.Toplevel(root)
+    dialog.title(title or "")
+    if root is not None:
+        dialog.transient(root)
+    dialog.resizable(False, False)
+
+    def finish(value):
+        if holder["done"]:
+            return
+        holder["done"] = True
+        holder["value"] = value
+        try:
+            dialog.grab_release()
+        except Exception:
+            pass
+        dialog.destroy()
+
+    glyph = _DIALOG_ICON_GLYPHS.get(icon_kind, "ℹ")
+    color = _DIALOG_ICON_COLORS.get(icon_kind, "#2563eb")
+
+    body = tk.Frame(dialog, padx=18, pady=16)
+    body.pack(fill=tk.BOTH, expand=True)
+    tk.Label(body, text=glyph, fg=color, font=("Segoe UI", 16, "bold")
+             ).pack(side=tk.LEFT, padx=(0, 14), anchor="n")
+    tk.Label(body, text=message or "", justify=tk.LEFT, wraplength=380,
+             font=("Segoe UI", 10)).pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    btn_frame = tk.Frame(dialog)
+    btn_frame.pack(fill=tk.X, padx=14, pady=(0, 14))
+
+    default_btn = None
+    for label, value in buttons:
+        is_default = value == default_value
+        btn = tk.Button(
+            btn_frame, text=label, width=10,
+            command=lambda v=value: finish(v),
+            default=(tk.ACTIVE if is_default else tk.NORMAL))
+        btn.pack(side=tk.RIGHT, padx=4)
+        if is_default:
+            default_btn = btn
+
+    if default_btn is not None:
+        default_btn.focus_set()
+
+    dialog.protocol("WM_DELETE_WINDOW", lambda: finish(escape_value))
+    dialog.bind("<Escape>", lambda _e: finish(escape_value))
+    dialog.bind("<Return>", lambda _e: finish(default_value))
+
+    # 尺寸与居中(优先居中于父窗口)
+    dialog.update_idletasks()
+    w, h = dialog.winfo_reqwidth(), dialog.winfo_reqheight()
+    try:
+        if root is not None and root.winfo_exists():
+            x = root.winfo_rootx() + (root.winfo_width() - w) // 2
+            y = root.winfo_rooty() + (root.winfo_height() - h) // 2
+        else:
+            x = (dialog.winfo_screenwidth() - w) // 2
+            y = (dialog.winfo_screenheight() - h) // 2
+    except Exception:
+        x = y = 80
+    dialog.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+    dialog.grab_set()
+    dialog.wait_window()
+    return holder["value"]
+
+
+def _show_dialog(kind, title, message, icon=None, parent=None):
+    """统一的对话框入口(便于测试替换)。"""
+    icon_kind = _resolve_dialog_icon(kind, icon)
+    buttons, default_value, escape_value = _dialog_buttons(kind)
+    return _run_dialog(title, message, icon_kind, parent,
+                       buttons, default_value, escape_value)
+
+
 def _translate_messagebox_args(args, kwargs):
     if args and isinstance(args[0], str):
         args = (tr(args[0]),) + tuple(args[1:])
@@ -464,26 +587,48 @@ def _translate_messagebox_args(args, kwargs):
     return args, kwargs
 
 
+def _title_message(args, kwargs):
+    title = kwargs.get("title", args[0] if args else "")
+    if len(args) > 1:
+        message = args[1]
+    else:
+        message = kwargs.get("message", "")
+    return title, message
+
+
 def showinfo(*args, **kwargs):
     args, kwargs = _translate_messagebox_args(args, kwargs)
-    return messagebox.showinfo(*args, **kwargs)
+    title, message = _title_message(args, kwargs)
+    _show_dialog("info", title, message,
+                 icon=kwargs.get("icon"), parent=kwargs.get("parent"))
+    return "ok"
 
 
 def showwarning(*args, **kwargs):
     args, kwargs = _translate_messagebox_args(args, kwargs)
-    return messagebox.showwarning(*args, **kwargs)
+    title, message = _title_message(args, kwargs)
+    _show_dialog("warning", title, message,
+                 icon=kwargs.get("icon"), parent=kwargs.get("parent"))
+    return "ok"
 
 
 def showerror(*args, **kwargs):
     args, kwargs = _translate_messagebox_args(args, kwargs)
-    return messagebox.showerror(*args, **kwargs)
+    title, message = _title_message(args, kwargs)
+    _show_dialog("error", title, message,
+                 icon=kwargs.get("icon"), parent=kwargs.get("parent"))
+    return "ok"
 
 
 def askyesno(*args, **kwargs):
     args, kwargs = _translate_messagebox_args(args, kwargs)
-    return messagebox.askyesno(*args, **kwargs)
+    title, message = _title_message(args, kwargs)
+    return _show_dialog("askyesno", title, message,
+                        icon=kwargs.get("icon"), parent=kwargs.get("parent"))
 
 
 def askyesnocancel(*args, **kwargs):
     args, kwargs = _translate_messagebox_args(args, kwargs)
-    return messagebox.askyesnocancel(*args, **kwargs)
+    title, message = _title_message(args, kwargs)
+    return _show_dialog("askyesnocancel", title, message,
+                        icon=kwargs.get("icon"), parent=kwargs.get("parent"))

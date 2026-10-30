@@ -153,12 +153,15 @@ class DynamicMessageI18nTests(unittest.TestCase):
                     app._on_language_change()
                     app.current_step = 0
                     app.ssh._connected = False
-                    # Patch the underlying Tk messagebox so the i18n wrapper
-                    # runs and we can assert the *translated* arguments.
-                    with mock.patch("i18n.messagebox.showwarning") as warn:
+                    # Patch the dialog entry point so the i18n wrapper runs
+                    # and we can assert the *translated* arguments.
+                    with mock.patch("i18n._show_dialog") as show:
                         app._next_step()
-                    warn.assert_called_once_with(
-                        "Notice", "Please connect to the remote host first")
+                    kind, title, message = show.call_args.args[:3]
+                    self.assertEqual(kind, "warning")
+                    self.assertEqual(title, "Notice")
+                    self.assertEqual(
+                        message, "Please connect to the remote host first")
                 finally:
                     app.root.destroy()
 
@@ -175,15 +178,19 @@ class DynamicMessageI18nTests(unittest.TestCase):
                     docker.container_name = "aisbench-test-abc"
                     docker.container_is_running.return_value = True
                     app.docker = docker
-                    with mock.patch("i18n.messagebox.askyesnocancel") as ask:
+                    with mock.patch("i18n._show_dialog") as ask:
                         ask.return_value = None
                         app._exit_check_cleanup()
-                    args, kwargs = ask.call_args
-                    self.assertEqual(args[0], "Cleanup reminder")
-                    self.assertIn("The Docker container is still running!", args[1])
-                    self.assertIn("Container: aisbench-test-abc", args[1])
-                    self.assertIn("Temporary deploy directory leftovers: /tmp/aisbench_deploy", args[1])
-                    self.assertIn("Clean up the remote environment before exiting?", args[1])
+                    args, _kwargs = ask.call_args
+                    self.assertEqual(args[0], "askyesnocancel")
+                    self.assertEqual(args[1], "Cleanup reminder")
+                    self.assertIn("The Docker container is still running!", args[2])
+                    self.assertIn("Container: aisbench-test-abc", args[2])
+                    self.assertIn(
+                        "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
+                        args[2])
+                    self.assertIn(
+                        "Clean up the remote environment before exiting?", args[2])
                 finally:
                     app.root.destroy()
 
@@ -310,6 +317,86 @@ class LanguageSwitchPreservesStateTests(unittest.TestCase):
                     self.assertTrue(app.deployed)
                 finally:
                     app.root.destroy()
+
+
+class DialogButtonI18nTests(unittest.TestCase):
+    """Dialog buttons (OK/Cancel/Yes/No) must follow the selected language."""
+
+    def tearDown(self):
+        i18n.set_language("zh")
+
+    def test_button_definitions_by_language(self):
+        i18n.set_language("zh")
+        buttons, default, escape = i18n._dialog_buttons("askyesnocancel")
+        self.assertEqual([b[0] for b in buttons], ["是", "否", "取消"])
+        self.assertEqual(default, True)
+        self.assertEqual(escape, None)
+
+        i18n.set_language("en")
+        buttons, default, escape = i18n._dialog_buttons("askyesnocancel")
+        self.assertEqual([b[0] for b in buttons], ["Yes", "No", "Cancel"])
+
+        buttons, default, escape = i18n._dialog_buttons("askyesno")
+        self.assertEqual([b[0] for b in buttons], ["Yes", "No"])
+        self.assertEqual(default, True)
+        self.assertEqual(escape, False)
+
+        buttons, default, escape = i18n._dialog_buttons("info")
+        self.assertEqual([b[0] for b in buttons], ["OK"])
+        self.assertEqual(escape, "ok")
+
+    def _collect_button_texts(self, root):
+        texts = []
+        for child in root.winfo_children():
+            if isinstance(child, tk.Toplevel):
+                for sub in child.winfo_children():
+                    for w in sub.winfo_children():
+                        if isinstance(w, tk.Button):
+                            texts.append(w.cget("text"))
+        return texts
+
+    def test_askyesno_renders_english_buttons(self):
+        root = tk.Tk()
+        try:
+            i18n.set_language("en")
+            with mock.patch.object(tk.Toplevel, "wait_window", lambda self: None):
+                result = i18n.askyesno("Notice", "Continue?")
+            # No button clicked -> escape semantics (False), dialog still open
+            self.assertFalse(result)
+            self.assertEqual(set(self._collect_button_texts(root)), {"Yes", "No"})
+        finally:
+            for child in root.winfo_children():
+                if isinstance(child, tk.Toplevel):
+                    child.destroy()
+            root.destroy()
+
+    def test_askyesno_renders_chinese_buttons(self):
+        root = tk.Tk()
+        try:
+            i18n.set_language("zh")
+            with mock.patch.object(tk.Toplevel, "wait_window", lambda self: None):
+                result = i18n.askyesno("提示", "继续?")
+            self.assertFalse(result)
+            self.assertEqual(set(self._collect_button_texts(root)), {"是", "否"})
+        finally:
+            for child in root.winfo_children():
+                if isinstance(child, tk.Toplevel):
+                    child.destroy()
+            root.destroy()
+
+    def test_showinfo_renders_english_button(self):
+        root = tk.Tk()
+        try:
+            i18n.set_language("en")
+            with mock.patch.object(tk.Toplevel, "wait_window", lambda self: None):
+                result = i18n.showwarning("Notice", "Check the settings")
+            self.assertEqual(result, "ok")
+            self.assertEqual(set(self._collect_button_texts(root)), {"OK"})
+        finally:
+            for child in root.winfo_children():
+                if isinstance(child, tk.Toplevel):
+                    child.destroy()
+            root.destroy()
 
 
 if __name__ == "__main__":

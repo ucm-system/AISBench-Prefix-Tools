@@ -28,6 +28,22 @@ from test_designer import TestDesigner
 from log_parser import parse_log_directory
 from log_tools import RemoteLogBrowser, KV_GREP_COMMAND
 from result_compare import ResultCompareDialog
+from i18n import (
+    LocalizedButton,
+    LocalizedCheckbutton,
+    LocalizedLabel,
+    LocalizedRadiobutton,
+    LocalizedTtkButton,
+    SUPPORTED_LANGUAGES,
+    askyesno,
+    askyesnocancel,
+    get_language,
+    set_language,
+    showerror,
+    showinfo,
+    showwarning,
+)
+from settings_manager import load_settings, save_settings
 
 
 # ============================================================
@@ -214,6 +230,12 @@ class WizardApp:
         self.config_mgr: Optional[ConfigManager] = None
         self.designer = TestDesigner()
 
+        # 用户偏好: 界面语言(中文/English)
+        self.settings = load_settings()
+        language_code = str(self.settings.get("language", "zh"))
+        self.language_var = tk.StringVar(value=SUPPORTED_LANGUAGES.get(language_code, "中文"))
+        set_language(language_code)
+
         # 状态变量
         self.current_step = 0
         self.config_data = {}
@@ -260,6 +282,7 @@ class WizardApp:
         # 主容器
         main_frame = tk.Frame(self.root, bg=COLOR_BG)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+        self.main_frame = main_frame
 
         # 左侧步骤导航
         self._build_sidebar(main_frame)
@@ -276,7 +299,7 @@ class WizardApp:
         sidebar.pack_propagate(False)
 
         # 标题
-        title_lbl = tk.Label(sidebar, text="AISBench\nPrefixTools", bg=COLOR_CARD,
+        title_lbl = LocalizedLabel(sidebar, text="AISBench\nPrefixTools", bg=COLOR_CARD,
                             fg=COLOR_PRIMARY, font=("Segoe UI", 14, "bold"),
                             justify=tk.LEFT)
         title_lbl.pack(padx=16, pady=(20, 16), anchor=tk.W)
@@ -287,11 +310,11 @@ class WizardApp:
             btn_frame = tk.Frame(sidebar, bg=COLOR_CARD)
             btn_frame.pack(fill=tk.X, padx=8, pady=2)
 
-            indicator = tk.Label(btn_frame, text="○", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            indicator = LocalizedLabel(btn_frame, text="○", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                 font=("Segoe UI", 12))
             indicator.pack(side=tk.LEFT, padx=(8, 6))
 
-            label = tk.Label(btn_frame, text=f"{i+1}. {title}", bg=COLOR_CARD,
+            label = LocalizedLabel(btn_frame, text=f"{i+1}. {title}", bg=COLOR_CARD,
                            fg=COLOR_TEXT_MUTED, font=("Segoe UI", 10),
                            cursor="hand2")
             label.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -309,7 +332,7 @@ class WizardApp:
         # 独立工具: 结果对比分析 (无需连接服务器, 随时可用)
         tools_frame = tk.Frame(sidebar, bg=COLOR_CARD)
         tools_frame.pack(fill=tk.X, padx=8, pady=(18, 0))
-        compare_btn = tk.Label(tools_frame, text="📊 结果对比分析",
+        compare_btn = LocalizedLabel(tools_frame, text="📊 结果对比分析",
                                bg="#eff6ff", fg=COLOR_PRIMARY,
                                font=("Segoe UI", 10, "bold"), cursor="hand2",
                                padx=10, pady=6)
@@ -317,13 +340,30 @@ class WizardApp:
         compare_btn.bind("<Button-1>", lambda _e: self._open_result_compare())
         compare_btn.bind("<Enter>", lambda _e: compare_btn.config(bg="#dbeafe"))
         compare_btn.bind("<Leave>", lambda _e: compare_btn.config(bg="#eff6ff"))
-        tk.Label(sidebar, text="无需连接服务器", bg=COLOR_CARD,
+        LocalizedLabel(sidebar, text="无需连接服务器", bg=COLOR_CARD,
                  fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7)
                  ).pack(padx=18, anchor=tk.W)
 
+        # 界面语言切换
+        lang_frame = tk.Frame(sidebar, bg=COLOR_CARD)
+        lang_frame.pack(fill=tk.X, padx=8, pady=(14, 0))
+        LocalizedLabel(lang_frame, text="语言 / Language:", bg=COLOR_CARD,
+                       fg=COLOR_TEXT, font=("Segoe UI", 9)
+                       ).pack(anchor=tk.W)
+        self.language_combo = ttk.Combobox(
+            lang_frame,
+            textvariable=self.language_var,
+            values=list(SUPPORTED_LANGUAGES.values()),
+            state="readonly",
+            width=12,
+            font=("Segoe UI", 9),
+        )
+        self.language_combo.pack(fill=tk.X, pady=(2, 0))
+        self.language_combo.bind("<<ComboboxSelected>>", self._on_language_change)
+
         # 底部状态
         tk.Frame(sidebar, bg=COLOR_BORDER, height=1).pack(fill=tk.X, padx=12, pady=12)
-        self.status_lbl = tk.Label(sidebar, text="● 未连接", bg=COLOR_CARD,
+        self.status_lbl = LocalizedLabel(sidebar, text="● 未连接", bg=COLOR_CARD,
                                    fg=COLOR_ERROR, font=("Segoe UI", 9))
         self.status_lbl.pack(padx=16, pady=(0, 16), anchor=tk.W)
 
@@ -331,16 +371,55 @@ class WizardApp:
         """返回用户可达到的最大步骤"""
         return self.current_step
 
+    def _on_language_change(self, _event=None):
+        """切换界面语言并立即重建界面"""
+        selected = self.language_var.get().strip()
+        code = next((key for key, label in SUPPORTED_LANGUAGES.items()
+                     if label == selected), "zh")
+        if code == get_language():
+            return
+        set_language(code)
+        self.settings["language"] = code
+        save_settings(self.settings)
+        self._rebuild_ui_for_language()
+
+    def _rebuild_ui_for_language(self):
+        """按当前语言重建主界面(保留业务状态和日志内容)"""
+        self.language_var.set(SUPPORTED_LANGUAGES.get(get_language(), "中文"))
+        docker_text = ""
+        exec_text = ""
+        if hasattr(self, "docker_log"):
+            docker_text = self.docker_log.get("1.0", "end-1c")
+        if hasattr(self, "exec_log"):
+            exec_text = self.exec_log.get("1.0", "end-1c")
+
+        if hasattr(self, "main_frame"):
+            self.main_frame.destroy()
+        try:
+            self.root.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
+
+        self._build_ui()
+        self._docker_log_handler = LiveLogHandler(self.docker_log)
+        self._exec_log_handler = LiveLogHandler(self.exec_log)
+        if docker_text:
+            self.docker_log.insert("1.0", docker_text)
+        if exec_text:
+            self.exec_log.insert("1.0", exec_text)
+        self._show_step(self.current_step)
+        self.root.update_idletasks()
+
     def _build_content_area(self, parent):
         """构建右侧内容区 (可滚动 + 导航栏固定底部)"""
         # 导航栏 (固定在底部)
         nav_frame = tk.Frame(parent, bg=COLOR_BG)
         nav_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
 
-        self.prev_btn = ttk.Button(nav_frame, text="< 上一步", command=self._prev_step)
+        self.prev_btn = LocalizedTtkButton(nav_frame, text="< 上一步", command=self._prev_step)
         self.prev_btn.pack(side=tk.LEFT)
 
-        self.next_btn = ttk.Button(nav_frame, text="下一步 >", command=self._next_step,
+        self.next_btn = LocalizedTtkButton(nav_frame, text="下一步 >", command=self._next_step,
                                    style="Accent.TButton")
         self.next_btn.pack(side=tk.RIGHT)
 
@@ -430,10 +509,10 @@ class WizardApp:
         header = tk.Frame(parent, bg=COLOR_BG)
         header.pack(fill=tk.X, pady=(0, 12))
 
-        tk.Label(header, text=title, bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(header, text=title, bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 16, "bold")).pack(anchor=tk.W)
         if desc:
-            tk.Label(header, text=desc, bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
+            LocalizedLabel(header, text=desc, bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                    font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(2, 0))
 
     # ============================================================
@@ -456,7 +535,7 @@ class WizardApp:
         ]
         self.conn_vars = {}
         for i, (label, key, default) in enumerate(fields):
-            tk.Label(form, text=label, bg=COLOR_CARD, fg=COLOR_TEXT,
+            LocalizedLabel(form, text=label, bg=COLOR_CARD, fg=COLOR_TEXT,
                    font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W,
                                                padx=16, pady=8)
             var = tk.StringVar(value=default)
@@ -464,7 +543,7 @@ class WizardApp:
             entry = tk.Entry(form, textvariable=var, width=30, font=("Segoe UI", 9))
             entry.grid(row=i, column=1, padx=16, pady=8, sticky=tk.W)
 
-        tk.Label(form, text="密码", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="密码", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=3, column=0, sticky=tk.W, padx=16, pady=8)
         self.conn_password = tk.StringVar()
         pw_frame = tk.Frame(form, bg=COLOR_CARD)
@@ -481,32 +560,32 @@ class WizardApp:
                 pw_entry.config(show='*')
                 pw_eye_btn.config(text='👁')
 
-        pw_eye_btn = tk.Button(pw_frame, text='👁', font=("Segoe UI", 8),
+        pw_eye_btn = LocalizedButton(pw_frame, text='👁', font=("Segoe UI", 8),
                                width=3, relief=tk.FLAT, bg=COLOR_CARD,
                                fg=COLOR_TEXT_MUTED, command=_toggle_pw)
         pw_eye_btn.pack(side=tk.LEFT, padx=(4, 0))
 
-        tk.Label(form, text="或密钥文件路径", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="或密钥文件路径", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=4, column=0, sticky=tk.W, padx=16, pady=8)
         key_frame = tk.Frame(form, bg=COLOR_CARD)
         key_frame.grid(row=4, column=1, padx=16, pady=8, sticky=tk.W)
         self.conn_key = tk.StringVar()
         tk.Entry(key_frame, textvariable=self.conn_key, width=22,
                font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        tk.Button(key_frame, text="浏览...", command=self._browse_key_file,
+        LocalizedButton(key_frame, text="浏览...", command=self._browse_key_file,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
         # 连接按钮
         btn_frame = tk.Frame(frame, bg=COLOR_BG)
         btn_frame.pack(fill=tk.X, pady=12)
 
-        self.connect_btn = tk.Button(btn_frame, text="测试连接", bg=COLOR_PRIMARY,
+        self.connect_btn = LocalizedButton(btn_frame, text="测试连接", bg=COLOR_PRIMARY,
                                     fg="white", font=("Segoe UI", 9, "bold"),
                                     relief=tk.FLAT, padx=16, pady=4,
                                     command=self._test_connection)
         self.connect_btn.pack(side=tk.LEFT)
 
-        self.conn_status_lbl = tk.Label(btn_frame, text="", bg=COLOR_BG,
+        self.conn_status_lbl = LocalizedLabel(btn_frame, text="", bg=COLOR_BG,
                                         fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         self.conn_status_lbl.pack(side=tk.LEFT, padx=12)
 
@@ -526,10 +605,10 @@ class WizardApp:
         key_path = self.conn_key.get().strip() or None
 
         if not host or not user:
-            messagebox.showwarning("提示", "请填写IP和用户名")
+            showwarning("提示", "请填写IP和用户名")
             return
         if not password and not key_path:
-            messagebox.showwarning("提示", "请填写密码或密钥文件路径")
+            showwarning("提示", "请填写密码或密钥文件路径")
             return
 
         self.connect_btn.config(state=tk.DISABLED, text="连接中...")
@@ -547,12 +626,12 @@ class WizardApp:
             self.conn_status_lbl.config(text=msg, fg=COLOR_SUCCESS)
             self.status_lbl.config(text="● 已连接", fg=COLOR_SUCCESS)
             self.host_ip_var.set(self.conn_vars["host"].get().strip())
-            messagebox.showinfo("成功", msg)
+            showinfo("成功", msg)
             # 连接成功后自动扫描上次退出可能遗留的容器
             self._start_residual_scan(prompt_if_found=True)
         else:
             self.conn_status_lbl.config(text=msg, fg=COLOR_ERROR)
-            messagebox.showerror("连接失败", msg)
+            showerror("连接失败", msg)
 
     # ============================================================
     #  Step 1: Docker部署与模型配置
@@ -570,15 +649,15 @@ class WizardApp:
         row = 0
 
         # AISBench镜像来源: 优先复用执行机已有镜像; 没有可用镜像时再上传tar包
-        tk.Label(form, text="AISBench 镜像来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="AISBench 镜像来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         source_frame = tk.Frame(form, bg=COLOR_CARD)
         source_frame.grid(row=row, column=1, columnspan=2,
                           padx=16, pady=(8, 2), sticky=tk.W)
-        tk.Radiobutton(source_frame, text="执行机已有镜像", variable=self.image_source_var,
+        LocalizedRadiobutton(source_frame, text="执行机已有镜像", variable=self.image_source_var,
                        value="existing", bg=COLOR_CARD, font=("Segoe UI", 9),
                        command=self._on_image_source_change).pack(side=tk.LEFT)
-        tk.Radiobutton(source_frame, text="上传本地镜像tar包", variable=self.image_source_var,
+        LocalizedRadiobutton(source_frame, text="上传本地镜像tar包", variable=self.image_source_var,
                        value="upload", bg=COLOR_CARD, font=("Segoe UI", 9),
                        command=self._on_image_source_change).pack(side=tk.LEFT, padx=(12, 0))
 
@@ -598,7 +677,7 @@ class WizardApp:
                                                state="readonly")
         self.remote_image_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.remote_image_combo.bind("<<ComboboxSelected>>", self._on_remote_image_selected)
-        tk.Button(remote_combo_row, text="查看已有镜像", font=("Segoe UI", 8),
+        LocalizedButton(remote_combo_row, text="查看已有镜像", font=("Segoe UI", 8),
                   command=self._refresh_remote_images).pack(side=tk.LEFT, padx=(4, 0))
 
         self.tar_upload_frame = tk.Frame(image_choice_frame, bg=COLOR_CARD)
@@ -607,13 +686,13 @@ class WizardApp:
         self.tar_path = tk.StringVar()
         tk.Entry(self.tar_upload_frame, textvariable=self.tar_path, width=50,
                  font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(self.tar_upload_frame, text="浏览...", command=self._browse_tar,
+        LocalizedButton(self.tar_upload_frame, text="浏览...", command=self._browse_tar,
                   font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
-        tk.Button(self.tar_upload_frame, text="镜像下载链接", command=lambda: self._open_link(
+        LocalizedButton(self.tar_upload_frame, text="镜像下载链接", command=lambda: self._open_link(
                 "https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master"),
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
-        self.image_list_status = tk.Label(image_choice_frame, text="尚未查询",
+        self.image_list_status = LocalizedLabel(image_choice_frame, text="尚未查询",
                                           bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                           font=("Segoe UI", 8), anchor=tk.W)
         self.image_list_status.grid(row=1, column=0, sticky=tk.EW, pady=(2, 0))
@@ -621,16 +700,16 @@ class WizardApp:
         row += 1
 
         # 测试代码来源: 程序内置 / 本地zip包
-        tk.Label(form, text="测试代码来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="测试代码来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         source_frame = tk.Frame(form, bg=COLOR_CARD)
         source_frame.grid(row=row, column=1, columnspan=2, padx=16, pady=(8, 2), sticky=tk.W)
 
         self.code_source_var = tk.StringVar(value="builtin")
-        tk.Radiobutton(source_frame, text="程序内置", variable=self.code_source_var,
+        LocalizedRadiobutton(source_frame, text="程序内置", variable=self.code_source_var,
                        value="builtin", bg=COLOR_CARD, font=("Segoe UI", 9),
                        command=self._on_code_source_change).pack(side=tk.LEFT)
-        tk.Radiobutton(source_frame, text="本地zip包", variable=self.code_source_var,
+        LocalizedRadiobutton(source_frame, text="本地zip包", variable=self.code_source_var,
                        value="zip", bg=COLOR_CARD, font=("Segoe UI", 9),
                        command=self._on_code_source_change).pack(side=tk.LEFT, padx=(12, 0))
 
@@ -643,7 +722,7 @@ class WizardApp:
         code_dir = self._get_bundled_code_dir()
         code_desc = "aisbench_auto_tools_prefix (程序内置, 部署时自动上传)" \
             if os.path.isdir(code_dir) else "未找到内置代码! 请改用本地zip包"
-        tk.Label(self.code_builtin_frame, text=code_desc,
+        LocalizedLabel(self.code_builtin_frame, text=code_desc,
                  bg=COLOR_CARD, fg=(COLOR_TEXT if os.path.isdir(code_dir) else COLOR_ERROR),
                  font=("Segoe UI", 8), anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
@@ -654,29 +733,29 @@ class WizardApp:
         self.zip_path = tk.StringVar()
         tk.Entry(self.code_zip_frame, textvariable=self.zip_path, width=50,
                font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(self.code_zip_frame, text="浏览...", command=self._browse_zip,
+        LocalizedButton(self.code_zip_frame, text="浏览...", command=self._browse_zip,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
-        tk.Button(self.code_zip_frame, text="代码下载链接", command=lambda: self._open_link(
+        LocalizedButton(self.code_zip_frame, text="代码下载链接", command=lambda: self._open_link(
                 "https://github.com/rayn-zzz/aisbench_auto_tools_prefix"),
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
         row += 1
 
         # 模型路径（下拉框 + 浏览）
-        tk.Label(form, text="模型权重路径 (远程主机):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="模型权重路径 (远程主机):", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         model_frame = tk.Frame(form, bg=COLOR_CARD)
         model_frame.grid(row=row, column=1, columnspan=2, padx=16, pady=8, sticky=tk.EW)
         self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_path_var,
                                         width=48, font=("Segoe UI", 9))
         self.model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(model_frame, text="浏览远程目录", command=self._browse_remote_model,
+        LocalizedButton(model_frame, text="浏览远程目录", command=self._browse_remote_model,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
         row += 1
 
         # 模型名称
-        tk.Label(form, text="模型名称 (--served-model-name):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="模型名称 (--served-model-name):", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         tk.Entry(form, textvariable=self.model_name_var, width=30,
                font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
@@ -684,21 +763,21 @@ class WizardApp:
         row += 1
 
         # 服务IP和端口
-        tk.Label(form, text="vLLM服务 IP:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="vLLM服务 IP:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         tk.Entry(form, textvariable=self.host_ip_var, width=20,
                font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
 
         row += 1
 
-        tk.Label(form, text="vLLM服务端口:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="vLLM服务端口:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         tk.Entry(form, textvariable=self.host_port_var, width=20,
                font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
 
         row += 1
 
-        tk.Label(form, text="API Key (鉴权, 可选):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(form, text="API Key (鉴权, 可选):", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
         tk.Entry(form, textvariable=self.api_key_var, width=30,
                font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
@@ -717,7 +796,7 @@ class WizardApp:
     def _refresh_remote_images(self):
         """查询并填充执行机上已有的Docker镜像"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
 
         if not self.docker:
@@ -810,7 +889,7 @@ class WizardApp:
     def _browse_remote_model(self):
         """远程目录浏览对话框"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
 
         dialog = tk.Toplevel(self.root)
@@ -821,11 +900,11 @@ class WizardApp:
 
         top = tk.Frame(dialog)
         top.pack(fill=tk.X, padx=8, pady=8)
-        tk.Label(top, text="路径:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        LocalizedLabel(top, text="路径:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
         path_var = tk.StringVar(value="/")
         path_entry = tk.Entry(top, textvariable=path_var, width=50, font=("Segoe UI", 9))
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        tk.Button(top, text="前往", font=("Segoe UI", 8),
+        LocalizedButton(top, text="前往", font=("Segoe UI", 8),
                  command=lambda: self._list_remote_dir(listbox, path_var, dialog)).pack(side=tk.LEFT)
 
         list_frame = tk.Frame(dialog)
@@ -862,10 +941,10 @@ class WizardApp:
         # 选择按钮
         btn_frame = tk.Frame(dialog)
         btn_frame.pack(fill=tk.X, padx=8, pady=8)
-        tk.Button(btn_frame, text="选择当前目录", bg=COLOR_PRIMARY, fg="white",
+        LocalizedButton(btn_frame, text="选择当前目录", bg=COLOR_PRIMARY, fg="white",
                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12,
                  command=lambda: self._select_remote_path(path_var.get(), dialog)).pack(side=tk.RIGHT)
-        tk.Button(btn_frame, text="取消", font=("Segoe UI", 9),
+        LocalizedButton(btn_frame, text="取消", font=("Segoe UI", 9),
                  command=dialog.destroy).pack(side=tk.RIGHT, padx=8)
 
         self._list_remote_dir(listbox, path_var, dialog)
@@ -906,9 +985,9 @@ class WizardApp:
 
         deploy_header = tk.Frame(frame, bg=COLOR_BG)
         deploy_header.pack(fill=tk.X, pady=(12, 8))
-        tk.Label(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
                  font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
-        tk.Label(deploy_header,
+        LocalizedLabel(deploy_header,
                  text="已有镜像直接复用；代码先暂存宿主机，容器创建后导入容器并自动删除暂存目录",
                  bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9)).pack(anchor=tk.W)
 
@@ -916,7 +995,7 @@ class WizardApp:
         workdir_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         workdir_frame.pack(fill=tk.X, pady=(8, 4))
 
-        tk.Label(workdir_frame, text="临时部署目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(workdir_frame, text="临时部署目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).grid(row=0, column=0, sticky=tk.W, padx=16, pady=8)
 
         self.work_dir_var = tk.StringVar(value="/tmp/AISBench_Prefix_Tools")
@@ -924,21 +1003,21 @@ class WizardApp:
                font=("Segoe UI", 9)).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=8)
         workdir_frame.columnconfigure(1, weight=1)
 
-        self.work_dir_status = tk.Label(workdir_frame, text="", bg=COLOR_CARD,
+        self.work_dir_status = LocalizedLabel(workdir_frame, text="", bg=COLOR_CARD,
                                         fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         self.work_dir_status.grid(row=0, column=2, padx=8, pady=8)
 
         # 检查目录 + 清理目录 按钮
         wd_btn_frame = tk.Frame(workdir_frame, bg=COLOR_CARD)
         wd_btn_frame.grid(row=0, column=3, padx=(0, 16), pady=8)
-        tk.Button(wd_btn_frame, text="检查目录", font=("Segoe UI", 8),
+        LocalizedButton(wd_btn_frame, text="检查目录", font=("Segoe UI", 8),
                 command=self._check_work_dir).pack(side=tk.LEFT, padx=2)
-        self.clean_work_dir_btn = tk.Button(wd_btn_frame, text="清理目录", font=("Segoe UI", 8),
+        self.clean_work_dir_btn = LocalizedButton(wd_btn_frame, text="清理目录", font=("Segoe UI", 8),
                 bg=COLOR_ERROR, fg="white", relief=tk.FLAT,
                 command=self._clean_work_dir, state=tk.DISABLED)
         self.clean_work_dir_btn.pack(side=tk.LEFT, padx=2)
 
-        tk.Label(workdir_frame,
+        LocalizedLabel(workdir_frame,
                  text="仅部署期间暂存镜像tar/测试代码，代码导入容器后自动删除，不保留在宿主机",
                  bg=COLOR_CARD, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)
                  ).grid(row=1, column=0, columnspan=4, sticky=tk.W, padx=16, pady=(0, 6))
@@ -947,11 +1026,11 @@ class WizardApp:
         residual_frame = tk.Frame(workdir_frame, bg=COLOR_CARD)
         residual_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W,
                             padx=16, pady=(0, 8))
-        tk.Button(residual_frame, text="清理残留容器", font=("Segoe UI", 8),
+        LocalizedButton(residual_frame, text="清理残留容器", font=("Segoe UI", 8),
                   bg=COLOR_ERROR, fg="white", relief=tk.FLAT,
                   command=self._open_residual_container_dialog
                   ).pack(side=tk.LEFT)
-        self.residual_status_lbl = tk.Label(residual_frame, text="未扫描",
+        self.residual_status_lbl = LocalizedLabel(residual_frame, text="未扫描",
                                              bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                              font=("Segoe UI", 8))
         self.residual_status_lbl.pack(side=tk.LEFT, padx=8)
@@ -969,9 +1048,9 @@ class WizardApp:
             ("镜像名称:", "image"),
         ]
         for i, (label, key) in enumerate(info_items):
-            tk.Label(info_frame, text=label, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            LocalizedLabel(info_frame, text=label, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                    font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=16, pady=4)
-            val_lbl = tk.Label(info_frame, text="-", bg=COLOR_CARD, fg=COLOR_TEXT,
+            val_lbl = LocalizedLabel(info_frame, text="-", bg=COLOR_CARD, fg=COLOR_TEXT,
                              font=("Segoe UI", 9))
             val_lbl.grid(row=i, column=1, sticky=tk.W, padx=16, pady=4)
             self.docker_info_labels[key] = val_lbl
@@ -982,13 +1061,13 @@ class WizardApp:
         btn_frame = tk.Frame(frame, bg=COLOR_BG)
         btn_frame.pack(fill=tk.X, pady=8)
 
-        self.deploy_btn = tk.Button(btn_frame, text="开始部署", bg=COLOR_PRIMARY,
+        self.deploy_btn = LocalizedButton(btn_frame, text="开始部署", bg=COLOR_PRIMARY,
                                     fg="white", font=("Segoe UI", 10, "bold"),
                                     relief=tk.FLAT, padx=20, pady=6,
                                     command=self._start_deploy)
         self.deploy_btn.pack(side=tk.LEFT)
 
-        self.cancel_deploy_btn = tk.Button(btn_frame, text="取消", bg=COLOR_ERROR,
+        self.cancel_deploy_btn = LocalizedButton(btn_frame, text="取消", bg=COLOR_ERROR,
                                            fg="white", font=("Segoe UI", 9),
                                            relief=tk.FLAT, padx=12, pady=6,
                                            command=self._cancel_deploy,
@@ -996,7 +1075,7 @@ class WizardApp:
         self.cancel_deploy_btn.pack(side=tk.LEFT, padx=8)
 
         # 日志输出
-        tk.Label(frame, text="部署日志:", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(frame, text="部署日志:", bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(8, 4))
 
         self.docker_log = scrolledtext.ScrolledText(frame, height=14,
@@ -1014,17 +1093,17 @@ class WizardApp:
         try:
             webbrowser.open(url)
         except Exception as e:
-            messagebox.showerror("打开失败", f"无法打开链接: {url}\n{e}")
+            showerror("打开失败", f"无法打开链接: {url}\n{e}")
 
     def _check_work_dir(self):
         """检查临时部署目录是否存在(旧版本/失败部署可能残留)"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
 
         work_dir = self.work_dir_var.get().strip()
         if not work_dir:
-            messagebox.showwarning("提示", "请输入临时部署目录路径")
+            showwarning("提示", "请输入临时部署目录路径")
             return
 
         # 临时设置 remote_work_base 来检查
@@ -1040,7 +1119,7 @@ class WizardApp:
                 self.work_dir_status.config(
                     text="⚠ 已存在且有内容", fg=COLOR_ERROR)
                 self.clean_work_dir_btn.config(state=tk.NORMAL)
-                choice = messagebox.askyesnocancel(
+                choice = askyesnocancel(
                     "临时目录已存在",
                     f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
                     f"目录内容:\n{out[:200]}\n\n"
@@ -1077,19 +1156,19 @@ class WizardApp:
         ok = self.docker.remove_work_dir()
         if ok:
             self.work_dir_status.config(text="已清理", fg=COLOR_SUCCESS)
-            messagebox.showinfo("成功", f"已清理: {work_dir}")
+            showinfo("成功", f"已清理: {work_dir}")
         else:
             self.work_dir_status.config(text="清理失败", fg=COLOR_ERROR)
-            messagebox.showerror("失败", f"清理失败: {work_dir}")
+            showerror("失败", f"清理失败: {work_dir}")
 
     def _clean_work_dir(self):
         """清理临时部署目录按钮回调"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
 
         work_dir = self.work_dir_var.get().strip()
-        if not messagebox.askyesno("确认清理",
+        if not askyesno("确认清理",
                                    f"确定要清理临时部署目录吗?\n\n{work_dir}\n\n"
                                    f"这将删除残留的暂存文件（镜像tar、代码包等），\n"
                                    f"并停止当前会话创建的容器。\n"
@@ -1136,7 +1215,7 @@ class WizardApp:
                 f"  {c['name']}  [{c['status']}]" for c in residuals[:10])
             if len(residuals) > 10:
                 listing += "\n  ..."
-            if messagebox.askyesno(
+            if askyesno(
                     "发现残留容器",
                     f"检测到 {len(residuals)} 个本工具创建的历史容器:\n\n"
                     f"{listing}\n\n"
@@ -1148,7 +1227,7 @@ class WizardApp:
     def _open_residual_container_dialog(self):
         """打开残留容器清理窗口(支持跨会话清理 aisbench-test-* 容器)"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
         if not self.docker:
             self.docker = DockerManager(self.ssh)
@@ -1159,10 +1238,10 @@ class WizardApp:
         dialog.transient(self.root)
         dialog.configure(bg=COLOR_BG)
 
-        tk.Label(dialog, text="本工具创建的容器 (aisbench-test-*)",
+        LocalizedLabel(dialog, text="本工具创建的容器 (aisbench-test-*)",
                  bg=COLOR_BG, fg=COLOR_TEXT,
                  font=("Segoe UI", 12, "bold")).pack(anchor=tk.W, padx=16, pady=(12, 4))
-        tk.Label(dialog,
+        LocalizedLabel(dialog,
                  text="点击行切换勾选，可清理上次退出时未删除的容器；仅显示本工具创建的容器",
                  bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 9)).pack(anchor=tk.W, padx=16)
@@ -1205,10 +1284,10 @@ class WizardApp:
         option_frame = tk.Frame(dialog, bg=COLOR_BG)
         option_frame.pack(fill=tk.X, padx=16, pady=(0, 8))
         clean_temp_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(option_frame, text="同时删除临时部署目录残留文件",
+        LocalizedCheckbutton(option_frame, text="同时删除临时部署目录残留文件",
                        variable=clean_temp_var, bg=COLOR_BG,
                        font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        status_lbl = tk.Label(option_frame, text="", bg=COLOR_BG,
+        status_lbl = LocalizedLabel(option_frame, text="", bg=COLOR_BG,
                               fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         status_lbl.pack(side=tk.LEFT, padx=12)
 
@@ -1265,7 +1344,7 @@ class WizardApp:
 
         def _clean_selected():
             if not checked:
-                messagebox.showwarning("提示", "请先点击列表行勾选要清理的容器",
+                showwarning("提示", "请先点击列表行勾选要清理的容器",
                                        parent=dialog)
                 return
             names = sorted(checked)
@@ -1273,7 +1352,7 @@ class WizardApp:
                            + "\n".join(f"  {n}" for n in names))
             if clean_temp_var.get():
                 confirm_msg += f"\n\n同时删除临时部署目录:\n  {self.work_dir_var.get().strip()}"
-            if not messagebox.askyesno("确认清理", confirm_msg,
+            if not askyesno("确认清理", confirm_msg,
                                        icon=messagebox.WARNING, parent=dialog):
                 return
 
@@ -1308,17 +1387,17 @@ class WizardApp:
 
         action_frame = tk.Frame(dialog, bg=COLOR_BG)
         action_frame.pack(fill=tk.X, padx=16, pady=(0, 8))
-        tk.Button(action_frame, text="刷新", command=_refresh_list,
+        LocalizedButton(action_frame, text="刷新", command=_refresh_list,
                   font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        tk.Button(action_frame, text="全选", command=_select_all,
+        LocalizedButton(action_frame, text="全选", command=_select_all,
                   font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=6)
-        tk.Button(action_frame, text="取消全选", command=_select_none,
+        LocalizedButton(action_frame, text="取消全选", command=_select_none,
                   font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        clean_btn = tk.Button(action_frame, text="清理选中", bg=COLOR_ERROR,
+        clean_btn = LocalizedButton(action_frame, text="清理选中", bg=COLOR_ERROR,
                               fg="white", font=("Segoe UI", 9, "bold"),
                               relief=tk.FLAT, command=_clean_selected)
         clean_btn.pack(side=tk.LEFT, padx=12)
-        tk.Button(action_frame, text="关闭", command=dialog.destroy,
+        LocalizedButton(action_frame, text="关闭", command=dialog.destroy,
                   font=("Segoe UI", 9)).pack(side=tk.RIGHT)
 
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
@@ -1342,7 +1421,7 @@ class WizardApp:
     def _start_deploy(self):
         """开始部署流程"""
         if not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
 
         image_mode = self.image_source_var.get()
@@ -1354,34 +1433,34 @@ class WizardApp:
         if self.code_source_var.get() == "builtin":
             code_dir = self._get_bundled_code_dir()
             if not os.path.isdir(code_dir):
-                messagebox.showerror("错误", f"未找到内置测试代码目录:\n{code_dir}\n\n请改用本地zip包模式")
+                showerror("错误", f"未找到内置测试代码目录:\n{code_dir}\n\n请改用本地zip包模式")
                 return
         else:
             zipf = self.zip_path.get().strip()
             if not zipf:
-                messagebox.showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
+                showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
                 return
             if not os.path.isfile(zipf):
-                messagebox.showwarning("提示", f"zip包不存在: {zipf}")
+                showwarning("提示", f"zip包不存在: {zipf}")
                 return
 
         if image_mode == "existing":
             if not selected_image:
-                messagebox.showwarning("提示", "请先查看并选择执行机上的镜像")
+                showwarning("提示", "请先查看并选择执行机上的镜像")
                 return
         else:
             if not tar:
-                messagebox.showwarning("提示", "请选择要上传的AISBench镜像tar包")
+                showwarning("提示", "请选择要上传的AISBench镜像tar包")
                 return
             if not os.path.isfile(tar):
-                messagebox.showwarning("提示", f"镜像tar包不存在: {tar}")
+                showwarning("提示", f"镜像tar包不存在: {tar}")
                 return
 
         if not model:
-            messagebox.showwarning("提示", "请先完成模型路径选择")
+            showwarning("提示", "请先完成模型路径选择")
             return
         if not work_dir:
-            messagebox.showwarning("提示", "请输入临时部署目录路径")
+            showwarning("提示", "请输入临时部署目录路径")
             return
 
         # 部署前检查临时目录(仅用于暂存镜像tar/代码)
@@ -1390,7 +1469,7 @@ class WizardApp:
         if self.docker.work_dir_exists():
             code, out, _ = self.ssh.execute(f"ls -A {work_dir} 2>/dev/null")
             if out.strip():
-                choice = messagebox.askyesnocancel(
+                choice = askyesnocancel(
                     "临时目录已存在",
                     f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
                     f"通常是上次部署中断或旧版本遗留的暂存文件。\n\n"
@@ -1604,7 +1683,7 @@ class WizardApp:
         self.dataset_path_var.set(self.docker.code_mount_path)
 
         # 显示成功消息
-        self.root.after(0, lambda: messagebox.showinfo("成功", "Docker部署完成!"))
+        self.root.after(0, lambda: showinfo("成功", "Docker部署完成!"))
 
     # ============================================================
     #  Step 3: 配置文件
@@ -1642,7 +1721,7 @@ class WizardApp:
         for i, (label, key, required) in enumerate(config_fields):
             prefix = "* " if required else "  "
             color = COLOR_ERROR if required else COLOR_TEXT_MUTED
-            tk.Label(form, text=f"{prefix}{label}", bg=COLOR_CARD, fg=color,
+            LocalizedLabel(form, text=f"{prefix}{label}", bg=COLOR_CARD, fg=color,
                    font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=16, pady=6)
 
             var = tk.StringVar(value=defaults.get(key, ""))
@@ -1656,7 +1735,7 @@ class WizardApp:
         # config.py 路径信息
         path_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         path_frame.pack(fill=tk.X, pady=(4, 8))
-        self.config_path_lbl = tk.Label(path_frame, text="config.py 位置: 尚未部署",
+        self.config_path_lbl = LocalizedLabel(path_frame, text="config.py 位置: 尚未部署",
                                         bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                         font=("Consolas", 8), justify=tk.LEFT, anchor=tk.W)
         self.config_path_lbl.pack(padx=16, pady=8, anchor=tk.W)
@@ -1665,20 +1744,20 @@ class WizardApp:
         btn_frame = tk.Frame(frame, bg=COLOR_BG)
         btn_frame.pack(fill=tk.X, pady=8)
 
-        tk.Button(btn_frame, text="保存配置到容器", bg=COLOR_PRIMARY, fg="white",
+        LocalizedButton(btn_frame, text="保存配置到容器", bg=COLOR_PRIMARY, fg="white",
                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=16, pady=4,
                  command=self._save_config).pack(side=tk.LEFT)
 
-        tk.Button(btn_frame, text="验证配置(读取容器)", bg=COLOR_SUCCESS, fg="white",
+        LocalizedButton(btn_frame, text="验证配置(读取容器)", bg=COLOR_SUCCESS, fg="white",
                  font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
                  command=self._verify_config).pack(side=tk.LEFT, padx=8)
 
-        self.config_status_lbl = tk.Label(btn_frame, text="", bg=COLOR_BG,
+        self.config_status_lbl = LocalizedLabel(btn_frame, text="", bg=COLOR_BG,
                                          fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         self.config_status_lbl.pack(side=tk.LEFT, padx=12)
 
         # 配置预览
-        tk.Label(frame, text="配置预览 (内存中):", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(frame, text="配置预览 (内存中):", bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(8, 4))
 
         self.config_preview = scrolledtext.ScrolledText(frame, height=10,
@@ -1738,7 +1817,7 @@ class WizardApp:
     def _save_config(self):
         """保存配置到容器，并回读验证"""
         if not self.config_mgr:
-            messagebox.showwarning("提示", "请先完成Docker部署")
+            showwarning("提示", "请先完成Docker部署")
             return
 
         config = {k: v.get() for k, v in self.config_entry_vars.items()}
@@ -1746,14 +1825,14 @@ class WizardApp:
         # 验证
         errors = self.config_mgr.validate_config(config)
         if errors:
-            messagebox.showwarning("配置验证失败", "\n".join(errors))
+            showwarning("配置验证失败", "\n".join(errors))
             return
 
         # 写入
         ok = self.config_mgr.write_config_to_container(config)
         if not ok:
             self.config_status_lbl.config(text="✗ 保存失败", fg=COLOR_ERROR)
-            messagebox.showerror("失败", "写入config.py失败")
+            showerror("失败", "写入config.py失败")
             return
 
         self._update_config_path_label()
@@ -1763,7 +1842,7 @@ class WizardApp:
         read_back = self.config_mgr.read_config_from_container()
         if read_back is None:
             self.config_status_lbl.config(text="✓ 已写入 (回读失败，请手动验证)", fg=COLOR_WARNING)
-            messagebox.showwarning("警告", "config.py 已写入，但回读失败，请点击\"验证配置\"手动检查")
+            showwarning("警告", "config.py 已写入，但回读失败，请点击\"验证配置\"手动检查")
             return
 
         # 比较关键值
@@ -1779,12 +1858,12 @@ class WizardApp:
 
         if mismatches:
             self.config_status_lbl.config(text="⚠ 已写入但存在不一致!", fg=COLOR_ERROR)
-            messagebox.showwarning("配置不一致",
+            showwarning("配置不一致",
                                    "config.py 已写入，但回读发现以下不一致:\n\n" + "\n".join(mismatches))
         else:
             self.config_status_lbl.config(text="✓ 配置已保存并验证一致", fg=COLOR_SUCCESS)
             container_path = f"{self.docker.code_mount_path}/config.py"
-            messagebox.showinfo("成功",
+            showinfo("成功",
                                f"config.py 已写入并回读验证一致!\n\n"
                                f"容器内路径: {container_path}\n\n"
                                f"关键配置:\n"
@@ -1796,7 +1875,7 @@ class WizardApp:
     def _verify_config(self):
         """从容器读取config.py并显示，与界面值对比"""
         if not self.config_mgr:
-            messagebox.showwarning("提示", "请先完成Docker部署")
+            showwarning("提示", "请先完成Docker部署")
             return
 
         self._update_config_path_label()
@@ -1804,7 +1883,7 @@ class WizardApp:
         read_back = self.config_mgr.read_config_from_container()
         if read_back is None:
             self.config_status_lbl.config(text="✗ 无法读取容器内config.py", fg=COLOR_ERROR)
-            messagebox.showerror("失败",
+            showerror("失败",
                                  "无法从容器读取config.py\n"
                                  "可能原因: 1)未点击\"保存配置到容器\" 2)路径错误 3)SSH连接断开")
             return
@@ -1835,13 +1914,13 @@ class WizardApp:
 
         if all_match:
             self.config_status_lbl.config(text="✓ 验证通过，界面与容器配置一致", fg=COLOR_SUCCESS)
-            messagebox.showinfo("验证通过",
+            showinfo("验证通过",
                                f"容器内config.py与界面配置一致!\n\n"
                                f"{''.join(report_lines)}\n\n"
                                f"MODEL_PATH = {saved_values.get('MODEL_PATH', '?')}")
         else:
             self.config_status_lbl.config(text="⚠ 界面与容器配置不一致", fg=COLOR_ERROR)
-            messagebox.showwarning("配置不一致",
+            showwarning("配置不一致",
                                    f"界面与容器内config.py存在差异:\n\n"
                                    + "\n".join(report_lines) +
                                    "\n\n请点击\"保存配置到容器\"重新写入")
@@ -1860,7 +1939,7 @@ class WizardApp:
         formula_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         formula_frame.pack(fill=tk.X, pady=8)
 
-        tk.Label(formula_frame, text="计算公式:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(formula_frame, text="计算公式:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky=tk.W,
                                                    padx=16, pady=(8, 2))
 
@@ -1871,7 +1950,7 @@ class WizardApp:
             "KV使用率 = 并发数 × (input_len + output_len) / total_kv_cache × 100%",
         ]
         for i, f in enumerate(formulas):
-            tk.Label(formula_frame, text=f"  {f}", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            LocalizedLabel(formula_frame, text=f"  {f}", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                    font=("Consolas", 8)).grid(row=i+1, column=0, sticky=tk.W,
                                                padx=16, pady=1)
 
@@ -1888,7 +1967,7 @@ class WizardApp:
         ]
 
         for i, (label, var_name) in enumerate(kv_fields):
-            tk.Label(kv_frame, text=label, bg=COLOR_CARD, fg=COLOR_TEXT,
+            LocalizedLabel(kv_frame, text=label, bg=COLOR_CARD, fg=COLOR_TEXT,
                    font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=16, pady=6)
             entry = tk.Entry(kv_frame, textvariable=getattr(self, var_name), width=20,
                            font=("Segoe UI", 9))
@@ -1896,7 +1975,7 @@ class WizardApp:
 
         # KV cache 查询方式提示 (命令可复制, 支持从远程/容器日志直接筛选)
         hint_row = len(kv_fields)
-        tk.Label(kv_frame, text="查询方式:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(kv_frame, text="查询方式:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                font=("Segoe UI", 8)).grid(row=hint_row, column=0, sticky=tk.NW,
                                           padx=16, pady=(6, 0))
         hint_frame = tk.Frame(kv_frame, bg="#f0f5ff")
@@ -1910,21 +1989,21 @@ class WizardApp:
         cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         cmd_entry.bind("<Control-a>",
                        lambda e: (cmd_entry.select_range(0, tk.END), "break")[1])
-        self.kv_copy_btn = tk.Button(cmd_row, text="复制", font=("Segoe UI", 8),
+        self.kv_copy_btn = LocalizedButton(cmd_row, text="复制", font=("Segoe UI", 8),
                                      relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
                                      padx=10, command=self._copy_kv_grep_command)
         self.kv_copy_btn.pack(side=tk.LEFT, padx=(6, 0))
 
         btn_row = tk.Frame(hint_frame, bg="#f0f5ff")
         btn_row.pack(fill=tk.X, pady=(4, 0))
-        tk.Button(btn_row, text="从日志自动获取 / 查看日志", font=("Segoe UI", 8),
+        LocalizedButton(btn_row, text="从日志自动获取 / 查看日志", font=("Segoe UI", 8),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
                   command=self._open_log_browser).pack(side=tk.LEFT)
-        tk.Label(btn_row, text="(选择服务器/容器日志, 筛选结果可一键填入)",
+        LocalizedLabel(btn_row, text="(选择服务器/容器日志, 筛选结果可一键填入)",
                  bg="#f0f5ff", fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=8)
 
-        tk.Label(hint_frame,
+        LocalizedLabel(hint_frame,
                  text="GPU KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
                  bg="#f0f5ff", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
                  anchor=tk.W).pack(fill=tk.X)
@@ -1932,7 +2011,7 @@ class WizardApp:
         # 输入长度选择
         in_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         in_frame.pack(fill=tk.X, pady=4)
-        tk.Label(in_frame, text="输入长度 (需小于模型最大上下文):", bg=COLOR_CARD,
+        LocalizedLabel(in_frame, text="输入长度 (需小于模型最大上下文):", bg=COLOR_CARD,
                fg=COLOR_TEXT, font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=16, pady=(8, 4))
 
         in_checks_frame = tk.Frame(in_frame, bg=COLOR_CARD)
@@ -1948,14 +2027,14 @@ class WizardApp:
         for length in TestDesigner.PRESET_INPUT_LENGTHS:
             var = tk.BooleanVar(value=False)
             self.input_length_vars[length] = var
-            cb = tk.Checkbutton(in_checks_frame, text=_fmt_len(length), variable=var,
+            cb = LocalizedCheckbutton(in_checks_frame, text=_fmt_len(length), variable=var,
                               bg=COLOR_CARD, font=("Segoe UI", 9))
             cb.pack(side=tk.LEFT, padx=4)
 
         # 输出长度选择
         out_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         out_frame.pack(fill=tk.X, pady=4)
-        tk.Label(out_frame, text="输出长度:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(out_frame, text="输出长度:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=16, pady=(8, 4))
 
         out_checks_frame = tk.Frame(out_frame, bg=COLOR_CARD)
@@ -1963,22 +2042,22 @@ class WizardApp:
         for length in TestDesigner.PRESET_OUTPUT_LENGTHS:
             var = tk.BooleanVar(value=(length in [512, 1024]))
             self.output_length_vars[length] = var
-            cb = tk.Checkbutton(out_checks_frame, text=_fmt_len(length), variable=var,
+            cb = LocalizedCheckbutton(out_checks_frame, text=_fmt_len(length), variable=var,
                               bg=COLOR_CARD, font=("Segoe UI", 9))
             cb.pack(side=tk.LEFT, padx=4)
 
         # 生成按钮
         gen_frame = tk.Frame(frame, bg=COLOR_BG)
         gen_frame.pack(fill=tk.X, pady=8)
-        tk.Button(gen_frame, text="生成测试用例", bg=COLOR_PRIMARY, fg="white",
+        LocalizedButton(gen_frame, text="生成测试用例", bg=COLOR_PRIMARY, fg="white",
                 font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=16, pady=4,
                 command=self._generate_test_cases).pack(side=tk.LEFT)
 
-        tk.Button(gen_frame, text="添加用例", font=("Segoe UI", 8),
+        LocalizedButton(gen_frame, text="添加用例", font=("Segoe UI", 8),
                 command=self._add_test_case).pack(side=tk.LEFT, padx=4)
-        tk.Button(gen_frame, text="复制用例", font=("Segoe UI", 8),
+        LocalizedButton(gen_frame, text="复制用例", font=("Segoe UI", 8),
                 command=self._duplicate_test_case).pack(side=tk.LEFT, padx=4)
-        tk.Button(gen_frame, text="删除用例", font=("Segoe UI", 8),
+        LocalizedButton(gen_frame, text="删除用例", font=("Segoe UI", 8),
                 command=self._delete_test_case).pack(side=tk.LEFT, padx=4)
 
         # 测试用例 + 计算明细 (拖拽分隔条调整两者占比, 各保留最小高度)
@@ -1990,7 +2069,7 @@ class WizardApp:
         # Pane 1: 测试用例表格
         tree_pane = tk.Frame(self.cases_paned, bg=COLOR_BG)
         self.cases_paned.add(tree_pane, minsize=160, stretch="always")
-        tk.Label(tree_pane, text="测试用例 (双击单元格可编辑 Input/Output/请求数/并发数):",
+        LocalizedLabel(tree_pane, text="测试用例 (双击单元格可编辑 Input/Output/请求数/并发数):",
                bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(0, 4))
 
@@ -2017,7 +2096,7 @@ class WizardApp:
         # Pane 2: 计算明细 (代入值展示)
         calc_pane = tk.Frame(self.cases_paned, bg=COLOR_BG)
         self.cases_paned.add(calc_pane, minsize=120, stretch="always")
-        tk.Label(calc_pane, text="计算明细 (代入当前KV参数):",
+        LocalizedLabel(calc_pane, text="计算明细 (代入当前KV参数):",
                bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(4, 0))
 
@@ -2080,7 +2159,7 @@ class WizardApp:
             rate = float(self.repeat_rate_var.get())
             req_rate = float(self.request_rate_var.get())
         except ValueError:
-            messagebox.showwarning(
+            showwarning(
                 "提示",
                 "请输入有效的数字\n"
                 "(请求发送速率支持小数, 如 0.3 表示 0.3 req/s; 0 表示Burst模式)")
@@ -2099,7 +2178,7 @@ class WizardApp:
             if valid:
                 in_lengths = valid[:2]
             else:
-                messagebox.showwarning("提示", "没有有效的输入长度")
+                showwarning("提示", "没有有效的输入长度")
                 return
 
         if not out_lengths:
@@ -2122,14 +2201,14 @@ class WizardApp:
             skipped_str = ", ".join(_fmt_len(l) for l in skipped_inputs)
             if valid_selected:
                 kept_str = ", ".join(_fmt_len(l) for l in sorted(valid_selected))
-                messagebox.showwarning(
+                showwarning(
                     "输入长度超出限制",
                     f"以下选中的输入长度超过模型最大上下文 ({max_len:,})，已跳过:\n"
                     f"  {skipped_str}\n\n"
                     f"实际生成用例使用的输入长度: {kept_str}")
             else:
                 fallback_str = ", ".join(_fmt_len(l) for l in self.designer.input_lengths)
-                messagebox.showwarning(
+                showwarning(
                     "输入长度超出限制",
                     f"所选输入长度全部超过模型最大上下文 ({max_len:,}):\n"
                     f"  {skipped_str}\n\n"
@@ -2222,7 +2301,7 @@ class WizardApp:
                 new_total = num_val + case.output_len
                 if (self.designer.max_request_length > 0
                         and new_total > self.designer.max_request_length):
-                    messagebox.showwarning("参数超出限制",
+                    showwarning("参数超出限制",
                         f"输入+输出长度 ({num_val:,}+{case.output_len:,}={new_total:,}) "
                         f"超过模型最大上下文 ({self.designer.max_request_length:,})")
                     entry.destroy()
@@ -2232,7 +2311,7 @@ class WizardApp:
                 new_total = case.input_len + num_val
                 if (self.designer.max_request_length > 0
                         and new_total > self.designer.max_request_length):
-                    messagebox.showwarning("参数超出限制",
+                    showwarning("参数超出限制",
                         f"输入+输出长度 ({case.input_len:,}+{num_val:,}={new_total:,}) "
                         f"超过模型最大上下文 ({self.designer.max_request_length:,})")
                     entry.destroy()
@@ -2241,7 +2320,7 @@ class WizardApp:
             elif field == 'data_num_recommended':
                 case.data_num_recommended = num_val
                 if num_val < case.data_num_min:
-                    messagebox.showwarning(
+                    showwarning(
                         "请求数低于最小值",
                         f"请求数 ({num_val:,}) 低于最小请求数 ({case.data_num_min:,})\n\n"
                         f"低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
@@ -2279,7 +2358,7 @@ class WizardApp:
         ]
         entry_vars = {}
         for i, (label, key) in enumerate(field_defs):
-            tk.Label(dialog, text=label, font=("Segoe UI", 9)).grid(
+            LocalizedLabel(dialog, text=label, font=("Segoe UI", 9)).grid(
                 row=i, column=0, padx=16, pady=8, sticky=tk.W)
             var = tk.StringVar()
             ent = tk.Entry(dialog, textvariable=var, width=15, font=("Segoe UI", 9))
@@ -2291,7 +2370,7 @@ class WizardApp:
                 il = int(entry_vars['input_len'].get())
                 ol = int(entry_vars['output_len'].get())
             except ValueError:
-                messagebox.showwarning("提示", "请输入有效的输入/输出长度", parent=dialog)
+                showwarning("提示", "请输入有效的输入/输出长度", parent=dialog)
                 return
 
             data_num = None
@@ -2302,17 +2381,17 @@ class WizardApp:
                 if entry_vars['concurrency'].get().strip():
                     concurrency = int(entry_vars['concurrency'].get())
             except ValueError:
-                messagebox.showwarning("提示", "请求数和并发数必须为数字", parent=dialog)
+                showwarning("提示", "请求数和并发数必须为数字", parent=dialog)
                 return
 
             try:
                 self.designer.add_custom_case(il, ol, data_num, concurrency)
             except ValueError as e:
-                messagebox.showwarning("参数超出限制", str(e), parent=dialog)
+                showwarning("参数超出限制", str(e), parent=dialog)
                 return
             new_case = self.designer.test_cases[-1]
             if new_case.data_num_recommended < new_case.data_num_min:
-                messagebox.showwarning(
+                showwarning(
                     "请求数低于最小值",
                     f"请求数 ({new_case.data_num_recommended:,}) 低于最小请求数 "
                     f"({new_case.data_num_min:,})\n\n"
@@ -2326,10 +2405,10 @@ class WizardApp:
 
         btn_frame = tk.Frame(dialog)
         btn_frame.grid(row=len(field_defs), column=0, columnspan=2, pady=12)
-        tk.Button(btn_frame, text="确认", bg=COLOR_PRIMARY, fg="white",
+        LocalizedButton(btn_frame, text="确认", bg=COLOR_PRIMARY, fg="white",
                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=16, pady=4,
                  command=_confirm).pack(side=tk.LEFT, padx=8)
-        tk.Button(btn_frame, text="取消", font=("Segoe UI", 9),
+        LocalizedButton(btn_frame, text="取消", font=("Segoe UI", 9),
                  command=dialog.destroy).pack(side=tk.LEFT, padx=8)
 
         dialog.bind('<Return>', lambda e: _confirm())
@@ -2338,7 +2417,7 @@ class WizardApp:
         """复制选中的测试用例到列表末尾"""
         selection = self.test_tree.selection()
         if not selection:
-            messagebox.showwarning("提示", "请先选择要复制的用例行")
+            showwarning("提示", "请先选择要复制的用例行")
             return
         item_index = self.test_tree.index(selection[0])
         if self.designer.duplicate_case(item_index):
@@ -2354,10 +2433,10 @@ class WizardApp:
         """删除选中的测试用例"""
         selection = self.test_tree.selection()
         if not selection:
-            messagebox.showwarning("提示", "请先选择要删除的用例行")
+            showwarning("提示", "请先选择要删除的用例行")
             return
         if len(self.designer.test_cases) <= 1:
-            messagebox.showwarning("提示", "至少保留一个测试用例")
+            showwarning("提示", "至少保留一个测试用例")
             return
         item_index = self.test_tree.index(selection[0])
         if self.designer.delete_case(item_index):
@@ -2374,7 +2453,7 @@ class WizardApp:
                                "生成.sh脚本 → 容器内执行 → 下载日志 → 解析结果CSV")
 
         # 摘要
-        self.summary_text = tk.Label(frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT,
+        self.summary_text = LocalizedLabel(frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT,
                                    font=("Segoe UI", 9), justify=tk.LEFT,
                                    relief=tk.SOLID, bd=1, anchor=tk.W, width=80, height=8)
         self.summary_text.pack(fill=tk.X, pady=8)
@@ -2383,14 +2462,14 @@ class WizardApp:
         btn_frame = tk.Frame(frame, bg=COLOR_BG)
         btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=4)
 
-        tk.Button(btn_frame, text="刷新命令", font=("Segoe UI", 9),
+        LocalizedButton(btn_frame, text="刷新命令", font=("Segoe UI", 9),
                  command=self._refresh_commands).pack(side=tk.LEFT)
-        self.exec_test_btn = tk.Button(btn_frame, text="执行测试 → 生成CSV", bg=COLOR_PRIMARY, fg="white",
+        self.exec_test_btn = LocalizedButton(btn_frame, text="执行测试 → 生成CSV", bg=COLOR_PRIMARY, fg="white",
                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=16, pady=4,
                  command=self._execute_tests)
         self.exec_test_btn.pack(side=tk.LEFT, padx=8)
 
-        self.cleanup_btn = tk.Button(btn_frame, text="清理环境", bg=COLOR_ERROR, fg="white",
+        self.cleanup_btn = LocalizedButton(btn_frame, text="清理环境", bg=COLOR_ERROR, fg="white",
                  font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
                  command=self._cleanup_environment, state=tk.DISABLED)
         self.cleanup_btn.pack(side=tk.LEFT, padx=8)
@@ -2398,7 +2477,7 @@ class WizardApp:
         out_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         out_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=8)
 
-        tk.Label(out_frame, text="本地结果保存目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(out_frame, text="本地结果保存目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=12, pady=8)
 
         self.local_output_var = tk.StringVar(
@@ -2406,7 +2485,7 @@ class WizardApp:
         )
         tk.Entry(out_frame, textvariable=self.local_output_var, width=50,
                 font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=8)
-        tk.Button(out_frame, text="浏览...", font=("Segoe UI", 8),
+        LocalizedButton(out_frame, text="浏览...", font=("Segoe UI", 8),
                 command=self._browse_local_output).pack(side=tk.LEFT, padx=(4, 12), pady=8)
 
         # 中部: 命令预览 + 执行日志 (拖拽分隔条调整占比, 各保留最小高度)
@@ -2418,7 +2497,7 @@ class WizardApp:
         # Pane 1: 命令预览
         cmd_pane = tk.Frame(self.exec_paned, bg=COLOR_BG)
         self.exec_paned.add(cmd_pane, minsize=100, stretch="always")
-        tk.Label(cmd_pane, text="生成的测试命令:", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(cmd_pane, text="生成的测试命令:", bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(0, 4))
         self.commands_text = scrolledtext.ScrolledText(cmd_pane, height=3,
                                                        font=("Consolas", 9),
@@ -2428,7 +2507,7 @@ class WizardApp:
         # Pane 2: 执行日志
         log_pane = tk.Frame(self.exec_paned, bg=COLOR_BG)
         self.exec_paned.add(log_pane, minsize=120, stretch="always")
-        tk.Label(log_pane, text="执行日志:", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(log_pane, text="执行日志:", bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(4, 0))
         self.exec_log = scrolledtext.ScrolledText(log_pane, height=4,
                                                   font=("Consolas", 9),
@@ -2440,13 +2519,13 @@ class WizardApp:
         self.exec_paned.add(res_pane, minsize=90, stretch="always")
         res_header = tk.Frame(res_pane, bg=COLOR_BG)
         res_header.pack(fill=tk.X, pady=(4, 0))
-        tk.Label(res_header, text="结果摘要:", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(res_header, text="结果摘要:", bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
-        self.results_info_lbl = tk.Label(res_header, text="(测试完成后显示结果摘要)",
+        self.results_info_lbl = LocalizedLabel(res_header, text="(测试完成后显示结果摘要)",
                                          bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                                          font=("Segoe UI", 8))
         self.results_info_lbl.pack(side=tk.LEFT, padx=8)
-        tk.Button(res_header, text="结果对比分析", font=("Segoe UI", 8),
+        LocalizedButton(res_header, text="结果对比分析", font=("Segoe UI", 8),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
                   command=self._open_result_compare).pack(side=tk.RIGHT)
 
@@ -2549,21 +2628,21 @@ class WizardApp:
     def _execute_tests(self):
         """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
         if not self.docker or not self.docker.container_is_running():
-            messagebox.showwarning("提示", "容器未运行，请先完成部署")
+            showwarning("提示", "容器未运行，请先完成部署")
             return
 
         if not self.designer.test_cases:
-            messagebox.showwarning("提示", "请先生成测试用例")
+            showwarning("提示", "请先生成测试用例")
             return
 
         local_dir = self.local_output_var.get().strip()
         if not local_dir:
-            messagebox.showwarning("提示", "请选择本地结果保存目录")
+            showwarning("提示", "请选择本地结果保存目录")
             return
 
         # 执行前同步最新速率, 避免生成用例后又修改速率导致命令/脚本不一致
         if not self._sync_request_rate():
-            messagebox.showwarning(
+            showwarning(
                 "提示",
                 "请求发送速率输入无效, 请输入数字\n"
                 "(支持小数如 0.3; 0 表示Burst模式)")
@@ -2736,7 +2815,7 @@ class WizardApp:
             self.root.after(0, lambda: self._show_results_table(
                 results, csv_path, local_log_dir))
 
-            self.root.after(0, lambda: messagebox.showinfo(
+            self.root.after(0, lambda: showinfo(
                 "完成",
                 f"测试完成!\n\nCSV: {csv_path}\n日志: {local_log_dir}\n共 {len(results)} 条记录"
             ))
@@ -2758,7 +2837,7 @@ class WizardApp:
                 if test_logs:
                     self._log_exec(f"  请检查以下日志文件中的错误信息:\n  {', '.join(test_logs)}\n")
                     self._log_exec(f"  日志目录: {local_log_dir}\n")
-            self.root.after(0, lambda: messagebox.showwarning("提示", "测试已完成但未提取到有效结果，请检查执行日志"))
+            self.root.after(0, lambda: showwarning("提示", "测试已完成但未提取到有效结果，请检查执行日志"))
 
     def _log_exec(self, text):
         """向执行日志缓冲区写入（线程安全，由主线程定时刷新）"""
@@ -2778,7 +2857,7 @@ class WizardApp:
         msg += "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
         msg += "(否: 稍后可点击\"清理环境\"按钮手动清理)"
 
-        if messagebox.askyesno("清理提醒", msg, icon=messagebox.QUESTION):
+        if askyesno("清理提醒", msg, icon=messagebox.QUESTION):
             self._cleanup_environment()
 
     def _cleanup_environment(self, skip_confirm=False):
@@ -2796,7 +2875,7 @@ class WizardApp:
                 msg += f"  临时部署目录: {work_dir} (如有残留)\n"
             msg += "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
             msg += "本地下载的测试结果不受影响。\n"
-            if not messagebox.askyesno("确认清理", msg, icon=messagebox.WARNING):
+            if not askyesno("确认清理", msg, icon=messagebox.WARNING):
                 return
 
         self.cleanup_btn.config(state=tk.DISABLED, text="清理中...")
@@ -2848,7 +2927,7 @@ class WizardApp:
                     self.ssh.disconnect()
                     self.root.destroy()
                 else:
-                    messagebox.showinfo("清理完成",
+                    showinfo("清理完成",
                         "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。")
 
             self.root.after(0, _restore_cleanup)
@@ -2909,23 +2988,23 @@ class WizardApp:
     def _next_step(self):
         """下一步"""
         if self.current_step == 0 and not self.ssh.connected:
-            messagebox.showwarning("提示", "请先连接到远程主机")
+            showwarning("提示", "请先连接到远程主机")
             return
         if self.current_step == 1:
             image_mode = self.image_source_var.get()
             image_ready = (image_mode == "existing" and self.remote_image_var.get().strip()) or \
                           (image_mode == "upload" and self.tar_path.get().strip())
             if not image_ready or not self.model_path_var.get():
-                messagebox.showwarning("提示", "请完成镜像和模型路径选择")
+                showwarning("提示", "请完成镜像和模型路径选择")
                 return
             if self.code_source_var.get() == "zip" and not self.zip_path.get().strip():
-                messagebox.showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
+                showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
                 return
             if not self.docker or not self.docker.container_is_running():
-                if not messagebox.askyesno("提示", "Docker容器尚未部署，是否继续?"):
+                if not askyesno("提示", "Docker容器尚未部署，是否继续?"):
                     return
         if self.current_step == 3 and not self.designer.test_cases:
-            if not messagebox.askyesno("提示", "尚未生成测试用例，是否继续?"):
+            if not askyesno("提示", "尚未生成测试用例，是否继续?"):
                 return
 
         self._show_step(self.current_step + 1)
@@ -2947,7 +3026,7 @@ class WizardApp:
             msg += "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
             msg += "(未清理的容器下次连接时可通过步骤2\"清理残留容器\"删除)"
 
-            choice = messagebox.askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)
+            choice = askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)
             if choice is None:
                 return False  # 取消 - 不退出
             if choice:
@@ -2960,7 +3039,7 @@ class WizardApp:
     def _finish(self):
         """完成"""
         if self._exit_check_cleanup() and \
-                messagebox.askyesno("完成", "测试已完成，是否退出程序?"):
+                askyesno("完成", "测试已完成，是否退出程序?"):
             self.ssh.disconnect()
             self.root.destroy()
 

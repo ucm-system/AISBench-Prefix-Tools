@@ -12,6 +12,7 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
+from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning
 from typing import Dict, List, Optional, Tuple
 
 from log_parser import CSV_FIELDS
@@ -357,59 +358,59 @@ class ResultCompareDialog:
         self._build_results_section()
 
     def _build_dir_section(self):
-        box = tk.LabelFrame(self.dialog, text=" 结果CSV文件 (工具生成, 格式自动校验) ",
+        box = LocalizedLabelFrame(self.dialog, text=" 结果CSV文件 (工具生成, 格式自动校验) ",
                             bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.X, padx=10, pady=(10, 4))
 
         row_a = tk.Frame(box, bg=COLOR_CARD)
         row_a.pack(fill=tk.X, padx=10, pady=(8, 2))
-        tk.Label(row_a, text="文件A (基准):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(row_a, text="文件A (基准):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.file_a_var = tk.StringVar()
         tk.Entry(row_a, textvariable=self.file_a_var, font=("Segoe UI", 9)
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        tk.Button(row_a, text="选择CSV...", font=("Segoe UI", 8),
+        LocalizedButton(row_a, text="选择CSV...", font=("Segoe UI", 8),
                   command=lambda: self._browse_csv(self.file_a_var)
                   ).pack(side=tk.LEFT, padx=4)
 
         row_b = tk.Frame(box, bg=COLOR_CARD)
         row_b.pack(fill=tk.X, padx=10, pady=2)
-        tk.Label(row_b, text="文件B (对比):", bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(row_b, text="文件B (对比):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.file_b_var = tk.StringVar()
         tk.Entry(row_b, textvariable=self.file_b_var, font=("Segoe UI", 9)
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-        tk.Button(row_b, text="选择CSV...", font=("Segoe UI", 8),
+        LocalizedButton(row_b, text="选择CSV...", font=("Segoe UI", 8),
                   command=lambda: self._browse_csv(self.file_b_var)
                   ).pack(side=tk.LEFT, padx=4)
 
         action_row = tk.Frame(box, bg=COLOR_CARD)
         action_row.pack(fill=tk.X, padx=10, pady=(2, 8))
-        tk.Button(action_row, text="加载数据", font=("Segoe UI", 9, "bold"),
+        LocalizedButton(action_row, text="加载数据", font=("Segoe UI", 9, "bold"),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=14,
                   command=self._load_data).pack(side=tk.LEFT)
-        self.load_status_lbl = tk.Label(action_row, text="选择两个工具生成的 results_*.csv 文件",
+        self.load_status_lbl = LocalizedLabel(action_row, text="选择两个工具生成的 results_*.csv 文件",
                                         bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                         font=("Segoe UI", 8))
         self.load_status_lbl.pack(side=tk.LEFT, padx=10)
 
     def _build_cases_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 匹配的测试用例 (勾选参与对比) ",
+        box = LocalizedLabelFrame(parent, text=" 匹配的测试用例 (勾选参与对比) ",
                             bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 5))
 
         select_row = tk.Frame(box, bg=COLOR_CARD)
         select_row.pack(fill=tk.X, padx=8, pady=(6, 2))
-        tk.Button(select_row, text="全选", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(select_row, text="全选", font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=lambda: self._toggle_all_matches(True)).pack(side=tk.LEFT)
-        tk.Button(select_row, text="全不选", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(select_row, text="全不选", font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=lambda: self._toggle_all_matches(False)).pack(side=tk.LEFT,
                                                                       padx=4)
-        self.match_count_lbl = tk.Label(select_row, text="(加载数据后显示)",
+        self.match_count_lbl = LocalizedLabel(select_row, text="(加载数据后显示)",
                                         bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                         font=("Segoe UI", 8))
         self.match_count_lbl.pack(side=tk.LEFT, padx=8)
@@ -437,7 +438,7 @@ class ResultCompareDialog:
             "<Leave>", lambda _e: self.cases_canvas.unbind_all("<MouseWheel>"))
 
     def _build_metrics_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 对比指标 (勾选要观察的指标) ",
+        box = LocalizedLabelFrame(parent, text=" 对比指标 (勾选要观察的指标) ",
                             bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.grid(row=0, column=1, sticky=tk.NSEW, padx=(5, 0))
@@ -472,7 +473,7 @@ class ResultCompareDialog:
 
         self.metric_vars = []
         for category in categories:
-            tk.Label(self.metrics_inner, text=f"■ {category}", bg=COLOR_CARD,
+            LocalizedLabel(self.metrics_inner, text=f"■ {category}", bg=COLOR_CARD,
                      fg=COLOR_PRIMARY, font=("Segoe UI", 8, "bold"),
                      anchor=tk.W).pack(fill=tk.X, pady=(6, 1))
             for field, name, unit, _decimals, cat in METRIC_FIELDS:
@@ -481,7 +482,7 @@ class ResultCompareDialog:
                 var = tk.BooleanVar(value=field in DEFAULT_METRICS)
                 self.metric_vars.append(var)
                 text = f"{name} ({unit})" if unit else name
-                tk.Checkbutton(self.metrics_inner, text=text, variable=var,
+                LocalizedCheckbutton(self.metrics_inner, text=text, variable=var,
                                bg=COLOR_CARD, fg=COLOR_TEXT,
                                font=("Segoe UI", 8), anchor=tk.W
                                ).pack(fill=tk.X, padx=(14, 0))
@@ -490,20 +491,20 @@ class ResultCompareDialog:
         # 操作按钮
         action_row = tk.Frame(self.dialog, bg=COLOR_BG)
         action_row.pack(fill=tk.X, padx=10, pady=(6, 4))
-        tk.Button(action_row, text="开始对比", font=("Segoe UI", 9, "bold"),
+        LocalizedButton(action_row, text="开始对比", font=("Segoe UI", 9, "bold"),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=16,
                   command=self._do_compare).pack(side=tk.LEFT)
-        self.export_btn = tk.Button(action_row, text="导出对比CSV",
+        self.export_btn = LocalizedButton(action_row, text="导出对比CSV",
                                     font=("Segoe UI", 9), relief=tk.FLAT,
                                     bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=12,
                                     state=tk.DISABLED,
                                     command=self._export_csv)
         self.export_btn.pack(side=tk.LEFT, padx=8)
-        self.compare_status_lbl = tk.Label(action_row, text="", bg=COLOR_BG,
+        self.compare_status_lbl = LocalizedLabel(action_row, text="", bg=COLOR_BG,
                                            fg=COLOR_TEXT_MUTED,
                                            font=("Segoe UI", 8))
         self.compare_status_lbl.pack(side=tk.LEFT, padx=10)
-        tk.Button(action_row, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
+        LocalizedButton(action_row, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=self.dialog.destroy).pack(side=tk.RIGHT)
 
@@ -513,7 +514,7 @@ class ResultCompareDialog:
 
         table_pane = tk.Frame(self.paned, bg=COLOR_BG)
         self.paned.add(table_pane, weight=3)
-        tk.Label(table_pane, text="差异对比表 (Δ = B - A):", bg=COLOR_BG,
+        LocalizedLabel(table_pane, text="差异对比表 (Δ = B - A):", bg=COLOR_BG,
                  fg=COLOR_TEXT, font=("Segoe UI", 9, "bold"),
                  anchor=tk.W).pack(fill=tk.X, pady=(0, 4))
         self.table_container = tk.Frame(table_pane, bg=COLOR_BG)
@@ -521,7 +522,7 @@ class ResultCompareDialog:
 
         chart_pane = tk.Frame(self.paned, bg=COLOR_BG)
         self.paned.add(chart_pane, weight=4)
-        tk.Label(chart_pane, text="柱状对比图 (每个指标一张, A蓝/B橙):",
+        LocalizedLabel(chart_pane, text="柱状对比图 (每个指标一张, A蓝/B橙):",
                  bg=COLOR_BG, fg=COLOR_TEXT, font=("Segoe UI", 9, "bold"),
                  anchor=tk.W).pack(fill=tk.X, pady=(4, 4))
 
@@ -570,13 +571,13 @@ class ResultCompareDialog:
         file_a = self.file_a_var.get().strip()
         file_b = self.file_b_var.get().strip()
         if not file_a or not file_b:
-            messagebox.showwarning("提示", "请先选择文件A和文件B", parent=self.dialog)
+            showwarning("提示", "请先选择文件A和文件B", parent=self.dialog)
             return
         if not os.path.isfile(file_a) or not os.path.isfile(file_b):
-            messagebox.showwarning("提示", "文件不存在, 请检查路径", parent=self.dialog)
+            showwarning("提示", "文件不存在, 请检查路径", parent=self.dialog)
             return
         if os.path.normpath(file_a) == os.path.normpath(file_b):
-            messagebox.showwarning("提示", "文件A和文件B相同, 请选择两个不同的结果CSV",
+            showwarning("提示", "文件A和文件B相同, 请选择两个不同的结果CSV",
                                    parent=self.dialog)
             return
 
@@ -589,7 +590,7 @@ class ResultCompareDialog:
         if error_b:
             errors.append(f"文件B: {error_b}")
         if errors:
-            messagebox.showwarning("格式校验失败", "\n".join(errors),
+            showwarning("格式校验失败", "\n".join(errors),
                                    parent=self.dialog)
             self._set_load_status("CSV格式校验失败", COLOR_ERROR)
             return
@@ -609,7 +610,7 @@ class ResultCompareDialog:
                               else COLOR_WARNING)
 
         if not self.matches:
-            messagebox.showwarning("提示", "两个目录中没有找到输入规模相同的测试用例",
+            showwarning("提示", "两个目录中没有找到输入规模相同的测试用例",
                                    parent=self.dialog)
 
     def _populate_matches(self):
@@ -633,7 +634,7 @@ class ResultCompareDialog:
             label = (f"{index}. 输入 {format_len(key_a[0])}  输出 {output_text}"
                      f"  [{match_text}]  req {req_a}/{req_b}"
                      f"  max_cc {cc_a}/{cc_b}")
-            tk.Checkbutton(self.cases_inner, text=label, variable=var,
+            LocalizedCheckbutton(self.cases_inner, text=label, variable=var,
                            bg=COLOR_CARD, fg=COLOR_TEXT, anchor=tk.W,
                            font=("Segoe UI", 8)).pack(fill=tk.X, pady=1)
 
@@ -662,14 +663,14 @@ class ResultCompareDialog:
         selected_metrics = self._selected_metrics()
 
         if not self.matches:
-            messagebox.showwarning("提示", "请先加载数据", parent=self.dialog)
+            showwarning("提示", "请先加载数据", parent=self.dialog)
             return
         if not selected_matches:
-            messagebox.showwarning("提示", "请至少勾选一个匹配的测试用例",
+            showwarning("提示", "请至少勾选一个匹配的测试用例",
                                    parent=self.dialog)
             return
         if not selected_metrics:
-            messagebox.showwarning("提示", "请至少勾选一个对比指标",
+            showwarning("提示", "请至少勾选一个对比指标",
                                    parent=self.dialog)
             return
 
@@ -799,7 +800,7 @@ class ResultCompareDialog:
 
     def _export_csv(self):
         if not getattr(self, "compare_rows", None):
-            messagebox.showwarning("提示", "请先执行对比", parent=self.dialog)
+            showwarning("提示", "请先执行对比", parent=self.dialog)
             return
 
         default_name = f"compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -821,7 +822,7 @@ class ResultCompareDialog:
                 writer.writeheader()
                 writer.writerows(self.compare_rows)
         except OSError as exc:
-            messagebox.showerror("错误", f"导出失败: {exc}", parent=self.dialog)
+            showerror("错误", f"导出失败: {exc}", parent=self.dialog)
             return
 
         self.compare_status_lbl.config(text=f"已导出: {path}", fg=COLOR_SUCCESS)

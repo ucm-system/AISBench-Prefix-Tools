@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from main import COLOR_SUCCESS
+from i18n import set_language
 from PIL import ImageGrab
 
 
@@ -201,10 +202,10 @@ def populate_step5(app):
             "[2/4] 写入测试脚本到容器并执行...",
             "  ✓ 测试脚本执行完成",
             "[3/4] 下载测试日志到本地...",
-            "  容器内日志目录: /benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_20261029_1120",
+            "  容器内日志目录: /benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_20261030_1120",
             "  共下载 4 个日志文件",
             "[4/4] 解析日志生成CSV结果...",
-            "  ✓ CSV生成完成: results_test_logs_20261029_1120.csv",
+            "  ✓ CSV生成完成: results_test_logs_20261030_1120.csv",
         ]),
     )
 
@@ -219,8 +220,8 @@ def populate_step5(app):
     for row in sample_results:
         app.results_tree.insert("", "end", values=row)
     app.results_info_lbl.config(
-        text="共 4 条记录  |  CSV: results_test_logs_20261029_1120.csv  |  "
-             "日志: test_logs_20261029_1120"
+        text="共 4 条记录  |  CSV: results_test_logs_20261030_1120.csv  |  "
+             "日志: test_logs_20261030_1120"
     )
 
 
@@ -233,19 +234,28 @@ def main():
 
     populate_step1(app)
     app._show_step(0)
-    capture(app, "step1-connection-20261029.png")
+    capture(app, "step1-connection-20261030.png")
 
     populate_step2(app)
-    capture(app, "step2-docker-20261029.png")
+    capture(app, "step2-docker-20261030.png")
+
+    set_language("en")
+    app._rebuild_ui_for_language()
+    populate_step2(app)
+    capture(app, "step2-docker-en-20261030.png")
+
+    set_language("zh")
+    app._rebuild_ui_for_language()
+    populate_step2(app)
 
     populate_step3(app)
-    capture(app, "step3-config-20261029.png")
+    capture(app, "step3-config-20261030.png")
 
     populate_step4(app)
-    capture(app, "step4-testcases-20261029.png")
+    capture(app, "step4-testcases-20261030.png")
 
     populate_step5(app)
-    capture(app, "step5-execute-20261029.png")
+    capture(app, "step5-execute-20261030.png")
 
     app.root.destroy()
 

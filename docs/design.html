@@ -217,6 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
     <li><b>容器内工作区</b>：测试代码在容器创建后通过 <code>docker cp</code> 导入容器，宿主机临时目录随即删除；config.py、测试脚本和日志全部保存在容器内部，避免宿主机残留和挂载依赖。</li>
     <li><b>结构化 CSV 作为数据契约</b>：所有测试结果统一输出 CSV，保证后续分析、归档和对比稳定。</li>
     <li><b>分析工具独立</b>：结果对比不依赖执行服务器，可以在任意本机离线使用。</li>
+    <li><b>中英文界面</b>：通过统一的 i18n 层和本地化控件，支持中文 / English 即时切换并持久化用户选择。</li>
   </ul>
 </section>
 
@@ -233,6 +234,8 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
       <tr><td><code>log_parser.py</code></td><td>解析测试日志，生成结构化 CSV</td><td>执行流程</td></tr>
       <tr><td><code>log_tools.py</code></td><td>远程日志选择、筛选、查看与一键填入</td><td>SSH 管理器、用例设计器</td></tr>
       <tr><td><code>result_compare.py</code></td><td>选择 CSV、匹配用例、输出差异表格与图表</td><td>用户、CSV 文件</td></tr>
+      <tr><td><code>i18n.py</code></td><td>中文 / English 界面文案与语言切换</td><td>GUI、远程日志工具、结果对比</td></tr>
+      <tr><td><code>settings_manager.py</code></td><td>持久化用户偏好（如界面语言）</td><td>GUI</td></tr>
     </tbody>
   </table>
   <div class="callout">

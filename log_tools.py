@@ -9,6 +9,7 @@ import shlex
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
+from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning
 from typing import Optional, List, Tuple, Callable
 
 from ssh_manager import SSHManager
@@ -94,7 +95,7 @@ class RemoteLogBrowser:
         self._build_results_section(main)
 
     def _build_server_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 服务器 ", bg=COLOR_CARD, fg=COLOR_TEXT,
+        box = LocalizedLabelFrame(parent, text=" 服务器 ", bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.X, padx=10, pady=(10, 4))
 
@@ -105,10 +106,10 @@ class RemoteLogBrowser:
         self.server_var = tk.StringVar(value="current")
         radio_row = tk.Frame(box, bg=COLOR_CARD)
         radio_row.pack(fill=tk.X, padx=10, pady=(6, 2))
-        tk.Radiobutton(radio_row, text=current_label, variable=self.server_var,
+        LocalizedRadiobutton(radio_row, text=current_label, variable=self.server_var,
                        value="current", command=self._on_server_mode_change,
                        bg=COLOR_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        tk.Radiobutton(radio_row, text="其他服务器", variable=self.server_var,
+        LocalizedRadiobutton(radio_row, text="其他服务器", variable=self.server_var,
                        value="other", command=self._on_server_mode_change,
                        bg=COLOR_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=20)
 
@@ -126,37 +127,37 @@ class RemoteLogBrowser:
         }
         for text, key, width in (("IP:", "host", 14), ("端口:", "port", 6),
                                  ("用户名:", "user", 10)):
-            tk.Label(fields, text=text, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            LocalizedLabel(fields, text=text, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                      font=("Segoe UI", 8)).pack(side=tk.LEFT)
             tk.Entry(fields, textvariable=self.other_vars[key], width=width,
                      font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 10))
 
         auth_row = tk.Frame(self.other_frame, bg=COLOR_CARD)
         auth_row.pack(fill=tk.X, padx=10, pady=2)
-        tk.Label(auth_row, text="密码:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(auth_row, text="密码:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         tk.Entry(auth_row, textvariable=self.other_vars["password"], width=18,
                  show="*", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 10))
-        tk.Label(auth_row, text="密钥:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(auth_row, text="密钥:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         tk.Entry(auth_row, textvariable=self.other_vars["key"], width=28,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=2)
-        tk.Button(auth_row, text="浏览", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(auth_row, text="浏览", font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=6,
                   command=self._browse_key).pack(side=tk.LEFT, padx=4)
 
         conn_row = tk.Frame(self.other_frame, bg=COLOR_CARD)
         conn_row.pack(fill=tk.X, padx=10, pady=(2, 6))
-        self.connect_btn = tk.Button(conn_row, text="连接", font=("Segoe UI", 8, "bold"),
+        self.connect_btn = LocalizedButton(conn_row, text="连接", font=("Segoe UI", 8, "bold"),
                                      relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
                                      padx=14, command=self._connect_other)
         self.connect_btn.pack(side=tk.LEFT)
-        self.conn_status_lbl = tk.Label(conn_row, text="未连接", bg=COLOR_CARD,
+        self.conn_status_lbl = LocalizedLabel(conn_row, text="未连接", bg=COLOR_CARD,
                                         fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8))
         self.conn_status_lbl.pack(side=tk.LEFT, padx=10)
 
     def _build_source_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 日志来源 ", bg=COLOR_CARD, fg=COLOR_TEXT,
+        box = LocalizedLabelFrame(parent, text=" 日志来源 ", bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.X, padx=10, pady=4)
 
@@ -166,43 +167,43 @@ class RemoteLogBrowser:
         for text, value in (("宿主机文件", "host"),
                             ("容器内文件", "container"),
                             ("容器日志(docker logs)", "docker_logs")):
-            tk.Radiobutton(radio_row, text=text, variable=self.source_var,
+            LocalizedRadiobutton(radio_row, text=text, variable=self.source_var,
                            value=value, command=self._on_source_change,
                            bg=COLOR_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT,
                                                                    padx=(0, 14))
 
         ctr_row = tk.Frame(box, bg=COLOR_CARD)
         ctr_row.pack(fill=tk.X, padx=10, pady=(2, 6))
-        tk.Label(ctr_row, text="容器:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(ctr_row, text="容器:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         self.container_var = tk.StringVar()
         self.container_combo = ttk.Combobox(ctr_row, textvariable=self.container_var,
                                             state="readonly", width=36,
                                             font=("Segoe UI", 8))
         self.container_combo.pack(side=tk.LEFT, padx=6)
-        tk.Button(ctr_row, text="刷新容器列表", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(ctr_row, text="刷新容器列表", font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=self._refresh_containers).pack(side=tk.LEFT)
-        self.container_status_lbl = tk.Label(ctr_row, text="", bg=COLOR_CARD,
+        self.container_status_lbl = LocalizedLabel(ctr_row, text="", bg=COLOR_CARD,
                                              fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8))
         self.container_status_lbl.pack(side=tk.LEFT, padx=10)
 
     def _build_browser_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 文件浏览 (双击进入目录, 单击选择文件) ",
+        box = LocalizedLabelFrame(parent, text=" 文件浏览 (双击进入目录, 单击选择文件) ",
                             bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
 
         path_row = tk.Frame(box, bg=COLOR_CARD)
         path_row.pack(fill=tk.X, padx=10, pady=(6, 2))
-        tk.Label(path_row, text="路径:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(path_row, text="路径:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         self.path_var = tk.StringVar(value="/")
         path_entry = tk.Entry(path_row, textvariable=self.path_var, width=48,
                               font=("Segoe UI", 8))
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         path_entry.bind("<Return>", lambda event: self._load_dir())
-        tk.Button(path_row, text="前往", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(path_row, text="前往", font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=lambda: self._load_dir()).pack(side=tk.LEFT)
 
@@ -217,7 +218,7 @@ class RemoteLogBrowser:
         self.file_list.bind("<<ListboxSelect>>", self._on_list_select)
         self.file_list.bind("<Double-Button-1>", self._on_list_double_click)
 
-        self.file_lbl = tk.Label(box, text="当前文件: (未选择)", bg=COLOR_CARD,
+        self.file_lbl = LocalizedLabel(box, text="当前文件: (未选择)", bg=COLOR_CARD,
                                  fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8), anchor=tk.W)
         self.file_lbl.pack(fill=tk.X, padx=10, pady=(0, 6))
 
@@ -225,20 +226,20 @@ class RemoteLogBrowser:
         row = tk.Frame(parent, bg=COLOR_BG)
         row.pack(fill=tk.X, padx=10, pady=4)
 
-        self.grep_btn = tk.Button(row, text="筛选 KV cache", font=("Segoe UI", 9, "bold"),
+        self.grep_btn = LocalizedButton(row, text="筛选 KV cache", font=("Segoe UI", 9, "bold"),
                                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
                                   padx=14, command=self._do_grep)
         self.grep_btn.pack(side=tk.LEFT)
-        self.view_btn = tk.Button(row, text="查看日志", font=("Segoe UI", 9),
+        self.view_btn = LocalizedButton(row, text="查看日志", font=("Segoe UI", 9),
                                   relief=tk.FLAT, bg=COLOR_CARD, fg=COLOR_PRIMARY,
                                   padx=14, command=self._view_log)
         self.view_btn.pack(side=tk.LEFT, padx=8)
-        self.action_status_lbl = tk.Label(row, text="", bg=COLOR_BG,
+        self.action_status_lbl = LocalizedLabel(row, text="", bg=COLOR_BG,
                                           fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8))
         self.action_status_lbl.pack(side=tk.LEFT, padx=12)
 
     def _build_results_section(self, parent):
-        box = tk.LabelFrame(parent, text=" 筛选结果 ", bg=COLOR_CARD, fg=COLOR_TEXT,
+        box = LocalizedLabelFrame(parent, text=" 筛选结果 ", bg=COLOR_CARD, fg=COLOR_TEXT,
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 4))
 
@@ -251,15 +252,15 @@ class RemoteLogBrowser:
 
         bottom = tk.Frame(box, bg=COLOR_CARD)
         bottom.pack(fill=tk.X, padx=10, pady=(2, 8))
-        self.parsed_lbl = tk.Label(bottom, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        self.parsed_lbl = LocalizedLabel(bottom, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                    font=("Segoe UI", 8), anchor=tk.W)
         self.parsed_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.fill_btn = tk.Button(bottom, text="填入参数", font=("Segoe UI", 9, "bold"),
+        self.fill_btn = LocalizedButton(bottom, text="填入参数", font=("Segoe UI", 9, "bold"),
                                   relief=tk.FLAT, bg=COLOR_SUCCESS, fg="white",
                                   padx=12, state=tk.DISABLED,
                                   command=self._fill_params)
         self.fill_btn.pack(side=tk.RIGHT)
-        tk.Button(bottom, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
+        LocalizedButton(bottom, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=self._on_close).pack(side=tk.RIGHT, padx=(0, 8))
 
@@ -305,17 +306,17 @@ class RemoteLogBrowser:
         try:
             port = int(self.other_vars["port"].get().strip() or "22")
         except ValueError:
-            messagebox.showwarning("提示", "端口必须为数字", parent=self.dialog)
+            showwarning("提示", "端口必须为数字", parent=self.dialog)
             return
         user = self.other_vars["user"].get().strip()
         password = self.other_vars["password"].get() or None
         key_path = self.other_vars["key"].get().strip() or None
 
         if not host or not user:
-            messagebox.showwarning("提示", "请填写IP和用户名", parent=self.dialog)
+            showwarning("提示", "请填写IP和用户名", parent=self.dialog)
             return
         if not password and not key_path:
-            messagebox.showwarning("提示", "请填写密码或密钥文件路径",
+            showwarning("提示", "请填写密码或密钥文件路径",
                                    parent=self.dialog)
             return
 
@@ -430,12 +431,12 @@ class RemoteLogBrowser:
     def _load_dir(self, path: str = None):
         ssh = self._active_ssh()
         if ssh is None or not ssh.connected:
-            messagebox.showwarning("提示", "请先连接服务器", parent=self.dialog)
+            showwarning("提示", "请先连接服务器", parent=self.dialog)
             return
         if self._source_mode() == "docker_logs":
             return
         if self._source_mode() == "container" and not self.container_var.get():
-            messagebox.showwarning("提示", "请先选择容器", parent=self.dialog)
+            showwarning("提示", "请先选择容器", parent=self.dialog)
             return
 
         if path is None:
@@ -601,14 +602,14 @@ class RemoteLogBrowser:
     def _require_ready(self) -> Optional[SSHManager]:
         ssh = self._active_ssh()
         if ssh is None or not ssh.connected:
-            messagebox.showwarning("提示", "请先连接服务器", parent=self.dialog)
+            showwarning("提示", "请先连接服务器", parent=self.dialog)
             return None
         mode = self._source_mode()
         if mode in ("container", "docker_logs") and not self.container_var.get():
-            messagebox.showwarning("提示", "请先选择容器", parent=self.dialog)
+            showwarning("提示", "请先选择容器", parent=self.dialog)
             return None
         if mode != "docker_logs" and not self.current_file:
-            messagebox.showwarning("提示", "请先在列表中选择日志文件",
+            showwarning("提示", "请先在列表中选择日志文件",
                                    parent=self.dialog)
             return None
         return ssh
@@ -619,7 +620,7 @@ class RemoteLogBrowser:
             return
         cmd = self._grep_command()
         if cmd is None:
-            messagebox.showwarning("提示", "无法生成筛选命令, 请检查容器/文件选择",
+            showwarning("提示", "无法生成筛选命令, 请检查容器/文件选择",
                                    parent=self.dialog)
             return
 
@@ -711,7 +712,7 @@ class RemoteLogBrowser:
 
         if filled:
             self._set_action_status("已填入: " + "; ".join(filled), COLOR_SUCCESS)
-            messagebox.showinfo("成功", "已填入:\n" + "\n".join(filled),
+            showinfo("成功", "已填入:\n" + "\n".join(filled),
                                 parent=self.dialog)
 
     def _view_log(self):
@@ -720,7 +721,7 @@ class RemoteLogBrowser:
             return
         cmd = self._view_command()
         if cmd is None:
-            messagebox.showwarning("提示", "无法生成查看命令, 请检查容器/文件选择",
+            showwarning("提示", "无法生成查看命令, 请检查容器/文件选择",
                                    parent=self.dialog)
             return
 
@@ -752,14 +753,14 @@ class RemoteLogBrowser:
 
         header = tk.Frame(window, bg=COLOR_CARD, bd=1, relief=tk.SOLID)
         header.pack(fill=tk.X)
-        tk.Label(header, text="来源命令:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(header, text="来源命令:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8), anchor=tk.W).pack(fill=tk.X, padx=10, pady=(8, 0))
-        tk.Label(header, text=source_desc, bg=COLOR_CARD, fg=COLOR_TEXT,
+        LocalizedLabel(header, text=source_desc, bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Consolas", 8), anchor=tk.W).pack(fill=tk.X, padx=10)
         tail_note = (f"已加载内容: {len(content)} 字符 "
                      f"(文件取尾部 {VIEW_TAIL_BYTES // 1024 // 1024}MB, "
                      f"docker logs 取尾部 {VIEW_DOCKER_LOGS_LINES} 行)")
-        tk.Label(header, text=tail_note, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(header, text=tail_note, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8), anchor=tk.W).pack(fill=tk.X, padx=10,
                                                          pady=(0, 8))
 
@@ -786,9 +787,9 @@ class RemoteLogBrowser:
             window.clipboard_clear()
             window.clipboard_append(content)
 
-        tk.Button(buttons, text="复制全部", font=("Segoe UI", 8), relief=tk.FLAT,
+        LocalizedButton(buttons, text="复制全部", font=("Segoe UI", 8), relief=tk.FLAT,
                   bg=COLOR_PRIMARY, fg="white", padx=12,
                   command=_copy_all).pack(side=tk.LEFT)
-        tk.Button(buttons, text="关闭", font=("Segoe UI", 8), relief=tk.FLAT,
+        LocalizedButton(buttons, text="关闭", font=("Segoe UI", 8), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=window.destroy).pack(side=tk.RIGHT)

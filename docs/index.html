@@ -264,6 +264,7 @@ build_exe.bat</code></pre>
   <h2>界面语言切换</h2>
   <span class="step-badge">中文 / English</span>
   <p>左侧边栏底部提供 <code>语言 / Language</code> 下拉框，可在中文和 English 之间切换；切换后界面立即重建，无需重启程序，选择会保存到本机用户配置。</p>
+  <p>界面控件、弹窗提示（如“下一步”校验、部署与清理确认、结果摘要）以及状态栏动态消息均随所选语言显示。</p>
   <figure class="figure">
     <img src="images/step2-docker-en-20261030.png?v=20261030" alt="English interface example">
     <figcaption>English 界面示例：步骤 2 的 Docker 部署与模型配置页面</figcaption>
@@ -519,7 +520,7 @@ build_exe.bat</code></pre>
   <h3>上传镜像后无法自动识别镜像名？</h3>
   <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在步骤 2 部署日志中查看结果。</p>
   <h3>如何切换中文 / English 界面？</h3>
-  <p>在左侧边栏底部选择 <code>语言 / Language</code>；界面会立即重建，选择会保存到本机用户配置，下次启动自动恢复。</p>
+  <p>在左侧边栏底部选择 <code>语言 / Language</code>；界面会立即重建，选择会保存到本机用户配置，下次启动自动恢复。弹窗提示与状态栏动态消息也会同步切换。</p>
   <h3>模型路径浏览看不到文件？</h3>
   <p>远程目录浏览器默认从根目录开始，双击 DIR 进入子目录。部分目录可能因权限问题无法列出。</p>
   <h3>POD_INFO 应该怎么填？</h3>

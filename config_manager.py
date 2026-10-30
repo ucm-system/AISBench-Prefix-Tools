@@ -3,6 +3,8 @@
 """
 
 from typing import Dict, Optional
+
+from i18n import tr, trf
 from docker_manager import DockerManager
 
 
@@ -105,13 +107,13 @@ POD_INFO = {pod_info}
         errors = []
 
         if not config.get('model_name'):
-            errors.append("MODEL_NAME 不能为空")
+            errors.append(tr("MODEL_NAME 不能为空"))
         if not config.get('model_path'):
-            errors.append("MODEL_PATH 不能为空")
+            errors.append(tr("MODEL_PATH 不能为空"))
         if not config.get('host_ip'):
-            errors.append("HOST_IP 不能为空")
+            errors.append(tr("HOST_IP 不能为空"))
         if not config.get('host_port'):
-            errors.append("HOST_PORT 不能为空")
+            errors.append(tr("HOST_PORT 不能为空"))
 
         # 检查端口是否为数字
         port = config.get('host_port', '')
@@ -119,7 +121,7 @@ POD_INFO = {pod_info}
             try:
                 int(port)
             except ValueError:
-                errors.append(f"HOST_PORT 必须为数字: {port}")
+                errors.append(trf("HOST_PORT 必须为数字: {port}", port=port))
 
         # POD_INFO验证
         pod_info = config.get('pod_info', '')
@@ -129,6 +131,6 @@ POD_INFO = {pod_info}
                 for item in cleaned.split(','):
                     item = item.strip()
                     if item and ':' not in item:
-                        errors.append(f"POD_INFO项格式应为 'ip:port': {item}")
+                        errors.append(trf("POD_INFO项格式应为 'ip:port': {item}", item=item))
 
         return errors

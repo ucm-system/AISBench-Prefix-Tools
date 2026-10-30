@@ -109,5 +109,117 @@ class LanguageSwitchTests(unittest.TestCase):
             root.destroy()
 
 
+class DynamicMessageI18nTests(unittest.TestCase):
+    """Dynamic popups and status messages must follow the selected language."""
+
+    def tearDown(self):
+        i18n.set_language("zh")
+
+    def test_trf_translates_dynamic_templates(self):
+        i18n.set_language("en")
+        self.assertEqual(
+            i18n.trf("已清理: {work_dir}", work_dir="/tmp/aisbench"),
+            "Cleaned: /tmp/aisbench")
+        self.assertEqual(
+            i18n.trf("发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。", count=3),
+            "Found 3 image(s). Select an AISBench image; if none is suitable, "
+            "switch to uploading a tar package.")
+        self.assertEqual(
+            i18n.trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
+                     csv="a.csv", log="logs", count=2),
+            "Tests complete!\n\nCSV: a.csv\nLog: logs\n2 records in total")
+
+    def test_messagebox_literals_are_translated(self):
+        i18n.set_language("en")
+        self.assertEqual(i18n.tr("提示"), "Notice")
+        self.assertEqual(i18n.tr("请先连接到远程主机"), "Please connect to the remote host first")
+        self.assertEqual(i18n.tr("Docker容器尚未部署，是否继续?"),
+                         "Docker container is not deployed yet. Continue?")
+        self.assertEqual(i18n.tr("尚未生成测试用例，是否继续?"),
+                         "No test cases generated yet. Continue?")
+        self.assertEqual(i18n.tr("请完成镜像和模型路径选择"),
+                         "Please finish image and model path selection")
+        self.assertEqual(i18n.tr("请选择本地代码zip包 (或改用程序内置)"),
+                         "Please select a local code zip package (or use built-in)")
+
+    def test_next_step_warning_is_english(self):
+        """Clicking Next without a connection must warn in English."""
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path", return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.language_var.set("English")
+                    app._on_language_change()
+                    app.current_step = 0
+                    app.ssh._connected = False
+                    # Patch the underlying Tk messagebox so the i18n wrapper
+                    # runs and we can assert the *translated* arguments.
+                    with mock.patch("i18n.messagebox.showwarning") as warn:
+                        app._next_step()
+                    warn.assert_called_once_with(
+                        "Notice", "Please connect to the remote host first")
+                finally:
+                    app.root.destroy()
+
+    def test_exit_cleanup_popup_is_english(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path", return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.language_var.set("English")
+                    app._on_language_change()
+                    app.work_dir_var.set("/tmp/aisbench_deploy")
+                    docker = mock.Mock()
+                    docker.container_name = "aisbench-test-abc"
+                    docker.container_is_running.return_value = True
+                    app.docker = docker
+                    with mock.patch("i18n.messagebox.askyesnocancel") as ask:
+                        ask.return_value = None
+                        app._exit_check_cleanup()
+                    args, kwargs = ask.call_args
+                    self.assertEqual(args[0], "Cleanup reminder")
+                    self.assertIn("The Docker container is still running!", args[1])
+                    self.assertIn("Container: aisbench-test-abc", args[1])
+                    self.assertIn("Temporary deploy directory leftovers: /tmp/aisbench_deploy", args[1])
+                    self.assertIn("Clean up the remote environment before exiting?", args[1])
+                finally:
+                    app.root.destroy()
+
+    def test_validate_config_errors_are_english(self):
+        from config_manager import ConfigManager
+        i18n.set_language("en")
+        mgr = ConfigManager(docker=None)
+        errors = mgr.validate_config({})
+        self.assertIn("MODEL_NAME cannot be empty", errors)
+        self.assertIn("MODEL_PATH cannot be empty", errors)
+        self.assertIn("HOST_IP cannot be empty", errors)
+        self.assertIn("HOST_PORT cannot be empty", errors)
+
+        errors = mgr.validate_config({"host_port": "abc"})
+        self.assertIn("HOST_PORT must be a number: abc", errors)
+
+    def test_ssh_connect_messages_are_english(self):
+        from ssh_manager import SSHManager
+        i18n.set_language("en")
+        mgr = SSHManager()
+        with mock.patch("ssh_manager.paramiko.SSHClient") as client_cls:
+            client_cls.side_effect = OSError("boom")
+            ok, msg = mgr.connect("1.2.3.4", 22, "root", password="x")
+        self.assertFalse(ok)
+        self.assertEqual(msg, "Connection failed: boom")
+
+        import paramiko
+        mgr2 = SSHManager()
+        with mock.patch("ssh_manager.paramiko.SSHClient") as client_cls:
+            client_cls.side_effect = paramiko.AuthenticationException()
+            ok, msg = mgr2.connect("1.2.3.4", 22, "root", password="x")
+        self.assertFalse(ok)
+        self.assertEqual(msg, "Authentication failed; check username/password/key")
+
+        self.assertEqual(mgr.execute("ls"), (-1, "", "Not connected to the remote host"))
+
+
 if __name__ == "__main__":
     unittest.main()

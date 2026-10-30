@@ -217,7 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
     <li><b>容器内工作区</b>：测试代码在容器创建后通过 <code>docker cp</code> 导入容器，宿主机临时目录随即删除；config.py、测试脚本和日志全部保存在容器内部，避免宿主机残留和挂载依赖。</li>
     <li><b>结构化 CSV 作为数据契约</b>：所有测试结果统一输出 CSV，保证后续分析、归档和对比稳定。</li>
     <li><b>分析工具独立</b>：结果对比不依赖执行服务器，可以在任意本机离线使用。</li>
-    <li><b>中英文界面</b>：通过统一的 i18n 层和本地化控件，支持中文 / English 即时切换并持久化用户选择。</li>
+    <li><b>中英文界面</b>：通过统一的 i18n 层和本地化控件，支持中文 / English 即时切换并持久化用户选择；弹窗提示与动态消息通过 <code>tr()</code>/<code>trf()</code> 模板翻译，覆盖“下一步”校验、部署/清理确认等场景。</li>
   </ul>
 </section>
 

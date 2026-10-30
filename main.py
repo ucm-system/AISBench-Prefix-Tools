@@ -42,6 +42,8 @@ from i18n import (
     showerror,
     showinfo,
     showwarning,
+    tr,
+    trf,
 )
 from settings_manager import load_settings, save_settings
 
@@ -591,7 +593,7 @@ class WizardApp:
 
     def _browse_key_file(self):
         path = filedialog.askopenfilename(
-            title="选择SSH密钥文件",
+            title=tr("选择SSH密钥文件"),
             filetypes=[("All files", "*.*"), ("PEM files", "*.pem")]
         )
         if path:
@@ -812,7 +814,7 @@ class WizardApp:
             self.image_source_var.set("upload")
             self._on_image_source_change()
             self.image_list_status.config(
-                text=f"查询失败: {e}。可先上传tar包，部署时会检查Docker。",
+                text=trf("查询失败: {error}。可先上传tar包，部署时会检查Docker。", error=e),
                 fg=COLOR_ERROR)
             return
 
@@ -843,7 +845,8 @@ class WizardApp:
             self._on_remote_image_selected()
         else:
             self.image_list_status.config(
-                text=f"发现 {len(names)} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
+                text=trf("发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
+                    count=len(names)),
                 fg=COLOR_WARNING)
 
     def _on_remote_image_selected(self, event=None):
@@ -853,12 +856,15 @@ class WizardApp:
         if not item:
             self.image_list_status.config(text="请选择执行机上的镜像", fg=COLOR_WARNING)
             return
-        detail = f"ID {item['id']} · 创建于 {item['created']} · 大小 {item['size']}"
-        self.image_list_status.config(text=f"已选择 {selected} ({detail})", fg=COLOR_SUCCESS)
+        detail = trf("ID {id} · 创建于 {created} · 大小 {size}",
+                     id=item['id'], created=item['created'], size=item['size'])
+        self.image_list_status.config(
+            text=trf("已选择 {selected} ({detail})", selected=selected, detail=detail),
+            fg=COLOR_SUCCESS)
 
     def _browse_tar(self):
         path = filedialog.askopenfilename(
-            title="选择AISBench镜像包",
+            title=tr("选择AISBench镜像包"),
             filetypes=[("tar.gz files", "*.tar.gz"), ("tar files", "*.tar"), ("All files", "*.*")]
         )
         if path:
@@ -880,7 +886,7 @@ class WizardApp:
 
     def _browse_zip(self):
         path = filedialog.askopenfilename(
-            title="选择代码zip包",
+            title=tr("选择代码zip包"),
             filetypes=[("zip files", "*.zip"), ("All files", "*.*")]
         )
         if path:
@@ -1093,7 +1099,7 @@ class WizardApp:
         try:
             webbrowser.open(url)
         except Exception as e:
-            showerror("打开失败", f"无法打开链接: {url}\n{e}")
+            showerror("打开失败", trf("无法打开链接: {url}\n{error}", url=url, error=e))
 
     def _check_work_dir(self):
         """检查临时部署目录是否存在(旧版本/失败部署可能残留)"""
@@ -1121,12 +1127,12 @@ class WizardApp:
                 self.clean_work_dir_btn.config(state=tk.NORMAL)
                 choice = askyesnocancel(
                     "临时目录已存在",
-                    f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
-                    f"目录内容:\n{out[:200]}\n\n"
-                    f"通常是上次部署失败或旧版本遗留的暂存文件。\n\n"
-                    f"是 - 删除残留暂存文件\n"
-                    f"否 - 忽略并继续部署(会覆盖同名文件)\n"
-                    f"取消 - 保持现状",
+                    trf("临时部署目录已存在且有内容:\n{work_dir}\n\n"
+                        "目录内容:\n{content}\n\n"
+                        "通常是上次部署失败或旧版本遗留的暂存文件。\n\n"
+                        "是 - 删除残留暂存文件\n"
+                        "否 - 忽略并继续部署(会覆盖同名文件)\n"
+                        "取消 - 保持现状", work_dir=work_dir, content=out[:200]),
                     icon=messagebox.WARNING)
                 if choice is True:
                     self._do_clean_work_dir()
@@ -1156,10 +1162,10 @@ class WizardApp:
         ok = self.docker.remove_work_dir()
         if ok:
             self.work_dir_status.config(text="已清理", fg=COLOR_SUCCESS)
-            showinfo("成功", f"已清理: {work_dir}")
+            showinfo("成功", trf("已清理: {work_dir}", work_dir=work_dir))
         else:
             self.work_dir_status.config(text="清理失败", fg=COLOR_ERROR)
-            showerror("失败", f"清理失败: {work_dir}")
+            showerror("失败", trf("清理失败: {work_dir}", work_dir=work_dir))
 
     def _clean_work_dir(self):
         """清理临时部署目录按钮回调"""
@@ -1169,10 +1175,10 @@ class WizardApp:
 
         work_dir = self.work_dir_var.get().strip()
         if not askyesno("确认清理",
-                                   f"确定要清理临时部署目录吗?\n\n{work_dir}\n\n"
-                                   f"这将删除残留的暂存文件（镜像tar、代码包等），\n"
-                                   f"并停止当前会话创建的容器。\n"
-                                   f"容器内的测试代码和日志不受影响。",
+                                   trf("确定要清理临时部署目录吗?\n\n{work_dir}\n\n"
+                                       "这将删除残留的暂存文件（镜像tar、代码包等），\n"
+                                       "并停止当前会话创建的容器。\n"
+                                       "容器内的测试代码和日志不受影响。", work_dir=work_dir),
                                    icon=messagebox.WARNING):
             return
         self._do_clean_work_dir()
@@ -1207,7 +1213,8 @@ class WizardApp:
 
         suffix = " (含当前容器)" if current else ""
         self.residual_status_lbl.config(
-            text=f"发现 {len(containers)} 个本工具容器{suffix}",
+            text=trf("发现 {count} 个本工具容器{suffix}",
+                     count=len(containers), suffix=suffix),
             fg=COLOR_WARNING if residuals else COLOR_TEXT_MUTED)
 
         if prompt_if_found and residuals:
@@ -1217,10 +1224,11 @@ class WizardApp:
                 listing += "\n  ..."
             if askyesno(
                     "发现残留容器",
-                    f"检测到 {len(residuals)} 个本工具创建的历史容器:\n\n"
-                    f"{listing}\n\n"
-                    f"这些容器可能是上次退出时未清理的。\n"
-                    f"是否打开清理窗口进行选择清理?",
+                    trf("检测到 {count} 个本工具创建的历史容器:\n\n"
+                        "{listing}\n\n"
+                        "这些容器可能是上次退出时未清理的。\n"
+                        "是否打开清理窗口进行选择清理?",
+                        count=len(residuals), listing=listing),
                     icon=messagebox.WARNING):
                 self._open_residual_container_dialog()
 
@@ -1252,10 +1260,10 @@ class WizardApp:
         columns = ("name", "image", "status", "created")
         tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
         for col, (text, width) in {
-            "name": ("容器名", 200),
-            "image": ("镜像", 240),
-            "status": ("状态", 150),
-            "created": ("创建时间", 140),
+            "name": (tr("容器名"), 200),
+            "image": (tr("镜像"), 240),
+            "status": (tr("状态"), 150),
+            "created": (tr("创建时间"), 140),
         }.items():
             tree.heading(col, text=text)
             tree.column(col, width=width, anchor=tk.W)
@@ -1311,7 +1319,7 @@ class WizardApp:
                     containers = self.docker.list_managed_containers()
                 except Exception as e:
                     dialog.after(0, lambda: status_lbl.config(
-                        text=f"查询失败: {e}", fg=COLOR_ERROR))
+                        text=trf("查询失败: {error}", error=e), fg=COLOR_ERROR))
                     return
 
                 def _fill():
@@ -1322,10 +1330,10 @@ class WizardApp:
                             c["name"], c["image"], c["status"], c["created"]))
                     count = len(containers)
                     status_lbl.config(
-                        text=f"共 {count} 个容器" if count else "无残留容器",
+                        text=trf("共 {count} 个容器", count=count) if count else "无残留容器",
                         fg=COLOR_WARNING if count else COLOR_SUCCESS)
                     self.residual_status_lbl.config(
-                        text=f"发现 {count} 个本工具容器" if count else "无残留容器",
+                        text=trf("发现 {count} 个本工具容器", count=count) if count else "无残留容器",
                         fg=COLOR_WARNING if count else COLOR_SUCCESS)
 
                 dialog.after(0, _fill)
@@ -1348,10 +1356,11 @@ class WizardApp:
                                        parent=dialog)
                 return
             names = sorted(checked)
-            confirm_msg = ("确定停止并删除以下容器?\n\n"
+            confirm_msg = (tr("确定停止并删除以下容器?\n\n")
                            + "\n".join(f"  {n}" for n in names))
             if clean_temp_var.get():
-                confirm_msg += f"\n\n同时删除临时部署目录:\n  {self.work_dir_var.get().strip()}"
+                confirm_msg += trf("\n\n同时删除临时部署目录:\n  {work_dir}",
+                                   work_dir=self.work_dir_var.get().strip())
             if not askyesno("确认清理", confirm_msg,
                                        icon=messagebox.WARNING, parent=dialog):
                 return
@@ -1361,7 +1370,7 @@ class WizardApp:
 
             def _do_clean():
                 for name in names:
-                    _log(f"停止并删除容器: {name}\n")
+                    _log(trf("停止并删除容器: {name}\n", name=name))
                     self.docker.remove_container(name, callback=_log_async)
                     if self.docker.container_name == name:
                         self.docker.container_name = None
@@ -1433,7 +1442,9 @@ class WizardApp:
         if self.code_source_var.get() == "builtin":
             code_dir = self._get_bundled_code_dir()
             if not os.path.isdir(code_dir):
-                showerror("错误", f"未找到内置测试代码目录:\n{code_dir}\n\n请改用本地zip包模式")
+                showerror("错误", trf(
+                    "未找到内置测试代码目录:\n{code_dir}\n\n请改用本地zip包模式",
+                    code_dir=code_dir))
                 return
         else:
             zipf = self.zip_path.get().strip()
@@ -1441,7 +1452,7 @@ class WizardApp:
                 showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
                 return
             if not os.path.isfile(zipf):
-                showwarning("提示", f"zip包不存在: {zipf}")
+                showwarning("提示", trf("zip包不存在: {path}", path=zipf))
                 return
 
         if image_mode == "existing":
@@ -1453,7 +1464,7 @@ class WizardApp:
                 showwarning("提示", "请选择要上传的AISBench镜像tar包")
                 return
             if not os.path.isfile(tar):
-                showwarning("提示", f"镜像tar包不存在: {tar}")
+                showwarning("提示", trf("镜像tar包不存在: {path}", path=tar))
                 return
 
         if not model:
@@ -1471,11 +1482,11 @@ class WizardApp:
             if out.strip():
                 choice = askyesnocancel(
                     "临时目录已存在",
-                    f"临时部署目录已存在且有内容:\n{work_dir}\n\n"
-                    f"通常是上次部署中断或旧版本遗留的暂存文件。\n\n"
-                    f"是 - 删除残留后继续部署\n"
-                    f"否 - 忽略并继续部署（覆盖同名文件）\n"
-                    f"取消 - 终止部署",
+                    trf("临时部署目录已存在且有内容:\n{work_dir}\n\n"
+                        "通常是上次部署中断或旧版本遗留的暂存文件。\n\n"
+                        "是 - 删除残留后继续部署\n"
+                        "否 - 忽略并继续部署（覆盖同名文件）\n"
+                        "取消 - 终止部署", work_dir=work_dir),
                     icon=messagebox.WARNING)
                 if choice is True:
                     self.docker.remove_work_dir()
@@ -1854,23 +1865,29 @@ class WizardApp:
             gui_val = gui_values.get(field, '')
             saved_val = saved_values.get(field, '')
             if gui_val and saved_val and gui_val != saved_val:
-                mismatches.append(f"  {field}: 界面={gui_val}  容器={saved_val}")
+                mismatches.append(trf("  {field}: 界面={gui}  容器={container}",
+                                      field=field, gui=gui_val, container=saved_val))
 
         if mismatches:
             self.config_status_lbl.config(text="⚠ 已写入但存在不一致!", fg=COLOR_ERROR)
             showwarning("配置不一致",
-                                   "config.py 已写入，但回读发现以下不一致:\n\n" + "\n".join(mismatches))
+                                   tr("config.py 已写入，但回读发现以下不一致:\n\n") + "\n".join(mismatches))
         else:
             self.config_status_lbl.config(text="✓ 配置已保存并验证一致", fg=COLOR_SUCCESS)
             container_path = f"{self.docker.code_mount_path}/config.py"
             showinfo("成功",
-                               f"config.py 已写入并回读验证一致!\n\n"
-                               f"容器内路径: {container_path}\n\n"
-                               f"关键配置:\n"
-                               f"  MODEL_PATH = {saved_values.get('MODEL_PATH', '?')}\n"
-                               f"  MODEL_NAME = {saved_values.get('MODEL_NAME', '?')}\n"
-                               f"  HOST_IP    = {saved_values.get('HOST_IP', '?')}\n"
-                               f"  HOST_PORT  = {saved_values.get('HOST_PORT', '?')}")
+                               trf("config.py 已写入并回读验证一致!\n\n"
+                                   "容器内路径: {path}\n\n"
+                                   "关键配置:\n"
+                                   "  MODEL_PATH = {model_path}\n"
+                                   "  MODEL_NAME = {model_name}\n"
+                                   "  HOST_IP    = {host_ip}\n"
+                                   "  HOST_PORT  = {host_port}",
+                                   path=container_path,
+                                   model_path=saved_values.get('MODEL_PATH', '?'),
+                                   model_name=saved_values.get('MODEL_NAME', '?'),
+                                   host_ip=saved_values.get('HOST_IP', '?'),
+                                   host_port=saved_values.get('HOST_PORT', '?')))
 
     def _verify_config(self):
         """从容器读取config.py并显示，与界面值对比"""
@@ -1889,7 +1906,8 @@ class WizardApp:
             return
 
         # 在预览区显示容器内实际内容
-        header = "=" * 50 + "\n容器内实际 config.py 内容:\n" + "=" * 50 + "\n\n"
+        header = ("=" * 50 + "\n" + tr("容器内实际 config.py 内容:") + "\n"
+                  + "=" * 50 + "\n\n")
         self.config_preview.delete(1.0, tk.END)
         self.config_preview.insert(1.0, header + read_back)
 
@@ -1904,26 +1922,29 @@ class WizardApp:
             gui_val = gui_values.get(field, '')
             saved_val = saved_values.get(field, '')
             if not saved_val:
-                report_lines.append(f"  {field}: 容器中未找到")
+                report_lines.append(trf("  {field}: 容器中未找到", field=field))
                 all_match = False
             elif gui_val and gui_val != saved_val:
-                report_lines.append(f"  ⚠ {field}: 界面=[{gui_val}]  容器=[{saved_val}]")
+                report_lines.append(trf("  ⚠ {field}: 界面=[{gui}]  容器=[{container}]",
+                                        field=field, gui=gui_val, container=saved_val))
                 all_match = False
             else:
-                report_lines.append(f"  ✓ {field}: {saved_val}")
+                report_lines.append(trf("  ✓ {field}: {value}", field=field, value=saved_val))
 
         if all_match:
             self.config_status_lbl.config(text="✓ 验证通过，界面与容器配置一致", fg=COLOR_SUCCESS)
             showinfo("验证通过",
-                               f"容器内config.py与界面配置一致!\n\n"
-                               f"{''.join(report_lines)}\n\n"
-                               f"MODEL_PATH = {saved_values.get('MODEL_PATH', '?')}")
+                               trf("容器内config.py与界面配置一致!\n\n"
+                                   "{report}\n\n"
+                                   "MODEL_PATH = {model_path}",
+                                   report=''.join(report_lines),
+                                   model_path=saved_values.get('MODEL_PATH', '?')))
         else:
             self.config_status_lbl.config(text="⚠ 界面与容器配置不一致", fg=COLOR_ERROR)
             showwarning("配置不一致",
-                                   f"界面与容器内config.py存在差异:\n\n"
-                                   + "\n".join(report_lines) +
-                                   "\n\n请点击\"保存配置到容器\"重新写入")
+                                   tr("界面与容器内config.py存在差异:\n\n")
+                                   + "\n".join(report_lines)
+                                   + tr("\n\n请点击\"保存配置到容器\"重新写入"))
 
     # ============================================================
     #  Step 4: 测试用例设计
@@ -2203,16 +2224,18 @@ class WizardApp:
                 kept_str = ", ".join(_fmt_len(l) for l in sorted(valid_selected))
                 showwarning(
                     "输入长度超出限制",
-                    f"以下选中的输入长度超过模型最大上下文 ({max_len:,})，已跳过:\n"
-                    f"  {skipped_str}\n\n"
-                    f"实际生成用例使用的输入长度: {kept_str}")
+                    trf("以下选中的输入长度超过模型最大上下文 ({max_len:,})，已跳过:\n"
+                        "  {skipped}\n\n"
+                        "实际生成用例使用的输入长度: {kept}",
+                        max_len=max_len, skipped=skipped_str, kept=kept_str))
             else:
                 fallback_str = ", ".join(_fmt_len(l) for l in self.designer.input_lengths)
                 showwarning(
                     "输入长度超出限制",
-                    f"所选输入长度全部超过模型最大上下文 ({max_len:,}):\n"
-                    f"  {skipped_str}\n\n"
-                    f"已自动改用有效长度: {fallback_str}")
+                    trf("所选输入长度全部超过模型最大上下文 ({max_len:,}):\n"
+                        "  {skipped}\n\n"
+                        "已自动改用有效长度: {fallback}",
+                        max_len=max_len, skipped=skipped_str, fallback=fallback_str))
 
         self._refresh_test_tree()
 
@@ -2302,8 +2325,11 @@ class WizardApp:
                 if (self.designer.max_request_length > 0
                         and new_total > self.designer.max_request_length):
                     showwarning("参数超出限制",
-                        f"输入+输出长度 ({num_val:,}+{case.output_len:,}={new_total:,}) "
-                        f"超过模型最大上下文 ({self.designer.max_request_length:,})")
+                                trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
+                                    "超过模型最大上下文 ({max_len:,})",
+                                    input_len=num_val, output_len=case.output_len,
+                                    total=new_total,
+                                    max_len=self.designer.max_request_length))
                     entry.destroy()
                     return
                 case.input_len = num_val
@@ -2312,8 +2338,11 @@ class WizardApp:
                 if (self.designer.max_request_length > 0
                         and new_total > self.designer.max_request_length):
                     showwarning("参数超出限制",
-                        f"输入+输出长度 ({case.input_len:,}+{num_val:,}={new_total:,}) "
-                        f"超过模型最大上下文 ({self.designer.max_request_length:,})")
+                                trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
+                                    "超过模型最大上下文 ({max_len:,})",
+                                    input_len=case.input_len, output_len=num_val,
+                                    total=new_total,
+                                    max_len=self.designer.max_request_length))
                     entry.destroy()
                     return
                 case.output_len = num_val
@@ -2322,10 +2351,12 @@ class WizardApp:
                 if num_val < case.data_num_min:
                     showwarning(
                         "请求数低于最小值",
-                        f"请求数 ({num_val:,}) 低于最小请求数 ({case.data_num_min:,})\n\n"
-                        f"低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
-                        f"不会在HBM之外的KV Cache缓存介质中命中。\n\n"
-                        f"如需覆盖HBM之外的缓存介质, 请将请求数提高至 {case.data_num_min:,} 及以上。")
+                        trf("请求数 ({count:,}) 低于最小请求数 ({min_count:,})\n\n"
+                            "低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
+                            "不会在HBM之外的KV Cache缓存介质中命中。\n\n"
+                            "如需覆盖HBM之外的缓存介质, 请将请求数提高至 {raise_to:,} 及以上。",
+                            count=num_val, min_count=case.data_num_min,
+                            raise_to=case.data_num_min))
             elif field == 'concurrency_recommended':
                 case.concurrency_recommended = num_val
 
@@ -2393,12 +2424,13 @@ class WizardApp:
             if new_case.data_num_recommended < new_case.data_num_min:
                 showwarning(
                     "请求数低于最小值",
-                    f"请求数 ({new_case.data_num_recommended:,}) 低于最小请求数 "
-                    f"({new_case.data_num_min:,})\n\n"
-                    f"低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
-                    f"不会在HBM之外的KV Cache缓存介质中命中。\n\n"
-                    f"如需覆盖HBM之外的缓存介质, 请将请求数提高至 "
-                    f"{new_case.data_num_min:,} 及以上。",
+                    trf("请求数 ({count:,}) 低于最小请求数 ({min_count:,})\n\n"
+                        "低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
+                        "不会在HBM之外的KV Cache缓存介质中命中。\n\n"
+                        "如需覆盖HBM之外的缓存介质, 请将请求数提高至 {raise_to:,} 及以上。",
+                        count=new_case.data_num_recommended,
+                        min_count=new_case.data_num_min,
+                        raise_to=new_case.data_num_min),
                     parent=dialog)
             self._refresh_test_tree()
             dialog.destroy()
@@ -2557,7 +2589,7 @@ class WizardApp:
         res_hsb.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _browse_local_output(self):
-        path = filedialog.askdirectory(title="选择本地结果保存目录")
+        path = filedialog.askdirectory(title=tr("选择本地结果保存目录"))
         if path:
             self.local_output_var.set(path)
 
@@ -2623,21 +2655,22 @@ class WizardApp:
             ))
 
         self.results_info_lbl.config(
-            text=f"共 {len(results)} 条记录  |  CSV: {csv_path}  |  日志: {log_dir}")
+            text=trf("共 {count} 条记录  |  CSV: {csv_path}  |  日志: {log_dir}",
+                     count=len(results), csv_path=csv_path, log_dir=log_dir))
 
     def _execute_tests(self):
         """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
         if not self.docker or not self.docker.container_is_running():
-            showwarning("提示", "容器未运行，请先完成部署")
+            showwarning("提示", tr("容器未运行，请先完成部署"))
             return
 
         if not self.designer.test_cases:
-            showwarning("提示", "请先生成测试用例")
+            showwarning("提示", tr("请先生成测试用例"))
             return
 
         local_dir = self.local_output_var.get().strip()
         if not local_dir:
-            showwarning("提示", "请选择本地结果保存目录")
+            showwarning("提示", tr("请选择本地结果保存目录"))
             return
 
         # 执行前同步最新速率, 避免生成用例后又修改速率导致命令/脚本不一致
@@ -2817,7 +2850,8 @@ class WizardApp:
 
             self.root.after(0, lambda: showinfo(
                 "完成",
-                f"测试完成!\n\nCSV: {csv_path}\n日志: {local_log_dir}\n共 {len(results)} 条记录"
+                trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
+                    csv=csv_path, log=local_log_dir, count=len(results))
             ))
         else:
             self._log_exec("  ✗ 未能从日志中提取到有效结果\n")
@@ -2849,13 +2883,18 @@ class WizardApp:
             return
 
         work_dir = self.work_dir_var.get().strip()
-        msg = "测试已完成! 建议清理远程环境:\n\n"
-        msg += f"  - Docker容器: {self.docker.container_name}\n"
-        if work_dir:
-            msg += f"  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n"
-        msg += "\n是否立即清理?\n"
-        msg += "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
-        msg += "(否: 稍后可点击\"清理环境\"按钮手动清理)"
+        work_dir_line = (
+            trf("  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n", work_dir=work_dir)
+            if work_dir else "")
+        msg = trf(
+            "测试已完成! 建议清理远程环境:\n\n"
+            "  - Docker容器: {container}\n"
+            "{work_dir_line}"
+            "\n是否立即清理?\n"
+            "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
+            '(否: 稍后可点击"清理环境"按钮手动清理)',
+            container=self.docker.container_name,
+            work_dir_line=work_dir_line)
 
         if askyesno("清理提醒", msg, icon=messagebox.QUESTION):
             self._cleanup_environment()
@@ -2868,13 +2907,20 @@ class WizardApp:
         work_dir = self.work_dir_var.get().strip()
 
         if not skip_confirm:
-            msg = "确认清理以下远程资源?\n\n"
-            if self.docker.container_name:
-                msg += f"  Docker容器: {self.docker.container_name}\n"
-            if work_dir:
-                msg += f"  临时部署目录: {work_dir} (如有残留)\n"
-            msg += "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
-            msg += "本地下载的测试结果不受影响。\n"
+            container_line = (
+                trf("  Docker容器: {container}\n", container=self.docker.container_name)
+                if self.docker.container_name else "")
+            work_dir_line = (
+                trf("  临时部署目录: {work_dir} (如有残留)\n", work_dir=work_dir)
+                if work_dir else "")
+            msg = trf(
+                "确认清理以下远程资源?\n\n"
+                "{container_line}"
+                "{work_dir_line}"
+                "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
+                "本地下载的测试结果不受影响。\n",
+                container_line=container_line,
+                work_dir_line=work_dir_line)
             if not askyesno("确认清理", msg, icon=messagebox.WARNING):
                 return
 
@@ -3017,14 +3063,19 @@ class WizardApp:
         """退出前检查远程环境是否已清理
         返回True: 可立即退出; False: 用户取消或清理完成后自动退出"""
         if self.docker and self.docker.container_name and self.docker.container_is_running():
-            msg = "检测到Docker容器仍在运行!\n\n"
-            msg += f"  容器: {self.docker.container_name}\n"
             work_dir = self.work_dir_var.get().strip()
-            if work_dir:
-                msg += f"  临时部署目录残留: {work_dir} (如有)\n"
-            msg += "\n退出前是否清理远程环境?\n"
-            msg += "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
-            msg += "(未清理的容器下次连接时可通过步骤2\"清理残留容器\"删除)"
+            work_dir_line = (
+                trf("  临时部署目录残留: {work_dir} (如有)\n", work_dir=work_dir)
+                if work_dir else "")
+            msg = trf(
+                "检测到Docker容器仍在运行!\n\n"
+                "  容器: {container}\n"
+                "{work_dir_line}"
+                "\n退出前是否清理远程环境?\n"
+                "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
+                '(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)',
+                container=self.docker.container_name,
+                work_dir_line=work_dir_line)
 
             choice = askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)
             if choice is None:

@@ -6,6 +6,7 @@ import os
 import stat
 import time
 import paramiko
+from i18n import tr, trf
 from typing import Optional, Tuple, List, Callable
 
 
@@ -66,13 +67,13 @@ class SSHManager:
             self.port = port
             self.username = username
             self._connected = True
-            return True, f"连接成功: {host}:{port}"
+            return True, trf("连接成功: {host}:{port}", host=host, port=port)
         except paramiko.AuthenticationException:
-            return False, "认证失败，请检查用户名/密码/密钥"
+            return False, tr("认证失败，请检查用户名/密码/密钥")
         except paramiko.SSHException as e:
-            return False, f"SSH连接错误: {e}"
+            return False, trf("SSH连接错误: {error}", error=e)
         except Exception as e:
-            return False, f"连接失败: {e}"
+            return False, trf("连接失败: {error}", error=e)
 
     def execute(self, command: str, timeout: int = 300) -> Tuple[int, str, str]:
         """
@@ -80,7 +81,7 @@ class SSHManager:
         返回 (return_code, stdout, stderr)
         """
         if not self._connected or not self.client:
-            return -1, "", "未连接到远程主机"
+            return -1, "", tr("未连接到远程主机")
 
         try:
             stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)

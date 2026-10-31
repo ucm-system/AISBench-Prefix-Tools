@@ -829,13 +829,18 @@ class WizardApp:
         image_choice_frame = tk.Frame(form, bg=COLOR_CARD)
         image_choice_frame.grid(row=row, column=1, columnspan=2,
                                 padx=16, pady=(0, 8), sticky=tk.EW)
+        # 让内部唯一列可伸缩: 输入框随窗口伸缩, 按钮不被顶出界面
+        image_choice_frame.columnconfigure(0, weight=1, minsize=0)
         self.remote_image_frame = tk.Frame(image_choice_frame, bg=COLOR_CARD)
         self.remote_image_frame.grid(row=0, column=0, sticky=tk.EW)
         remote_combo_row = tk.Frame(self.remote_image_frame, bg=COLOR_CARD)
         remote_combo_row.pack(fill=tk.X)
+        # width=1: minimal requested width; fill=X expands it to the
+        # available width so long image names scroll inside instead of
+        # pushing the buttons out of the window.
         self.remote_image_combo = ttk.Combobox(remote_combo_row,
                                                textvariable=self.remote_image_var,
-                                               width=48, font=("Segoe UI", 9),
+                                               width=1, font=("Segoe UI", 9),
                                                state="readonly")
         self.remote_image_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.remote_image_combo.bind("<<ComboboxSelected>>", self._on_remote_image_selected)
@@ -846,7 +851,7 @@ class WizardApp:
         self.tar_upload_frame.grid(row=0, column=0, sticky=tk.EW)
         self.tar_upload_frame.grid_remove()
         self.tar_path = tk.StringVar()
-        tk.Entry(self.tar_upload_frame, textvariable=self.tar_path, width=50,
+        tk.Entry(self.tar_upload_frame, textvariable=self.tar_path, width=1,
                  font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
         LocalizedButton(self.tar_upload_frame, text="浏览...", command=self._browse_tar,
                   font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
@@ -893,7 +898,7 @@ class WizardApp:
                                  padx=16, pady=(0, 8), sticky=tk.EW)
         self.code_zip_frame.grid_remove()
         self.zip_path = tk.StringVar()
-        tk.Entry(self.code_zip_frame, textvariable=self.zip_path, width=50,
+        tk.Entry(self.code_zip_frame, textvariable=self.zip_path, width=1,
                font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True)
         LocalizedButton(self.code_zip_frame, text="浏览...", command=self._browse_zip,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
@@ -909,7 +914,7 @@ class WizardApp:
         model_frame = tk.Frame(form, bg=COLOR_CARD)
         model_frame.grid(row=row, column=1, columnspan=2, padx=16, pady=8, sticky=tk.EW)
         self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_path_var,
-                                        width=48, font=("Segoe UI", 9))
+                                        width=1, font=("Segoe UI", 9))
         self.model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         LocalizedButton(model_frame, text="浏览远程目录", command=self._browse_remote_model,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
@@ -1068,7 +1073,7 @@ class WizardApp:
         top.pack(fill=tk.X, padx=8, pady=8)
         LocalizedLabel(top, text="路径:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
         path_var = tk.StringVar(value="/")
-        path_entry = tk.Entry(top, textvariable=path_var, width=50, font=("Segoe UI", 9))
+        path_entry = tk.Entry(top, textvariable=path_var, width=1, font=("Segoe UI", 9))
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         LocalizedButton(top, text="前往", font=("Segoe UI", 8),
                  command=lambda: self._list_remote_dir(listbox, path_var, dialog)).pack(side=tk.LEFT)
@@ -1165,7 +1170,7 @@ class WizardApp:
                font=("Segoe UI", 9)).grid(row=0, column=0, sticky=tk.W, padx=16, pady=8)
 
         self.work_dir_var = tk.StringVar(value="/tmp/AISBench_Prefix_Tools")
-        tk.Entry(workdir_frame, textvariable=self.work_dir_var, width=50,
+        tk.Entry(workdir_frame, textvariable=self.work_dir_var, width=1,
                font=("Segoe UI", 9)).grid(row=0, column=1, sticky=tk.EW, padx=8, pady=8)
         workdir_frame.columnconfigure(1, weight=1)
 
@@ -1899,7 +1904,7 @@ class WizardApp:
             var = tk.StringVar(value=defaults.get(key, ""))
             self.config_entry_vars[key] = var
 
-            entry = tk.Entry(form, textvariable=var, width=50, font=("Segoe UI", 9))
+            entry = tk.Entry(form, textvariable=var, width=1, font=("Segoe UI", 9))
             entry.grid(row=i, column=1, padx=16, pady=6, sticky=tk.EW)
 
         form.columnconfigure(1, weight=1)
@@ -2676,7 +2681,7 @@ class WizardApp:
         self.local_output_var = tk.StringVar(
             value=os.path.join(os.path.expanduser("~"), "aisbench_results")
         )
-        tk.Entry(out_frame, textvariable=self.local_output_var, width=50,
+        tk.Entry(out_frame, textvariable=self.local_output_var, width=1,
                 font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=8)
         LocalizedButton(out_frame, text="浏览...", font=("Segoe UI", 8),
                 command=self._browse_local_output).pack(side=tk.LEFT, padx=(4, 12), pady=8)

@@ -1,3 +1,4 @@
+import tkinter as tk
 import unittest
 from unittest import mock
 
@@ -121,6 +122,61 @@ class DeploySequenceTests(unittest.TestCase):
             self.assertNotIn("/tmp/AISBench_Prefix_Tools", ssh.dirs)
             self.assertTrue(app.docker.container_name.startswith("aisbench-test-"))
             self.assertIsNotNone(app.config_mgr)
+        finally:
+            app.root.destroy()
+
+
+class FormLayoutTests(unittest.TestCase):
+    """Long values must not push controls outside the window."""
+
+    LONG = ("registry.example.com/team/aisbench-benchmark-runtime-cuda12.4"
+            "-vllm0.9.2:20261013-release")
+
+    def _collect(self, widget, cls):
+        out = []
+        for child in widget.winfo_children():
+            if isinstance(child, cls):
+                out.append(child)
+            out.extend(self._collect(child, cls))
+        return out
+
+    def test_long_values_do_not_push_buttons_outside_window(self):
+        app = main.WizardApp()
+        try:
+            app.current_step = 1
+            app._show_step(1)
+            app.root.geometry("900x620")   # minimum supported window width
+            app.root.update()
+            app.root.update_idletasks()
+
+            app.image_source_var.set("upload")
+            app._on_image_source_change()
+            app.code_source_var.set("zip")
+            app._on_code_source_change()
+            app.tar_path.set("D:/" + self.LONG + ".tar.gz")
+            app.zip_path.set("D:/" + self.LONG + ".zip")
+            app.model_path_var.set("/mnt/models/" + self.LONG)
+            app.work_dir_var.set("/tmp/" + self.LONG)
+            app.root.update()
+            app.root.update_idletasks()
+
+            win_right = app.root.winfo_rootx() + app.root.winfo_width()
+            self.assertEqual(app.root.winfo_width(), 900)
+
+            for btn in self._collect(app.step_frames[1], tk.Button):
+                if not btn.winfo_ismapped():
+                    continue
+                right = btn.winfo_rootx() + btn.winfo_width()
+                self.assertLessEqual(
+                    right, win_right + 1,
+                    f"button {btn.cget('text')!r} overflows: "
+                    f"right={right}, window right={win_right}")
+
+            entry = next(c for c in app.tar_upload_frame.winfo_children()
+                         if isinstance(c, tk.Entry))
+            self.assertGreater(
+                entry.winfo_width(), 150,
+                "input field collapsed instead of expanding")
         finally:
             app.root.destroy()
 

@@ -331,7 +331,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
 
 <section id="compare">
   <h2>9. 结果对比分析设计</h2>
-  <p>结果对比分析是独立入口，不依赖执行服务器。它以两个工具生成的 CSV 为输入，输出差异表格和柱状图。</p>
+  <p>结果对比分析是独立入口，不依赖执行服务器。它以两个工具生成的 CSV 为输入，输出差异表格、柱状图和可归档的 CSV/PNG 文件。</p>
   <h3>9.1 匹配规则</h3>
   <ol>
     <li>优先按输入长度和输出长度精确匹配。</li>
@@ -341,12 +341,14 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>9.2 指标体系</h3>
   <p>支持 TTFT、TPOT、E2E 延迟、吞吐、命中率等 21 个指标，按类别分组展示。默认选中常用指标，用户可按需勾选。</p>
   <h3>9.3 输出设计</h3>
+  <p>A/B 数据默认用 CSV 文件名标注，用户可改成业务语义名称（例如“基线 v1”“优化后 v2”）。标注用于图例和导出文件名；重新选择文件不会覆盖已手工修改的标注。</p>
   <table>
     <thead><tr><th>输出</th><th>内容</th><th>目的</th></tr></thead>
     <tbody>
       <tr><td>差异表格</td><td>A 值、B 值、Δ、Δ%</td><td>量化对比结果</td></tr>
-      <tr><td>柱状图</td><td>按指标分组，横轴展示输入、输出、请求数、Max_CC</td><td>直观观察趋势</td></tr>
-      <tr><td>导出 CSV</td><td>保存当前对比表</td><td>归档与二次分析</td></tr>
+      <tr><td>柱状图</td><td>按指标分组，图例使用自定义 A/B 标注，横轴展示输入、输出、请求数、Max_CC</td><td>直观观察趋势</td></tr>
+      <tr><td>导出 CSV</td><td>保存当前对比表，文件名包含 A/B 标注</td><td>归档与二次分析</td></tr>
+      <tr><td>导出 PNG</td><td>每个已勾选指标导出一张 1280×640 柱状图</td><td>直接嵌入报告和评审材料</td></tr>
     </tbody>
   </table>
   <div class="callout good">

@@ -217,7 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <div class="feature">
       <div class="icon">📊</div>
       <h4>结果对比分析</h4>
-      <p>选择两个结果 CSV，按输入规模匹配用例，输出差异表格与分组柱状图。</p>
+      <p>选择两个结果 CSV，按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV/PNG 导出。</p>
     </div>
   </div>
   <h3>整体流程</h3>
@@ -464,17 +464,18 @@ build_exe.bat</code></pre>
   <h2>结果对比分析</h2>
   <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 5 的结果摘要右侧打开。</p>
   <figure class="figure">
-    <img src="images/result-compare.png?v=20261030" alt="结果对比分析界面">
-    <figcaption>选择两个结果 CSV 后，可勾选用例与指标并生成差异表格和柱状图</figcaption>
+    <img src="images/result-compare-20261031.png?v=20261031" alt="结果对比分析界面">
+    <figcaption>选择两个结果 CSV 后，可自定义 A/B 标注并生成差异表格、柱状图和图片导出</figcaption>
   </figure>
   <h3>使用步骤</h3>
   <ol>
     <li>分别选择 CSV A 和 CSV B，两者必须为本工具生成的结果 CSV。</li>
+    <li>需要业务名称时，修改“标注 A / 标注 B”；默认取文件名，手工标注不会被重新选择文件覆盖。</li>
     <li>工具校验表头格式，缺少或多余字段会明确提示。</li>
     <li>在匹配列表中勾选要对比的用例。</li>
     <li>按分组选择需要观察的指标。</li>
     <li>点击“开始对比”，查看差异表格和柱状图。</li>
-    <li>需要留存时，点击“导出对比 CSV”。</li>
+    <li>需要留存时，点击“导出对比 CSV”保存差异表格，或点击“导出对比图”把每个指标的柱状图导出为 PNG。</li>
   </ol>
   <h3>匹配规则</h3>
   <ul>
@@ -487,8 +488,9 @@ build_exe.bat</code></pre>
     <thead><tr><th>区域</th><th>说明</th></tr></thead>
     <tbody>
       <tr><td>差异表格</td><td>展示 Req A/B、Max_CC A/B，以及每个指标的 A 值、B 值、Δ 和 Δ%。</td></tr>
-      <tr><td>柱状图</td><td>每个指标自动绘制分组柱状图；横坐标展示输入、输出、请求数和 Max_CC。</td></tr>
-      <tr><td>导出 CSV</td><td>将当前差异表格保存为新的 CSV 文件。</td></tr>
+      <tr><td>柱状图</td><td>每个指标自动绘制分组柱状图；图例使用自定义 A/B 标注，横坐标展示输入、输出、请求数和 Max_CC。</td></tr>
+      <tr><td>导出 CSV</td><td>将当前差异表格保存为新的 CSV 文件，默认文件名包含 A/B 标注。</td></tr>
+      <tr><td>导出图片</td><td>把每个已勾选指标的柱状图导出为 1280×640 PNG，文件名包含 A/B 标注与指标名。</td></tr>
     </tbody>
   </table>
   <div class="callout warn">

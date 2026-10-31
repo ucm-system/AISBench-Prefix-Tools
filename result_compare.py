@@ -2,20 +2,29 @@
 结果对比分析 - 加载两个测试结果目录, 按输入规模匹配测试用例并对比指标:
 1. 数据源: 目录内 results_*.csv / *.csv, 无CSV时回退解析 test_*.log
 2. 匹配: 先按(输入长度,输出长度)精确匹配, 剩余按输入长度回退匹配
-3. 输出: 差异表格(A/B/Δ/Δ%) + 每指标分组柱状图(原生Canvas), 支持导出CSV
+3. 输出: 差异表格(A/B/Δ/Δ%) + 每指标分组柱状图(原生Canvas),
+   支持导出CSV和PNG对比图; A/B可自定义标注(默认取文件名)
 """
 
 import csv
 import math
 import os
+import re
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import ttk, filedialog, messagebox
-from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning
+from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning, tr, trf
 from typing import Dict, List, Optional, Tuple
 
 from log_parser import CSV_FIELDS
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:  # Pillow缺失时仅禁用图片导出, 其余功能不受影响
+    Image = ImageDraw = ImageFont = None
+    PIL_AVAILABLE = False
 
 
 # 样式常量 (与 main.py 保持一致)
@@ -59,6 +68,147 @@ METRIC_FIELDS = [
 
 DEFAULT_METRICS = {"TTFT_avg", "TPOT_avg", "output_throughput", "qps",
                    "hbm_hit_rate", "external_hit_rate"}
+
+
+# ---------------------------------------------------------------------------
+#  图片导出辅助 (Pillow)
+# ---------------------------------------------------------------------------
+
+def sanitize_name(text: str, fallback: str = "run", max_len: int = 40) -> str:
+    """把用户标注/指标名转成可安全用于文件名的字符串。"""
+    cleaned = re.sub(r'[\\/:*?"<>|\s]+', "_", (text or "").strip())
+    cleaned = cleaned.strip("._")
+    if not cleaned:
+        return fallback
+    return cleaned[:max_len]
+
+
+def _load_pil_font(size: int, bold: bool = False):
+    """加载适合当前系统且支持中文的字体, 逐级回退。"""
+    candidates = (["msyhbd.ttc", "msyhbold.ttf", "segoeuib.ttf",
+                   "DejaVuSans-Bold.ttf"] if bold else
+                  ["msyh.ttc", "simhei.ttf", "segoeui.ttf", "arial.ttf",
+                   "DejaVuSans.ttf"])
+    paths = []
+    windir = os.environ.get("WINDIR", r"C:\Windows")
+    for name in candidates:
+        paths.append(os.path.join(windir, "Fonts", name))
+    for name in candidates:
+        paths.append(f"/usr/share/fonts/truetype/dejavu/{name}")
+    for path in paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def render_chart_png(path: str, title: str, labels: List[str],
+                     values_a: List[Optional[float]],
+                     values_b: List[Optional[float]],
+                     name_a: str, name_b: str, unit: str = "",
+                     decimals: int = 2, width: int = 1280,
+                     height: int = 640) -> Optional[str]:
+    """把一张分组柱状图渲染为PNG文件 (与界面Canvas图表同风格)。
+
+    返回写入的路径; Pillow不可用时返回None。
+    """
+    if not PIL_AVAILABLE:
+        return None
+
+    image = Image.new("RGB", (width, height), COLOR_CARD)
+    draw = ImageDraw.Draw(image)
+
+    font_title = _load_pil_font(22, bold=True)
+    font_axis = _load_pil_font(16)
+    font_small = _load_pil_font(13)
+    font_value = _load_pil_font(13)
+
+    left, right, top, bottom = 96, 24, 46, 86
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    draw.rectangle([0, 0, width - 1, height - 1], outline=COLOR_BORDER)
+
+    title_text = f"{title} ({unit})" if unit else title
+    draw.text((left + 4, 12), title_text, fill=COLOR_TEXT, font=font_title)
+
+    values = [v for v in list(values_a) + list(values_b) if v is not None]
+    if not values:
+        draw.text((width // 2, height // 2), tr("无有效数据"),
+                  fill=COLOR_TEXT_MUTED, font=font_axis, anchor="mm")
+        image.save(path, "PNG")
+        return path
+
+    y_max = _nice_ceiling(max(values))
+    y_min = min(0.0, min(values))
+    span = (y_max - y_min) or 1.0
+
+    def y_of(value: float) -> float:
+        return top + plot_h * (y_max - value) / span
+
+    # 网格线 + Y轴刻度
+    for i in range(5):
+        value = y_max - span * i / 4
+        y = y_of(value)
+        draw.line([(left, y), (left + plot_w, y)], fill=COLOR_BORDER, width=1)
+        label = (f"{value:,.{decimals}g}" if value != int(value)
+                 else f"{int(value):,}")
+        draw.text((left - 10, y), label, fill=COLOR_TEXT_MUTED,
+                  font=font_small, anchor="rm")
+
+    draw.line([(left, top + plot_h), (left + plot_w, top + plot_h)],
+              fill=COLOR_TEXT, width=2)
+
+    count = max(len(labels), 1)
+    group_w = plot_w / count
+    bar_w = min(group_w * 0.30, 58)
+    show_value_labels = count <= 14
+    y_base = y_of(max(0, y_min))
+
+    for index, label in enumerate(labels):
+        center = left + group_w * (index + 0.5)
+        for vals, offset, color in ((values_a, -1, CHART_COLOR_A),
+                                    (values_b, 1, CHART_COLOR_B)):
+            value = vals[index] if index < len(vals) else None
+            if value is None:
+                continue
+            x0 = center + offset * bar_w * 0.55 - bar_w / 2
+            x1 = x0 + bar_w
+            y_top = y_of(value)
+            draw.rectangle([x0, y_top, x1, y_base], fill=color)
+            if show_value_labels:
+                text = f"{value:,.{decimals}f}"
+                draw.text(((x0 + x1) / 2, y_top - 20), text,
+                          fill=COLOR_TEXT_MUTED, font=font_value, anchor="ma")
+
+        draw.multiline_text((center, top + plot_h + 10), label,
+                            fill=COLOR_TEXT, font=font_small,
+                            anchor="ma", spacing=4, align="center")
+
+    # 图例 (右上角)
+    legend_y = 14
+    swatch = 14
+    text_a = str(name_a)
+    text_b = str(name_b)
+    w_a = draw.textlength(text_a, font=font_small)
+    w_b = draw.textlength(text_b, font=font_small)
+    legend_x = left + plot_w - (swatch + 6 + w_a + 18 + swatch + 6 + w_b)
+    draw.rectangle([legend_x, legend_y, legend_x + swatch, legend_y + swatch],
+                   fill=CHART_COLOR_A)
+    draw.text((legend_x + swatch + 6, legend_y), text_a,
+              fill=COLOR_TEXT_MUTED, font=font_small)
+    x_b = legend_x + swatch + 6 + w_a + 18
+    draw.rectangle([x_b, legend_y, x_b + swatch, legend_y + swatch],
+                   fill=CHART_COLOR_B)
+    draw.text((x_b + swatch + 6, legend_y), text_b,
+              fill=COLOR_TEXT_MUTED, font=font_small)
+
+    image.save(path, "PNG")
+    return path
 
 
 def _to_float(value) -> Optional[float]:
@@ -328,6 +478,8 @@ class ResultCompareDialog:
         self.match_vars: List[tk.BooleanVar] = []
         self.metric_vars: List[tk.BooleanVar] = []
         self.compared: bool = False
+        self.selected_matches: List[Dict] = []
+        self.selected_metrics: List[Tuple[str, str, str, int]] = []
 
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("结果对比分析")
@@ -368,22 +520,54 @@ class ResultCompareDialog:
         LocalizedLabel(row_a, text="文件A (基准):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.file_a_var = tk.StringVar()
-        tk.Entry(row_a, textvariable=self.file_a_var, font=("Segoe UI", 9)
+        tk.Entry(row_a, textvariable=self.file_a_var, font=("Segoe UI", 9),
+                 width=1
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         LocalizedButton(row_a, text="选择CSV...", font=("Segoe UI", 8),
                   command=lambda: self._browse_csv(self.file_a_var)
                   ).pack(side=tk.LEFT, padx=4)
+
+        row_a_label = tk.Frame(box, bg=COLOR_CARD)
+        row_a_label.pack(fill=tk.X, padx=10, pady=(0, 2))
+        LocalizedLabel(row_a_label, text="标注A:", bg=COLOR_CARD,
+                 fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9), width=12,
+                 anchor=tk.W).pack(side=tk.LEFT)
+        self.label_a_var = tk.StringVar()
+        self._auto_label_a = ""
+        tk.Entry(row_a_label, textvariable=self.label_a_var, width=1,
+                 font=("Segoe UI", 9)
+                 ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        LocalizedLabel(row_a_label,
+                 text="(图表/导出文件中显示, 默认取文件名)",
+                 bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=4)
 
         row_b = tk.Frame(box, bg=COLOR_CARD)
         row_b.pack(fill=tk.X, padx=10, pady=2)
         LocalizedLabel(row_b, text="文件B (对比):", bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Segoe UI", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.file_b_var = tk.StringVar()
-        tk.Entry(row_b, textvariable=self.file_b_var, font=("Segoe UI", 9)
+        tk.Entry(row_b, textvariable=self.file_b_var, font=("Segoe UI", 9),
+                 width=1
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         LocalizedButton(row_b, text="选择CSV...", font=("Segoe UI", 8),
                   command=lambda: self._browse_csv(self.file_b_var)
                   ).pack(side=tk.LEFT, padx=4)
+
+        row_b_label = tk.Frame(box, bg=COLOR_CARD)
+        row_b_label.pack(fill=tk.X, padx=10, pady=(0, 2))
+        LocalizedLabel(row_b_label, text="标注B:", bg=COLOR_CARD,
+                 fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9), width=12,
+                 anchor=tk.W).pack(side=tk.LEFT)
+        self.label_b_var = tk.StringVar()
+        self._auto_label_b = ""
+        tk.Entry(row_b_label, textvariable=self.label_b_var, width=1,
+                 font=("Segoe UI", 9)
+                 ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        LocalizedLabel(row_b_label,
+                 text="(自定义数据名称, 如: 优化后v2)",
+                 bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+                 font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=4)
 
         action_row = tk.Frame(box, bg=COLOR_CARD)
         action_row.pack(fill=tk.X, padx=10, pady=(2, 8))
@@ -500,6 +684,12 @@ class ResultCompareDialog:
                                     state=tk.DISABLED,
                                     command=self._export_csv)
         self.export_btn.pack(side=tk.LEFT, padx=8)
+        self.export_image_btn = LocalizedButton(action_row, text="导出对比图",
+                                    font=("Segoe UI", 9), relief=tk.FLAT,
+                                    bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=12,
+                                    state=tk.DISABLED,
+                                    command=self._export_images)
+        self.export_image_btn.pack(side=tk.LEFT, padx=8)
         self.compare_status_lbl = LocalizedLabel(action_row, text="", bg=COLOR_BG,
                                            fg=COLOR_TEXT_MUTED,
                                            font=("Segoe UI", 8))
@@ -562,6 +752,39 @@ class ResultCompareDialog:
             filetypes=[("CSV文件", "*.csv"), ("所有文件", "*.*")])
         if path:
             var.set(path)
+            self._auto_fill_label(path, var)
+
+    def _auto_fill_label(self, path: str, file_var: tk.StringVar):
+        """选择文件后用文件名(不含扩展名)填充标注; 用户已改过则不覆盖。"""
+        stem = os.path.splitext(os.path.basename(path))[0] or "A"
+        if file_var is self.file_a_var:
+            label_var, auto = self.label_a_var, self._auto_label_a
+            if not label_var.get().strip() or label_var.get().strip() == auto:
+                label_var.set(stem)
+            self._auto_label_a = stem
+        else:
+            label_var, auto = self.label_b_var, self._auto_label_b
+            if not label_var.get().strip() or label_var.get().strip() == auto:
+                label_var.set(stem)
+            self._auto_label_b = stem
+
+    def _label_a(self) -> str:
+        text = self.label_a_var.get().strip()
+        if text:
+            return text
+        path = self.file_a_var.get().strip()
+        if path:
+            return os.path.splitext(os.path.basename(path))[0] or "A"
+        return "A"
+
+    def _label_b(self) -> str:
+        text = self.label_b_var.get().strip()
+        if text:
+            return text
+        path = self.file_b_var.get().strip()
+        if path:
+            return os.path.splitext(os.path.basename(path))[0] or "B"
+        return "B"
 
     def _toggle_all_matches(self, enabled: bool):
         for var in self.match_vars:
@@ -677,7 +900,11 @@ class ResultCompareDialog:
         self._build_table(selected_matches, selected_metrics)
         self._build_charts(selected_matches, selected_metrics)
         self.compared = True
+        self.selected_matches = selected_matches
+        self.selected_metrics = selected_metrics
         self.export_btn.config(state=tk.NORMAL)
+        self.export_image_btn.config(
+            state=tk.NORMAL if PIL_AVAILABLE else tk.DISABLED)
         self.compare_status_lbl.config(
             text=f"已对比 {len(selected_matches)} 个用例 × {len(selected_metrics)} 个指标",
             fg=COLOR_SUCCESS)
@@ -758,10 +985,8 @@ class ResultCompareDialog:
         for child in self.charts_inner.winfo_children():
             child.destroy()
 
-        name_a = (os.path.splitext(os.path.basename(
-            self.file_a_var.get().strip()))[0]) or "A"
-        name_b = (os.path.splitext(os.path.basename(
-            self.file_b_var.get().strip()))[0]) or "B"
+        name_a = f"A: {self._label_a()}"
+        name_b = f"B: {self._label_b()}"
 
         for field, name, unit, decimals in selected_metrics:
             labels = []
@@ -775,7 +1000,7 @@ class ResultCompareDialog:
 
             chart = BarChartWidget(self.charts_inner, title=name, labels=labels,
                                    values_a=values_a, values_b=values_b,
-                                   name_a=f"A: {name_a}", name_b=f"B: {name_b}",
+                                   name_a=name_a, name_b=name_b,
                                    unit=unit, decimals=decimals)
             chart.pack(fill=tk.X, padx=2, pady=6)
 
@@ -803,7 +1028,9 @@ class ResultCompareDialog:
             showwarning("提示", "请先执行对比", parent=self.dialog)
             return
 
-        default_name = f"compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_name = (f"compare_{sanitize_name(self._label_a())}_vs_"
+                        f"{sanitize_name(self._label_b())}_{stamp}.csv")
         path = filedialog.asksaveasfilename(
             parent=self.dialog, title="保存对比结果CSV",
             defaultextension=".csv", initialfile=default_name,
@@ -822,7 +1049,71 @@ class ResultCompareDialog:
                 writer.writeheader()
                 writer.writerows(self.compare_rows)
         except OSError as exc:
-            showerror("错误", f"导出失败: {exc}", parent=self.dialog)
+            showerror("错误", trf("导出失败: {error}", error=exc),
+                      parent=self.dialog)
             return
 
-        self.compare_status_lbl.config(text=f"已导出: {path}", fg=COLOR_SUCCESS)
+        self.compare_status_lbl.config(
+            text=trf("已导出: {path}", path=path), fg=COLOR_SUCCESS)
+
+    def _export_images(self):
+        """把每个已选指标的柱状对比图导出为PNG图片。"""
+        if not getattr(self, "compare_rows", None):
+            showwarning("提示", "请先执行对比", parent=self.dialog)
+            return
+        if not PIL_AVAILABLE:
+            showwarning("提示",
+                        "未安装Pillow, 无法导出图片\n请执行: pip install pillow",
+                        parent=self.dialog)
+            return
+
+        directory = filedialog.askdirectory(
+            parent=self.dialog, title="选择对比图保存目录",
+            initialdir=os.path.dirname(self.file_a_var.get().strip()) or
+            str(Path.home()))
+        if not directory:
+            return
+
+        name_a = f"A: {self._label_a()}"
+        name_b = f"B: {self._label_b()}"
+        label_a = sanitize_name(self._label_a())
+        label_b = sanitize_name(self._label_b())
+        exported: List[str] = []
+
+        for field, name, unit, decimals in self.selected_metrics:
+            labels: List[str] = []
+            values_a: List[Optional[float]] = []
+            values_b: List[Optional[float]] = []
+            for match in self.selected_matches:
+                labels.append(self._chart_label(match))
+                result = compute_comparison(match, field)
+                values_a.append(result["a"])
+                values_b.append(result["b"])
+
+            file_name = (f"compare_{label_a}_vs_{label_b}_"
+                         f"{sanitize_name(name, 'metric')}.png")
+            path = os.path.join(directory, file_name)
+            try:
+                written = render_chart_png(
+                    path, title=name, labels=labels, values_a=values_a,
+                    values_b=values_b, name_a=name_a, name_b=name_b,
+                    unit=unit, decimals=decimals)
+                if written:
+                    exported.append(written)
+            except OSError as exc:
+                showerror("错误", trf("导出图片失败: {error}", error=exc),
+                          parent=self.dialog)
+                return
+
+        if not exported:
+            showwarning("提示", "没有可导出的图表", parent=self.dialog)
+            return
+
+        self.compare_status_lbl.config(
+            text=trf("已导出 {count} 张对比图: {first} 等",
+                     count=len(exported), first=exported[0]),
+            fg=COLOR_SUCCESS)
+        showinfo("完成",
+                 trf("已导出 {count} 张对比图\n\n{files}",
+                     count=len(exported), files="\n".join(exported)),
+                 parent=self.dialog)

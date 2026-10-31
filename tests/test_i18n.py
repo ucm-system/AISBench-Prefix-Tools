@@ -78,6 +78,9 @@ class LanguageSwitchTests(unittest.TestCase):
             walk(dialog.dialog)
             self.assertIn("File A (baseline):", texts)
             self.assertIn("Select CSV...", texts)
+            self.assertIn("Label A:", texts)
+            self.assertIn("Label B:", texts)
+            self.assertIn("Export comparison charts", texts)
         finally:
             root.destroy()
 

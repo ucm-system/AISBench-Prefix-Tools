@@ -36,6 +36,7 @@ Windows 桌面工具，用于远程部署 AISBench 测试环境并自动设计/�
 
 - **最新稳定版**：从 [Releases](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest) 页面下载（[直达链接](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest/download/AISBench-Prefix-Tools.exe)）
 - **Nightly 构建**（main 最新代码，CI 每次推送自动覆盖更新）：[直达链接](https://github.com/ucm-system/AISBench-Prefix-Tools/releases/download/nightly/AISBench-Prefix-Tools.exe)
+- **开发分支构建**：推送 `dev` 分支后 CI 自动打包，在 [Actions](https://github.com/ucm-system/AISBench-Prefix-Tools/actions/workflows/build-main.yml?query=branch%3Adev) 对应运行页底部 **Artifacts** 区域下载 `AISBench-Prefix-Tools-exe-<commit>`（保留 90 天，不产生 Release）
 
 双击即可运行，**无需安装 Python 和任何依赖**。
 
@@ -55,6 +56,18 @@ pip install -r requirements.txt
 build_exe.bat
 # 生成 dist/AISBench-Prefix-Tools.exe
 ```
+
+---
+
+## 开发与发布流程
+
+| 分支 / 标签 | CI 行为 | 说明 |
+|------------|---------|------|
+| `dev` | 构建 EXE → Actions Artifact | 日常开发分支，只产出可下载构建物，不创建 Release |
+| `main` | 构建 EXE → 更新 Nightly Release | 发布集成分支，仅在准备发版时从 `dev` 合入 |
+| `v*` 标签 | 构建 EXE → 正式版本 Release | 发布时在 `main` 上打 tag 触发 |
+
+发布流程：`dev` 开发验证 → 合入 `main` → 在 `main` 打 `v*` 标签 → CI 自动生成正式 Release。日常开发推送 `dev` 即可获取构建产物，不会污染版本发布列表。
 
 ---
 

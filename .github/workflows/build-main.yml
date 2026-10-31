@@ -1,8 +1,12 @@
 name: Build EXE
 
+# 构建策略:
+# - dev / feature/** 分支: 只构建 EXE 并上传 Actions Artifact (保留90天), 不创建任何 Release
+# - main 分支: 构建并更新滚动 Nightly Release (预发布, 非正式版本)
+# - v* 标签: 构建并发布正式版本 Release
 on:
   push:
-    branches: [main, 'feature/**']
+    branches: [main, dev, 'feature/**']
     tags: ['v*']
   workflow_dispatch:
 

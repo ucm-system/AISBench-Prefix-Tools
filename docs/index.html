@@ -242,6 +242,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
   <p>下载最新稳定版或 Nightly 构建后，双击即可运行，无需安装 Python 和任何依赖。</p>
   <pre><code>稳定版：https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest/download/AISBench-Prefix-Tools.exe
 Nightly：https://github.com/ucm-system/AISBench-Prefix-Tools/releases/download/nightly/AISBench-Prefix-Tools.exe</code></pre>
+  <p><b>开发分支构建</b>：推送 <code>dev</code> 分支后 CI 自动打包，在 Actions 对应运行页底部 <b>Artifacts</b> 区域下载（保留 90 天，不产生 Release）。入口：<a href="https://github.com/ucm-system/AISBench-Prefix-Tools/actions/workflows/build-main.yml?query=branch%3Adev">dev 分支构建列表</a>。</p>
   <h3>方式二：从源码运行</h3>
   <pre><code>git clone https://github.com/ucm-system/AISBench-Prefix-Tools.git
 cd AISBench-Prefix-Tools
@@ -545,6 +546,7 @@ build_exe.bat</code></pre>
     <ul>
       <li><a href="https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest">最新稳定版</a>：适合正式测试。</li>
       <li><a href="https://github.com/ucm-system/AISBench-Prefix-Tools/releases/download/nightly/AISBench-Prefix-Tools.exe">Nightly EXE</a>：main 分支最新构建，适合试用新功能。</li>
+      <li><a href="https://github.com/ucm-system/AISBench-Prefix-Tools/actions/workflows/build-main.yml?query=branch%3Adev">dev 分支构建</a>：开发中的构建产物，从 Actions Artifacts 下载。</li>
       <li><a href="https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master">AISBench 镜像 v3.1-20261013-master</a>：当前推荐镜像下载地址。</li>
     </ul>
   </div>

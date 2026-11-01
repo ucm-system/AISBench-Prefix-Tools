@@ -1,4 +1,7 @@
 import tkinter as tk
+import os
+import tempfile
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -122,8 +125,81 @@ class DeploySequenceTests(unittest.TestCase):
             self.assertNotIn("/tmp/AISBench_Prefix_Tools", ssh.dirs)
             self.assertTrue(app.docker.container_name.startswith("aisbench-test-"))
             self.assertIsNotNone(app.config_mgr)
+            # 部署完成: 容器内写入测试状态标记(初始化)
+            state_cmd = next(
+                c for c in ssh.commands if ".aisbench_test_state" in c)
+            self.assertIn("docker exec", state_cmd)
+            self.assertIn("initialized", state_cmd)
         finally:
             app.root.destroy()
+
+
+class TestExecutionStateTests(unittest.TestCase):
+    """容器内测试状态标记应随测试执行阶段更新"""
+
+    def _build_app(self, tmp):
+        settings_file = Path(tmp) / "settings.json"
+        patcher = mock.patch(
+            "settings_manager.settings_path", return_value=settings_file)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        app = main.WizardApp()
+        self.addCleanup(app.root.destroy)
+
+        app.designer.set_kv_cache_info(1_000_000, 2, 8192)
+        app.designer.set_input_lengths([4096])
+        app.designer.set_output_lengths([1024])
+        app.designer.set_repeat_rate(0.8)
+        app.designer.set_request_rate(0)
+        app.designer.generate_test_cases()
+
+        calls = []
+        docker = mock.Mock()
+        docker.code_mount_path = (
+            "/benchmark/ais_bench/aisbench_auto_tools_prefix-main")
+        docker.container_name = "aisbench-test-unit"
+        docker.TEST_STATE_INITIALIZED = DockerManager.TEST_STATE_INITIALIZED
+        docker.TEST_STATE_RUNNING = DockerManager.TEST_STATE_RUNNING
+        docker.TEST_STATE_COMPLETED = DockerManager.TEST_STATE_COMPLETED
+        docker.TEST_STATE_ABNORMAL = DockerManager.TEST_STATE_ABNORMAL
+        docker.write_script.side_effect = (
+            lambda *a, **k:
+            "/benchmark/ais_bench/aisbench_auto_tools_prefix-main/run_tests.sh")
+        docker.set_test_state.side_effect = (
+            lambda state, *a, **k: calls.append(state) or True)
+        docker.find_latest_log_dir.return_value = (
+            "/benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_x")
+        docker.download_logs.return_value = ["/fake/test_1.log"]
+        docker.download_extra_files.return_value = []
+        app.docker = docker
+        return app, docker, calls
+
+    def _run(self, app, tmp):
+        with mock.patch.object(app, "_check_model_path_in_container",
+                               return_value=(True, "OK")):
+            with mock.patch("main.parse_log_directory", return_value=[]):
+                app._run_test_sequence(os.path.join(tmp, "results"))
+
+    def test_run_sequence_marks_running_then_completed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, calls = self._build_app(tmp)
+            docker.run_script.return_value = 0
+            self._run(app, tmp)
+            self.assertEqual(calls, ["running", "completed"])
+
+    def test_run_sequence_marks_abnormal_when_script_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, calls = self._build_app(tmp)
+            docker.run_script.return_value = 1
+            self._run(app, tmp)
+            self.assertEqual(calls, ["running", "abnormal"])
+
+    def test_run_sequence_marks_abnormal_when_script_write_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, calls = self._build_app(tmp)
+            docker.write_script.side_effect = lambda *a, **k: ""
+            self._run(app, tmp)
+            self.assertEqual(calls, ["abnormal"])
 
 
 class FormLayoutTests(unittest.TestCase):

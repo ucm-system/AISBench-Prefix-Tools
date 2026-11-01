@@ -2,7 +2,8 @@ import json
 import base64
 import unittest
 
-from docker_manager import DockerManager
+import i18n
+from docker_manager import DockerManager, describe_test_state
 
 
 class FakeSSHManager:
@@ -193,6 +194,140 @@ class DockerManagerContainerTests(unittest.TestCase):
         self.assertEqual(path, f"{self.manager.code_mount_path}/run_tests.sh")
         self.assertIn("base64 -d", self.ssh.commands[0])
         self.assertTrue(any("chmod +x" in c for c in self.ssh.commands))
+
+    def test_copy_code_into_container_writes_initialized_state(self):
+        self.manager.container_name = "aisbench-test-10101200"
+        self.ssh.output = "run.py\nconfig.py\n"
+
+        ok, _ = self.manager.copy_code_into_container(
+            "/tmp/AISBench_Prefix_Tools/aisbench_auto_tools_prefix-main"
+        )
+
+        self.assertTrue(ok)
+        state_cmd = next(
+            c for c in self.ssh.commands if ".aisbench_test_state" in c)
+        self.assertIn("docker exec aisbench-test-10101200 sh -c", state_cmd)
+        self.assertIn("initialized", state_cmd)
+
+    def test_set_test_state_writes_marker_file(self):
+        self.manager.container_name = "aisbench-test-10101200"
+        logs = []
+
+        ok = self.manager.set_test_state(
+            DockerManager.TEST_STATE_RUNNING, callback=logs.append)
+
+        self.assertTrue(ok)
+        cmd = self.ssh.commands[0]
+        self.assertIn("docker exec aisbench-test-10101200 sh -c", cmd)
+        self.assertIn(".aisbench_test_state", cmd)
+        self.assertIn("printf", cmd)
+        self.assertIn("running > /benchmark/ais_bench/aisbench_auto_tools_prefix-main/.aisbench_test_state", cmd)
+        self.assertEqual(logs, ["  ✓ 测试状态标记: 执行中\n"])
+
+    def test_read_test_state_from_running_container(self):
+        self.manager.container_name = "aisbench-test-10101200"
+        self.ssh.output = "completed"
+
+        state = self.manager.read_test_state()
+
+        self.assertEqual(state, "completed")
+        cmd = self.ssh.commands[0]
+        self.assertIn("docker exec aisbench-test-10101200 sh -c", cmd)
+        self.assertIn(".aisbench_test_state", cmd)
+
+    def test_read_test_state_returns_none_for_unknown_value(self):
+        self.manager.container_name = "aisbench-test-10101200"
+        self.ssh.output = "not-a-state"
+
+        self.assertIsNone(self.manager.read_test_state())
+
+    def test_read_test_state_uses_docker_cp_for_stopped_container(self):
+        class StoppedContainerSSH(FakeSSHManager):
+            def execute(self, command, timeout=300):
+                self.commands.append(command)
+                if command.startswith("docker exec"):
+                    return 1, "", "container is not running"
+                if command.startswith("cat "):
+                    return 0, "abnormal", ""
+                return 0, "", ""
+
+        ssh = StoppedContainerSSH()
+        manager = DockerManager(ssh)
+
+        state = manager.read_test_state("aisbench-test-09300120")
+
+        self.assertEqual(state, "abnormal")
+        self.assertTrue(any(c.startswith("docker cp aisbench-test-09300120:")
+                            for c in ssh.commands))
+        self.assertTrue(any(c.startswith("rm -f /tmp/aisbench_state_")
+                            for c in ssh.commands))
+
+    def test_read_test_state_returns_none_without_container(self):
+        self.assertIsNone(self.manager.read_test_state())
+
+    def test_list_managed_containers_includes_test_state(self):
+        class RoutingSSH(FakeSSHManager):
+            def __init__(self):
+                super().__init__()
+                self.ps_output = "\n".join([
+                    json.dumps({
+                        "Names": "aisbench-test-09300120",
+                        "ID": "a1b2c3",
+                        "Image": "aisbench:v3.1",
+                        "Status": "Up 2 hours",
+                        "Labels": "org.aisbench-prefix-tools.managed=true",
+                        "RunningFor": "2 hours ago",
+                    }),
+                    json.dumps({
+                        "Names": "aisbench-test-08300120",
+                        "ID": "b2c3d4",
+                        "Image": "aisbench:v3.1",
+                        "Status": "Exited (0) 3 hours ago",
+                        "Labels": "org.aisbench-prefix-tools.managed=true",
+                        "RunningFor": "3 hours ago",
+                    }),
+                ])
+                self.state_by_container = {
+                    "aisbench-test-09300120": "running",
+                    "aisbench-test-08300120": "running",
+                }
+
+            def execute(self, command, timeout=300):
+                self.commands.append(command)
+                if command.startswith("docker ps -a"):
+                    return 0, self.ps_output, ""
+                if command.startswith("docker exec"):
+                    for name, state in self.state_by_container.items():
+                        if name in command:
+                            return 0, state, ""
+                return 0, "", ""
+
+        ssh = RoutingSSH()
+        manager = DockerManager(ssh)
+
+        containers = manager.list_managed_containers(include_test_state=True)
+
+        by_name = {c["name"]: c for c in containers}
+        self.assertEqual(by_name["aisbench-test-09300120"]["test_state"],
+                         "running")
+        self.assertEqual(by_name["aisbench-test-09300120"]["test_state_label"],
+                         "执行中")
+        # 容器已停止但状态标记停留在执行中 → 判定为上次会话中断
+        self.assertEqual(by_name["aisbench-test-08300120"]["test_state"],
+                         "running")
+        self.assertEqual(by_name["aisbench-test-08300120"]["test_state_label"],
+                         "异常终止(执行中断)")
+
+    def test_describe_test_state_maps_all_states(self):
+        i18n.set_language("zh")
+        self.assertEqual(describe_test_state("initialized"), "初始化")
+        self.assertEqual(describe_test_state("running"), "执行中")
+        self.assertEqual(describe_test_state("completed"), "执行完成")
+        self.assertEqual(describe_test_state("abnormal"), "异常终止")
+        self.assertEqual(describe_test_state(None), "未标记")
+        self.assertEqual(describe_test_state("running", False),
+                         "异常终止(执行中断)")
+        self.assertEqual(describe_test_state("running", True), "执行中")
 
 
 class ConfigManagerContainerIOTests(unittest.TestCase):

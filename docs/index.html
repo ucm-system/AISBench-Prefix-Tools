@@ -314,7 +314,7 @@ build_exe.bat</code></pre>
       <tr><td>AISBench 镜像来源</td><td>点击“查看已有镜像”读取执行机镜像列表并选择；未发现镜像时自动切换到上传模式。</td></tr>
       <tr><td>镜像 tar 包</td><td>上传模式专用，选择本地 AISBench Docker 镜像文件；可点击“镜像下载链接”直达 Releases。</td></tr>
       <tr><td>临时部署目录</td><td>默认 <code>/tmp/AISBench_Prefix_Tools</code>；仅部署期间暂存镜像 tar 和代码，导入容器后自动删除。</td></tr>
-      <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器，可同时清理旧版遗留的临时目录。</td></tr>
+      <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器（含测试任务状态列），可同时清理旧版遗留的临时目录。</td></tr>
       <tr><td>测试代码来源</td><td>默认使用程序内置代码，也可选择本地 zip 包。</td></tr>
       <tr><td>模型路径</td><td>远程执行机上的模型权重目录，可点击“浏览远程目录”定位。</td></tr>
       <tr><td>模型名称</td><td>对应 vLLM 的 <code>--served-model-name</code> 参数。</td></tr>
@@ -337,6 +337,7 @@ build_exe.bat</code></pre>
     <li>上传模式会优先读取 tar 包 <code>manifest.json</code>；镜像已存在时同样跳过重复加载。</li>
     <li>容器自动命名 <code>aisbench-test-MMDDHHMM</code>，并附加管理 label <code>org.aisbench-prefix-tools.managed=true</code>。</li>
     <li>模型路径按原路径挂载；测试代码不挂载，而是在容器创建后通过 <code>docker cp</code> 导入 <code>/benchmark/ais_bench/aisbench_auto_tools_prefix-main</code>。</li>
+    <li>部署完成后在容器工作目录写入 <code>.aisbench_test_state</code> 测试状态标记（初始化），后续测试执行会更新为执行中 / 执行完成 / 异常终止。</li>
     <li>代码导入成功后立即删除宿主机临时目录，宿主机不再保留代码、config.py 或日志。</li>
     <li>config.py 与测试脚本直接写入容器内部（内容经 base64 编码，避免引号转义问题）。</li>
     <li>部署失败时临时目录会保留用于排障，修复后重新部署即可。</li>
@@ -502,16 +503,32 @@ build_exe.bat</code></pre>
 </section>
 <section id="cleanup">
   <h2>环境清理与退出</h2>
-  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在步骤 2 通过“清理残留容器”删除。</p>
+  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在步骤 2 通过“清理残留容器”删除。清理提示会显示容器内测试任务状态，并提醒：清理后如需再次执行测试，需要从步骤 2 Docker 部署重新开始。</p>
   <table>
     <thead><tr><th>操作</th><th>结果</th></tr></thead>
     <tbody>
       <tr><td>清理远程环境</td><td>停止并删除容器，删除残留暂存文件；本地结果不受影响。</td></tr>
-      <tr><td>清理残留容器</td><td>步骤 2 提供勾选列表，可跨会话删除 <code>aisbench-test-*</code> 容器和旧版遗留的临时目录。</td></tr>
+      <tr><td>清理残留容器</td><td>步骤 2 提供勾选列表，可跨会话删除 <code>aisbench-test-*</code> 容器和旧版遗留的临时目录；列表会显示每个容器的测试任务状态。</td></tr>
       <tr><td>保留环境</td><td>容器保留，便于继续排查或复用；下次连接时会再次提醒。</td></tr>
       <tr><td>退出程序</td><td>点击“完成”或窗口关闭按钮；若容器仍在运行，会再次提醒。</td></tr>
     </tbody>
   </table>
+  <h3>容器内测试任务状态标记</h3>
+  <p>本工具创建的容器会在容器内工作目录写入 <code>.aisbench_test_state</code> 标记文件，记录测试任务的执行状态；清理容器（自动提醒、清理环境、清理残留容器）时会展示该状态，帮助判断上次测试是否完成或中断。</p>
+  <table>
+    <thead><tr><th>状态</th><th>对应阶段 / 场景</th></tr></thead>
+    <tbody>
+      <tr><td>初始化</td><td>部署完成（测试代码已导入容器），测试尚未开始。</td></tr>
+      <tr><td>执行中</td><td>测试脚本正在容器内执行。</td></tr>
+      <tr><td>执行完成</td><td>测试脚本成功执行完毕。</td></tr>
+      <tr><td>异常终止</td><td>测试脚本失败或中断退出；若上次会话退出时测试仍在执行（容器已停止但状态停留在“执行中”），会显示为“异常终止(执行中断)”。</td></tr>
+      <tr><td>未标记</td><td>旧版本创建的容器，未写入状态标记。</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <b>清理后如何再次测试</b>
+    清理会停止并删除容器；config.py、测试脚本和日志都保存在容器内部。因此清理后如需再次执行测试用例，需要从步骤 2 Docker 部署重新开始，再依次保存配置、生成测试用例并执行。
+  </div>
   <div class="callout good">
     <b>安全边界</b>
     残留容器清理只识别本工具创建的容器（<code>aisbench-test-</code> 前缀或管理 label），不会影响执行机上的其他容器。
@@ -533,7 +550,9 @@ build_exe.bat</code></pre>
   <h3>如何重新部署？</h3>
   <p>再次点击“开始部署”会删除同名旧容器并重新创建，也可以先手动删除容器后重试。</p>
   <h3>上次退出没有清理，怎么删除遗留容器？</h3>
-  <p>重新连接后工具会自动扫描并提醒；也可以在步骤 2 点击“清理残留容器”，勾选要删除的容器，可同时清理旧版遗留的临时目录。</p>
+  <p>重新连接后工具会自动扫描并提醒；也可以在步骤 2 点击“清理残留容器”，勾选要删除的容器，可同时清理旧版遗留的临时目录。列表会显示容器内测试任务状态（初始化 / 执行中 / 执行完成 / 异常终止），便于判断上次测试是否中断。</p>
+  <h3>清理环境后想再次执行测试怎么办？</h3>
+  <p>清理会停止并删除容器，config.py、测试脚本和日志都保存在容器内部。需要回到步骤 2 重新执行 Docker 部署，再依次保存配置、生成测试用例并执行测试。</p>
   <h3>远程的 /tmp/AISBench_Prefix_Tools 目录为什么部署后不见了？</h3>
   <p>该目录现在只是部署暂存区，代码通过 docker cp 导入容器后会自动删除；后续 config.py、脚本和日志都在容器内部。</p>
   <h3>结果 CSV 可以单独解析吗？</h3>

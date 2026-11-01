@@ -87,6 +87,25 @@ TRANSLATIONS = {
         "扫描失败(可稍后重试)": "Scan failed (retry later)",
         "无残留容器": "No residual containers",
         "无需连接服务器": "No server connection required",
+        "初始化": "Initialized",
+        "执行中": "Running",
+        "执行完成": "Completed",
+        "异常终止": "Abnormally terminated",
+        "异常终止(执行中断)": "Abnormally terminated (interrupted)",
+        "未标记": "Not marked",
+        "测试状态": "Test state",
+        "  {name}  [{status}]  [{state}]": "  {name}  [{status}]  [{state}]",
+        "  {name}  [{state}]": "  {name}  [{state}]",
+        "{name}({state})": "{name}({state})",
+        "  ✓ 测试状态标记: {state}\n": "  ✓ Test state marker: {state}\n",
+        "  - 测试任务状态: {state}\n": "  - Test task state: {state}\n",
+        "  测试任务状态: {state}\n": "  Test task state: {state}\n",
+        "\n\n清理后如需再次执行测试, 需从步骤2 Docker部署重新开始。":
+            "\n\nTo run tests again after cleanup, start over from step 2 (Docker deployment).",
+        "如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n":
+            "To run test cases again, start over from step 2 (Docker deployment).\n",
+        "  如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n":
+            "  To run test cases again, start over from step 2 (Docker deployment).\n",
         "未发现可用镜像，请上传本地AISBench镜像tar包。":
             "No usable image found. Upload a local AISBench image tar package.",
         "未扫描": "Not scanned",
@@ -385,6 +404,7 @@ TRANSLATIONS = {
         '  ✓ 代码暂存完成: {path}\n\n': '  ✓ Code staging complete: {path}\n\n',
         '[4/5] 创建并启动容器...\n': '[4/5] Creating and starting the container...\n',
         '\n  ✓ 容器 {container} 已启动运行\n': '\n  ✓ Container {container} is running\n',
+        '\n容器 {container} 已启动运行\n': '\nContainer {container} is running\n',
         '[5/5] 导入测试代码到容器并清理暂存目录...\n':
             '[5/5] Importing test code into the container and cleaning the staging directory...\n',
         '  → 暂存目录暂不删除，可用于排障；修复后可重新部署\n':
@@ -483,7 +503,8 @@ TRANSLATIONS = {
         '请输入有效的输入/输出长度': 'Please enter valid input/output lengths',
         '请求数和并发数必须为数字': 'Request count and concurrency must be numbers',
         '测试已完成但未提取到有效结果，请检查执行日志': 'Tests completed but no valid results were extracted; check the execution log',
-        '环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。': 'Environment cleanup complete!\nContainer removed, no temporary directory leftovers.\nLocal test results are not affected.',
+        '环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n如需再次执行测试用例, 请从步骤2 Docker部署重新开始。':
+            'Environment cleanup complete!\nContainer removed, no temporary directory leftovers.\nLocal test results are not affected.\nTo run test cases again, start over from step 2 (Docker deployment).',
         '请完成镜像和模型路径选择': 'Please finish image and model path selection',
         '尚未生成测试用例，是否继续?': 'No test cases generated yet. Continue?',
         'Docker容器尚未部署，是否继续?': 'Docker container is not deployed yet. Continue?',
@@ -513,7 +534,8 @@ TRANSLATIONS = {
         '清理失败: {work_dir}': 'Cleanup failed: {work_dir}',
         '确定要清理临时部署目录吗?\n\n{work_dir}\n\n这将删除残留的暂存文件（镜像tar、代码包等），\n并停止当前会话创建的容器。\n容器内的测试代码和日志不受影响。': 'Clean the temporary deploy directory?\n\n{work_dir}\n\nThis deletes leftover staging files (image tar, code package, etc.)\nand stops containers created in this session.\nTest code and logs inside the container are not affected.',
         '发现 {count} 个本工具容器{suffix}': 'Found {count} tool container(s){suffix}',
-        '检测到 {count} 个本工具创建的历史容器:\n\n{listing}\n\n这些容器可能是上次退出时未清理的。\n是否打开清理窗口进行选择清理?': 'Detected {count} historical container(s) created by this tool:\n\n{listing}\n\nThey may be leftovers from a previous run.\nOpen the cleanup window to clean them selectively?',
+        '检测到 {count} 个本工具创建的历史容器:\n\n{listing}\n\n这些容器可能是上次退出时未清理的。\n是否打开清理窗口进行选择清理?\n(清理后如需再次执行测试, 需从步骤2 Docker部署重新开始)':
+            'Detected {count} historical container(s) created by this tool:\n\n{listing}\n\nThey may be leftovers from a previous run.\nOpen the cleanup window to clean them selectively?\n(To run tests again after cleanup, start over from step 2 Docker deployment)',
         '\n\n同时删除临时部署目录:\n  {work_dir}': '\n\nAlso delete the temporary deploy directory:\n  {work_dir}',
         '查询失败: {error}': 'Query failed: {error}',
         '共 {count} 个容器': '{count} container(s) in total',
@@ -547,12 +569,17 @@ TRANSLATIONS = {
         '已选择 {selected} ({detail})': 'Selected {selected} ({detail})',
         '测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nLog: {log}\n{count} records in total',
         '  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n': '  - Temporary deploy directory leftovers: {work_dir} (normally cleaned automatically)\n',
-        '测试已完成! 建议清理远程环境:\n\n  - Docker容器: {container}\n{work_dir_line}\n是否立即清理?\n(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n(否: 稍后可点击"清理环境"按钮手动清理)': 'Tests complete! Cleaning up the remote environment is recommended:\n\n  - Docker container: {container}\n{work_dir_line}\nClean up now?\n(Yes: stop and remove the container + delete leftover staging files; local results are not affected)\n(No: you can click the "Clean environment" button later)',
+        '测试已完成! 建议清理远程环境:\n\n  - Docker容器: {container}\n  - 测试任务状态: {state}\n{work_dir_line}\n是否立即清理?\n(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n(否: 稍后可点击"清理环境"按钮手动清理)\n\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n需要从步骤2 Docker部署重新开始。':
+            'Tests complete! Cleaning up the remote environment is recommended:\n\n  - Docker container: {container}\n  - Test task state: {state}\n{work_dir_line}\nClean up now?\n(Yes: stop and remove the container + delete leftover staging files; local results are not affected)\n(No: you can click the "Clean environment" button later)\n\nNote: the container will be removed after cleanup. To run test cases again,\nstart over from step 2 (Docker deployment).',
         '  Docker容器: {container}\n': '  Docker container: {container}\n',
         '  临时部署目录: {work_dir} (如有残留)\n': '  Temporary deploy directory: {work_dir} (if any leftovers)\n',
-        '确认清理以下远程资源?\n\n{container_line}{work_dir_line}\n清理后容器将停止删除, 残留暂存文件将被清除。\n本地下载的测试结果不受影响。\n': 'Clean the following remote resources?\n\n{container_line}{work_dir_line}The container will be stopped and removed, and leftover staging files will be deleted.\nDownloaded local test results are not affected.\n',
+        '确认清理以下远程资源?\n\n{container_line}{state_line}{work_dir_line}\n清理后容器将停止删除, 残留暂存文件将被清除。\n本地下载的测试结果不受影响。\n清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始。\n':
+            'Clean the following remote resources?\n\n{container_line}{state_line}{work_dir_line}The container will be stopped and removed, and leftover staging files will be deleted.\nDownloaded local test results are not affected.\nTo run test cases again after cleanup, start over from step 2 (Docker deployment).\n',
         '  临时部署目录残留: {work_dir} (如有)\n': '  Temporary deploy directory leftovers: {work_dir} (if any)\n',
-        '检测到Docker容器仍在运行!\n\n  容器: {container}\n{work_dir_line}\n退出前是否清理远程环境?\n(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)': 'The Docker container is still running!\n\n  Container: {container}\n{work_dir_line}Clean up the remote environment before exiting?\n(Yes: clean up and exit  No: exit and keep the container  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" in step 2 on the next connection)',
+        '检测到Docker容器仍在运行!\n\n  容器: {container}\n  测试任务状态: {state}\n{work_dir_line}\n退出前是否清理远程环境?\n(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n\n注意: 清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始;\n若测试任务正在执行中, 直接退出将导致测试异常终止。':
+            'The Docker container is still running!\n\n  Container: {container}\n  Test task state: {state}\n{work_dir_line}Clean up the remote environment before exiting?\n(Yes: clean up and exit  No: exit and keep the container  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" in step 2 on the next connection)\n\nNote: to run test cases again after cleanup, start over from step 2 (Docker deployment);\nif a test task is still running, exiting directly will terminate it abnormally.',
+        '  ⚠ 仍有 {count} 个历史容器残留: {listing}\n':
+            '  ⚠ {count} historical container(s) remain: {listing}\n',
     }
 }
 

@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Optional, Callable, Tuple
 
 from ssh_manager import SSHManager
-from docker_manager import DockerManager
+from docker_manager import DockerManager, describe_test_state
 from config_manager import ConfigManager
 from test_designer import TestDesigner
 from log_parser import parse_log_directory
@@ -1372,7 +1372,8 @@ class WizardApp:
 
         def _do_scan():
             try:
-                containers = self.docker.list_managed_containers()
+                containers = self.docker.list_managed_containers(
+                    include_test_state=True)
             except Exception:
                 self.root.after(0, lambda: self.residual_status_lbl.config(
                     text="扫描失败(可稍后重试)", fg=COLOR_ERROR))
@@ -1399,7 +1400,10 @@ class WizardApp:
 
         if prompt_if_found and residuals:
             listing = "\n".join(
-                f"  {c['name']}  [{c['status']}]" for c in residuals[:10])
+                trf("  {name}  [{status}]  [{state}]",
+                    name=c["name"], status=c["status"],
+                    state=c.get("test_state_label", tr("未标记")))
+                for c in residuals[:10])
             if len(residuals) > 10:
                 listing += "\n  ..."
             if askyesno(
@@ -1407,7 +1411,8 @@ class WizardApp:
                     trf("检测到 {count} 个本工具创建的历史容器:\n\n"
                         "{listing}\n\n"
                         "这些容器可能是上次退出时未清理的。\n"
-                        "是否打开清理窗口进行选择清理?",
+                        "是否打开清理窗口进行选择清理?\n"
+                        "(清理后如需再次执行测试, 需从步骤2 Docker部署重新开始)",
                         count=len(residuals), listing=listing),
                     icon=messagebox.WARNING):
                 self._open_residual_container_dialog()
@@ -1437,13 +1442,14 @@ class WizardApp:
         list_frame = tk.Frame(dialog, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=8)
 
-        columns = ("name", "image", "status", "created")
+        columns = ("name", "image", "status", "test_state", "created")
         tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=8)
         for col, (text, width) in {
             "name": (tr("容器名"), 200),
             "image": (tr("镜像"), 240),
-            "status": (tr("状态"), 150),
-            "created": (tr("创建时间"), 140),
+            "status": (tr("状态"), 130),
+            "test_state": (tr("测试状态"), 130),
+            "created": (tr("创建时间"), 120),
         }.items():
             tree.heading(col, text=text)
             tree.column(col, width=width, anchor=tk.W)
@@ -1496,7 +1502,8 @@ class WizardApp:
 
             def _do_refresh():
                 try:
-                    containers = self.docker.list_managed_containers()
+                    containers = self.docker.list_managed_containers(
+                        include_test_state=True)
                 except Exception as e:
                     dialog.after(0, lambda: status_lbl.config(
                         text=trf("查询失败: {error}", error=e), fg=COLOR_ERROR))
@@ -1507,7 +1514,9 @@ class WizardApp:
                     checked.clear()
                     for c in containers:
                         tree.insert("", tk.END, values=(
-                            c["name"], c["image"], c["status"], c["created"]))
+                            c["name"], c["image"], c["status"],
+                            c.get("test_state_label", tr("未标记")),
+                            c["created"]))
                     count = len(containers)
                     status_lbl.config(
                         text=trf("共 {count} 个容器", count=count) if count else "无残留容器",
@@ -1536,8 +1545,16 @@ class WizardApp:
                                        parent=dialog)
                 return
             names = sorted(checked)
+            state_by_name = {
+                tree.set(item, "name"): tree.set(item, "test_state")
+                for item in tree.get_children()
+            }
             confirm_msg = (tr("确定停止并删除以下容器?\n\n")
-                           + "\n".join(f"  {n}" for n in names))
+                           + "\n".join(
+                               trf("  {name}  [{state}]", name=n,
+                                   state=state_by_name.get(n, tr("未标记")))
+                               for n in names)
+                           + tr("\n\n清理后如需再次执行测试, 需从步骤2 Docker部署重新开始。"))
             if clean_temp_var.get():
                 confirm_msg += trf("\n\n同时删除临时部署目录:\n  {work_dir}",
                                    work_dir=self.work_dir_var.get().strip())
@@ -1555,6 +1572,7 @@ class WizardApp:
                     if self.docker.container_name == name:
                         self.docker.container_name = None
                         self.config_mgr = None
+                        self.deployed = False
                     checked.discard(name)
                 if clean_temp_var.get():
                     work_dir = self.work_dir_var.get().strip()
@@ -1562,6 +1580,7 @@ class WizardApp:
                         self.docker.remote_work_base = work_dir
                     self.docker.remove_work_dir(callback=_log_async)
                 _log("✓ 清理完成\n")
+                _log(tr("如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
 
                 def _done():
                     clean_btn.config(state=tk.NORMAL, text="清理选中")
@@ -2976,9 +2995,17 @@ class WizardApp:
         container_script = self.docker.write_script(script_content, "run_tests.sh")
         if not container_script:
             self._log_exec("  ✗ 无法将测试脚本写入容器内部\n")
+            self.docker.set_test_state(
+                self.docker.TEST_STATE_ABNORMAL,
+                callback=lambda t: self._log_exec(t))
             return
         self._log_exec(f"  脚本路径(容器内): {container_script}\n")
         self._log_exec("  开始执行测试 (这可能需要较长时间)...\n\n")
+
+        # 写入测试任务状态标记: 执行中
+        self.docker.set_test_state(
+            self.docker.TEST_STATE_RUNNING,
+            callback=lambda t: self._log_exec(t))
 
         exit_code = self.docker.run_script(
             "run_tests.sh",
@@ -2987,8 +3014,14 @@ class WizardApp:
         )
 
         if exit_code != 0:
+            self.docker.set_test_state(
+                self.docker.TEST_STATE_ABNORMAL,
+                callback=lambda t: self._log_exec(t))
             self._log_exec(f"\n  ⚠ 部分测试失败 (exit_code={exit_code})，继续下载日志以便排查...\n")
         else:
+            self.docker.set_test_state(
+                self.docker.TEST_STATE_COMPLETED,
+                callback=lambda t: self._log_exec(t))
             self._log_exec(f"\n  ✓ 测试脚本执行完成\n")
 
         # ===== 阶段3: 下载日志 =====
@@ -3092,6 +3125,23 @@ class WizardApp:
         """向执行日志缓冲区写入（线程安全，由主线程定时刷新）"""
         self._exec_log_handler.append(text)
 
+    def _container_test_state_label(self) -> str:
+        """读取当前容器内测试任务状态标记并转为本地化展示文本"""
+        state = None
+        running = None
+        if self.docker and self.docker.container_name:
+            try:
+                state = self.docker.read_test_state()
+            except Exception:
+                state = None
+            try:
+                running = self.docker.container_is_running()
+            except Exception:
+                running = None
+        if not isinstance(state, str):
+            state = None
+        return describe_test_state(state, running)
+
     def _show_cleanup_reminder(self):
         """测试完成后提醒清理远程环境"""
         if not self.docker or not self.docker.container_name:
@@ -3101,14 +3151,19 @@ class WizardApp:
         work_dir_line = (
             trf("  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n", work_dir=work_dir)
             if work_dir else "")
+        state_label = self._container_test_state_label()
         msg = trf(
             "测试已完成! 建议清理远程环境:\n\n"
             "  - Docker容器: {container}\n"
+            "  - 测试任务状态: {state}\n"
             "{work_dir_line}"
             "\n是否立即清理?\n"
             "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
-            '(否: 稍后可点击"清理环境"按钮手动清理)',
+            '(否: 稍后可点击"清理环境"按钮手动清理)\n'
+            "\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n"
+            "需要从步骤2 Docker部署重新开始。",
             container=self.docker.container_name,
+            state=state_label,
             work_dir_line=work_dir_line)
 
         if askyesno("清理提醒", msg, icon=messagebox.QUESTION):
@@ -3125,16 +3180,23 @@ class WizardApp:
             container_line = (
                 trf("  Docker容器: {container}\n", container=self.docker.container_name)
                 if self.docker.container_name else "")
+            state_line = (
+                trf("  测试任务状态: {state}\n",
+                    state=self._container_test_state_label())
+                if self.docker.container_name else "")
             work_dir_line = (
                 trf("  临时部署目录: {work_dir} (如有残留)\n", work_dir=work_dir)
                 if work_dir else "")
             msg = trf(
                 "确认清理以下远程资源?\n\n"
                 "{container_line}"
+                "{state_line}"
                 "{work_dir_line}"
                 "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
-                "本地下载的测试结果不受影响。\n",
+                "本地下载的测试结果不受影响。\n"
+                "清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始。\n",
                 container_line=container_line,
+                state_line=state_line,
                 work_dir_line=work_dir_line)
             if not askyesno("确认清理", msg, icon=messagebox.WARNING):
                 return
@@ -3150,6 +3212,7 @@ class WizardApp:
                 self.docker.stop_and_remove(callback=lambda t: self._log_exec(t))
                 self._log_exec("  ✓ 容器已清理\n")
                 self.deployed = False
+                self.config_mgr = None
             else:
                 self._log_exec("  (无容器需要清理)\n")
 
@@ -3169,12 +3232,18 @@ class WizardApp:
             # 3. 提示是否仍有历史容器残留(可在步骤2清理)
             try:
                 leftovers = [
-                    c for c in self.docker.list_managed_containers()
+                    c for c in self.docker.list_managed_containers(
+                        include_test_state=True)
                     if c["name"] != self.docker.container_name
                 ]
                 if leftovers:
-                    names = ", ".join(c["name"] for c in leftovers[:5])
-                    self._log_exec(f"  ⚠ 仍有 {len(leftovers)} 个历史容器残留: {names}\n")
+                    listing = ", ".join(
+                        trf("{name}({state})", name=c["name"],
+                            state=c.get("test_state_label", tr("未标记")))
+                        for c in leftovers[:5])
+                    self._log_exec(
+                        trf("  ⚠ 仍有 {count} 个历史容器残留: {listing}\n",
+                            count=len(leftovers), listing=listing))
                     self._log_exec("    → 可在步骤2点击\"清理残留容器\"进行清理\n")
             except Exception:
                 pass
@@ -3182,6 +3251,8 @@ class WizardApp:
             self._log_exec("\n✓ 环境清理完成!\n")
             local_dir = self.local_output_var.get().strip()
             self._log_exec(f"  本地测试结果保留在: {local_dir}\n")
+            self._log_exec(tr(
+                "  如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
 
             def _restore_cleanup():
                 self.cleanup_btn.config(state=tk.DISABLED, text="清理环境")
@@ -3190,7 +3261,8 @@ class WizardApp:
                     self.root.destroy()
                 else:
                     showinfo("清理完成",
-                        "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。")
+                        "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n"
+                        "如需再次执行测试用例, 请从步骤2 Docker部署重新开始。")
 
             self.root.after(0, _restore_cleanup)
 
@@ -3283,14 +3355,19 @@ class WizardApp:
             work_dir_line = (
                 trf("  临时部署目录残留: {work_dir} (如有)\n", work_dir=work_dir)
                 if work_dir else "")
+            state_label = self._container_test_state_label()
             msg = trf(
                 "检测到Docker容器仍在运行!\n\n"
                 "  容器: {container}\n"
+                "  测试任务状态: {state}\n"
                 "{work_dir_line}"
                 "\n退出前是否清理远程环境?\n"
                 "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
-                '(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)',
+                '(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n'
+                "\n注意: 清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始;\n"
+                "若测试任务正在执行中, 直接退出将导致测试异常终止。",
                 container=self.docker.container_name,
+                state=state_label,
                 work_dir_line=work_dir_line)
 
             choice = askyesnocancel("清理提醒", msg, icon=messagebox.WARNING)

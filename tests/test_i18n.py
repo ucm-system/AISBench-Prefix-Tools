@@ -204,6 +204,27 @@ class DynamicMessageI18nTests(unittest.TestCase):
         self.assertEqual(i18n.tr("请选择本地代码zip包 (或改用程序内置)"),
                          "Please select a local code zip package (or use built-in)")
 
+    def test_test_state_labels_are_english(self):
+        from docker_manager import describe_test_state
+
+        i18n.set_language("en")
+        self.assertEqual(i18n.tr("初始化"), "Initialized")
+        self.assertEqual(i18n.tr("执行中"), "Running")
+        self.assertEqual(i18n.tr("执行完成"), "Completed")
+        self.assertEqual(i18n.tr("异常终止"), "Abnormally terminated")
+        self.assertEqual(i18n.tr("异常终止(执行中断)"),
+                         "Abnormally terminated (interrupted)")
+        self.assertEqual(i18n.tr("未标记"), "Not marked")
+
+        self.assertEqual(describe_test_state("initialized"), "Initialized")
+        self.assertEqual(describe_test_state("running"), "Running")
+        self.assertEqual(describe_test_state("completed"), "Completed")
+        self.assertEqual(describe_test_state("abnormal"),
+                         "Abnormally terminated")
+        self.assertEqual(describe_test_state(None), "Not marked")
+        self.assertEqual(describe_test_state("running", False),
+                         "Abnormally terminated (interrupted)")
+
     def test_next_step_warning_is_english(self):
         """Clicking Next without a connection must warn in English."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,6 +274,69 @@ class DynamicMessageI18nTests(unittest.TestCase):
                         args[2])
                     self.assertIn(
                         "Clean up the remote environment before exiting?", args[2])
+                    self.assertIn("Test task state: Not marked", args[2])
+                    self.assertIn(
+                        "start over from step 2 (Docker deployment)", args[2])
+                    self.assertIn(
+                        "exiting directly will terminate it abnormally", args[2])
+                finally:
+                    app.root.destroy()
+
+    def test_cleanup_reminder_is_english_with_state_and_redeploy_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path",
+                            return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.language_var.set("English")
+                    app._on_language_change()
+                    app.work_dir_var.set("/tmp/aisbench_deploy")
+                    docker = mock.Mock()
+                    docker.container_name = "aisbench-test-abc"
+                    docker.read_test_state.return_value = "completed"
+                    docker.container_is_running.return_value = True
+                    app.docker = docker
+                    with mock.patch("main.askyesno", return_value=False) as ask:
+                        app._show_cleanup_reminder()
+                    message = ask.call_args_list[0].args[1]
+                    self.assertIn("Tests complete!", message)
+                    self.assertIn("Test task state: Completed", message)
+                    self.assertIn(
+                        "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
+                        message)
+                    self.assertIn(
+                        "start over from step 2 (Docker deployment)", message)
+                    self.assertIn(
+                        "the container will be removed after cleanup", message)
+                finally:
+                    app.root.destroy()
+
+    def test_cleanup_confirm_is_english_with_state_and_redeploy_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path",
+                            return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.language_var.set("English")
+                    app._on_language_change()
+                    app.work_dir_var.set("/tmp/aisbench_deploy")
+                    docker = mock.Mock()
+                    docker.container_name = "aisbench-test-abc"
+                    docker.read_test_state.return_value = "abnormal"
+                    docker.container_is_running.return_value = True
+                    app.docker = docker
+                    with mock.patch("main.askyesno", return_value=False) as ask:
+                        app._cleanup_environment()
+                    message = ask.call_args.args[1]
+                    self.assertIn("Docker container: aisbench-test-abc", message)
+                    self.assertIn("Test task state: Abnormally terminated",
+                                  message)
+                    self.assertIn(
+                        "To run test cases again after cleanup, "
+                        "start over from step 2 (Docker deployment).",
+                        message)
                 finally:
                     app.root.destroy()
 

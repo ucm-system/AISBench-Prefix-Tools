@@ -22,6 +22,21 @@ class DockerManager:
     MANAGED_NAME_PREFIX = "aisbench-test-"
     MANAGED_LABEL = "org.aisbench-prefix-tools.managed=true"
 
+    # 容器内测试任务状态标记(文件), 用于清理容器时告知用户测试执行情况
+    # initialized: 部署完成/测试未开始; running: 测试执行中
+    # completed: 测试执行完成; abnormal: 测试异常终止(脚本失败或会话中断)
+    TEST_STATE_FILENAME = ".aisbench_test_state"
+    TEST_STATE_INITIALIZED = "initialized"
+    TEST_STATE_RUNNING = "running"
+    TEST_STATE_COMPLETED = "completed"
+    TEST_STATE_ABNORMAL = "abnormal"
+    TEST_STATES = (
+        TEST_STATE_INITIALIZED,
+        TEST_STATE_RUNNING,
+        TEST_STATE_COMPLETED,
+        TEST_STATE_ABNORMAL,
+    )
+
     def __init__(self, ssh: SSHManager):
         self.ssh = ssh
         self.container_name: Optional[str] = None
@@ -248,11 +263,14 @@ class DockerManager:
         else:
             return False, trf("容器启动失败，状态: {status}", status=out)
 
-    def list_managed_containers(self) -> List[dict]:
+    def list_managed_containers(self, include_test_state: bool = False) -> List[dict]:
         """列出本工具创建/遗留的容器(含已停止的)
 
         识别规则: 容器名以 aisbench-test- 开头, 或带管理label。
         旧版本容器没有label, 只能靠名称前缀识别。
+
+        include_test_state=True 时逐个读取容器内测试状态标记,
+        并附加 test_state(原始值) 与 test_state_label(本地化展示文本) 字段。
         """
         code, out, err = self.ssh.execute("docker ps -a --format '{{json .}}'")
         if code != 0:
@@ -280,7 +298,58 @@ class DockerManager:
                 "created": str(item.get("RunningFor", "")).strip(),
             })
         containers.sort(key=lambda c: c["name"])
+        if include_test_state:
+            for container in containers:
+                running = str(container.get("status", "")).startswith("Up")
+                state = self.read_test_state(container["name"])
+                container["test_state"] = state or ""
+                container["test_state_label"] = describe_test_state(state, running)
         return containers
+
+    def test_state_path(self) -> str:
+        """容器内测试状态标记文件路径"""
+        return f"{self.code_mount_path}/{self.TEST_STATE_FILENAME}"
+
+    def set_test_state(self, state: str, container_name: Optional[str] = None,
+                       callback: Callable[[str], None] = None) -> bool:
+        """写入容器内测试任务状态标记"""
+        name = container_name or self.container_name
+        if not name:
+            return False
+        path = self.test_state_path()
+        inner = f"printf '%s' {shlex.quote(state)} > {shlex.quote(path)}"
+        cmd = f"docker exec {name} sh -c {shlex.quote(inner)}"
+        code, _, _ = self.ssh.execute(cmd, timeout=30)
+        if code == 0 and callback:
+            callback(trf("  ✓ 测试状态标记: {state}\n",
+                         state=describe_test_state(state)))
+        return code == 0
+
+    def read_test_state(self, container_name: Optional[str] = None) -> Optional[str]:
+        """读取容器内测试任务状态标记
+
+        运行中容器直接 docker exec 读取; 已停止容器 docker exec 不可用,
+        回退为 docker cp 导出状态文件后读取(读取后删除临时文件)。
+        无法读取或状态值非法时返回 None(如旧版本容器未写标记)。
+        """
+        name = container_name or self.container_name
+        if not name:
+            return None
+        path = self.test_state_path()
+        inner = f"cat {shlex.quote(path)} 2>/dev/null"
+        cmd = f"docker exec {name} sh -c {shlex.quote(inner)}"
+        code, out, _ = self.ssh.execute(cmd, timeout=30)
+        if code != 0:
+            temp_path = f"/tmp/aisbench_state_{name}"
+            cp_cmd = f"docker cp {name}:{path} {temp_path}"
+            cp_code, _, _ = self.ssh.execute(cp_cmd, timeout=60)
+            if cp_code != 0:
+                return None
+            code, out, _ = self.ssh.execute(
+                f"cat {temp_path} 2>/dev/null", timeout=30)
+            self.ssh.execute(f"rm -f {temp_path}")
+        state = out.strip() if isinstance(out, str) else ""
+        return state if state in self.TEST_STATES else None
 
     def copy_code_into_container(self, host_code_path: str,
                                  callback: Callable[[str], None] = None) -> Tuple[bool, str]:
@@ -322,6 +391,8 @@ class DockerManager:
             return False, tr("代码导入后校验失败")
         if callback:
             callback(trf("  ✓ 代码已就绪(容器内): {path}\n", path=self.code_mount_path))
+        # 部署完成: 写入测试状态标记(初始化 = 测试任务尚未开始)
+        self.set_test_state(self.TEST_STATE_INITIALIZED, callback=callback)
         return True, self.code_mount_path
 
     def upload_directory(self, local_dir: str, remote_dir: str,
@@ -680,3 +751,26 @@ class DockerManager:
         except Exception as e:
             print(f"SFTP下载失败: {e}")
             return False
+
+
+def describe_test_state(state, running=None) -> str:
+    """把容器内测试状态标记转换为界面展示文本(跟随当前语言)
+
+    - initialized: 初始化(部署完成, 测试尚未开始)
+    - running: 执行中(测试脚本正在容器内执行)
+      若容器已停止仍停留在该状态, 视为上次会话中断 → 异常终止
+    - completed: 执行完成(测试脚本执行成功)
+    - abnormal: 异常终止(脚本失败或执行中断)
+    - 其他/未标记: 旧版本容器未写入状态标记
+    """
+    state = state if isinstance(state, str) else ""
+    if (state == DockerManager.TEST_STATE_RUNNING
+            and running is False):
+        return tr("异常终止(执行中断)")
+    labels = {
+        DockerManager.TEST_STATE_INITIALIZED: tr("初始化"),
+        DockerManager.TEST_STATE_RUNNING: tr("执行中"),
+        DockerManager.TEST_STATE_COMPLETED: tr("执行完成"),
+        DockerManager.TEST_STATE_ABNORMAL: tr("异常终止"),
+    }
+    return labels.get(state, tr("未标记"))

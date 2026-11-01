@@ -9,7 +9,7 @@ import shlex
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
-from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning
+from i18n import LocalizedButton, LocalizedCheckbutton, LocalizedLabel, LocalizedLabelFrame, LocalizedRadiobutton, showinfo, showerror, showwarning, tr, trf
 from typing import Optional, List, Tuple, Callable
 
 from ssh_manager import SSHManager
@@ -65,7 +65,7 @@ class RemoteLogBrowser:
         self._entries: List[dict] = []
 
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("远程日志工具 - 筛选 KV cache / 查看日志")
+        self.dialog.title(tr("远程日志工具 - 筛选 KV cache / 查看日志"))
         self.dialog.geometry("780x660")
         self.dialog.minsize(680, 560)
         self.dialog.transient(parent)
@@ -99,9 +99,11 @@ class RemoteLogBrowser:
                             font=("Segoe UI", 9, "bold"), bd=1, relief=tk.SOLID)
         box.pack(fill=tk.X, padx=10, pady=(10, 4))
 
-        current_label = "当前执行机 (未连接)"
+        current_label = tr("当前执行机 (未连接)")
         if self.main_ssh and self.main_ssh.connected:
-            current_label = f"当前执行机 ({self.main_ssh.host}:{self.main_ssh.port})"
+            current_label = trf(
+                "当前执行机 ({host}:{port})",
+                host=self.main_ssh.host, port=self.main_ssh.port)
 
         self.server_var = tk.StringVar(value="current")
         radio_row = tk.Frame(box, bg=COLOR_CARD)
@@ -125,8 +127,9 @@ class RemoteLogBrowser:
             "password": tk.StringVar(),
             "key": tk.StringVar(),
         }
-        for text, key, width in (("IP:", "host", 14), ("端口:", "port", 6),
-                                 ("用户名:", "user", 10)):
+        for text, key, width in ((tr("IP:"), "host", 14),
+                                 (tr("端口:"), "port", 6),
+                                 (tr("用户名:"), "user", 10)):
             LocalizedLabel(fields, text=text, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                      font=("Segoe UI", 8)).pack(side=tk.LEFT)
             tk.Entry(fields, textvariable=self.other_vars[key], width=width,
@@ -134,25 +137,25 @@ class RemoteLogBrowser:
 
         auth_row = tk.Frame(self.other_frame, bg=COLOR_CARD)
         auth_row.pack(fill=tk.X, padx=10, pady=2)
-        LocalizedLabel(auth_row, text="密码:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(auth_row, text=tr("密码:"), bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         tk.Entry(auth_row, textvariable=self.other_vars["password"], width=18,
                  show="*", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2, 10))
-        LocalizedLabel(auth_row, text="密钥:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(auth_row, text=tr("密钥:"), bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         tk.Entry(auth_row, textvariable=self.other_vars["key"], width=28,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=2)
-        LocalizedButton(auth_row, text="浏览", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(auth_row, text=tr("浏览"), font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=6,
                   command=self._browse_key).pack(side=tk.LEFT, padx=4)
 
         conn_row = tk.Frame(self.other_frame, bg=COLOR_CARD)
         conn_row.pack(fill=tk.X, padx=10, pady=(2, 6))
-        self.connect_btn = LocalizedButton(conn_row, text="连接", font=("Segoe UI", 8, "bold"),
+        self.connect_btn = LocalizedButton(conn_row, text=tr("连接"), font=("Segoe UI", 8, "bold"),
                                      relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
                                      padx=14, command=self._connect_other)
         self.connect_btn.pack(side=tk.LEFT)
-        self.conn_status_lbl = LocalizedLabel(conn_row, text="未连接", bg=COLOR_CARD,
+        self.conn_status_lbl = LocalizedLabel(conn_row, text=tr("未连接"), bg=COLOR_CARD,
                                         fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8))
         self.conn_status_lbl.pack(side=tk.LEFT, padx=10)
 
@@ -164,9 +167,9 @@ class RemoteLogBrowser:
         self.source_var = tk.StringVar(value="host")
         radio_row = tk.Frame(box, bg=COLOR_CARD)
         radio_row.pack(fill=tk.X, padx=10, pady=(6, 2))
-        for text, value in (("宿主机文件", "host"),
-                            ("容器内文件", "container"),
-                            ("容器日志(docker logs)", "docker_logs")):
+        for text, value in ((tr("宿主机文件"), "host"),
+                            (tr("容器内文件"), "container"),
+                            (tr("容器日志(docker logs)"), "docker_logs")):
             LocalizedRadiobutton(radio_row, text=text, variable=self.source_var,
                            value=value, command=self._on_source_change,
                            bg=COLOR_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT,
@@ -174,14 +177,14 @@ class RemoteLogBrowser:
 
         ctr_row = tk.Frame(box, bg=COLOR_CARD)
         ctr_row.pack(fill=tk.X, padx=10, pady=(2, 6))
-        LocalizedLabel(ctr_row, text="容器:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(ctr_row, text=tr("容器:"), bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         self.container_var = tk.StringVar()
         self.container_combo = ttk.Combobox(ctr_row, textvariable=self.container_var,
                                             state="readonly", width=36,
                                             font=("Segoe UI", 8))
         self.container_combo.pack(side=tk.LEFT, padx=6)
-        LocalizedButton(ctr_row, text="刷新容器列表", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(ctr_row, text=tr("刷新容器列表"), font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=self._refresh_containers).pack(side=tk.LEFT)
         self.container_status_lbl = LocalizedLabel(ctr_row, text="", bg=COLOR_CARD,
@@ -196,14 +199,14 @@ class RemoteLogBrowser:
 
         path_row = tk.Frame(box, bg=COLOR_CARD)
         path_row.pack(fill=tk.X, padx=10, pady=(6, 2))
-        LocalizedLabel(path_row, text="路径:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(path_row, text=tr("路径:"), bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT)
         self.path_var = tk.StringVar(value="/")
         path_entry = tk.Entry(path_row, textvariable=self.path_var, width=48,
                               font=("Segoe UI", 8))
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         path_entry.bind("<Return>", lambda event: self._load_dir())
-        LocalizedButton(path_row, text="前往", font=("Segoe UI", 7), relief=tk.FLAT,
+        LocalizedButton(path_row, text=tr("前往"), font=("Segoe UI", 7), relief=tk.FLAT,
                   bg=COLOR_BORDER, padx=8,
                   command=lambda: self._load_dir()).pack(side=tk.LEFT)
 
@@ -218,7 +221,7 @@ class RemoteLogBrowser:
         self.file_list.bind("<<ListboxSelect>>", self._on_list_select)
         self.file_list.bind("<Double-Button-1>", self._on_list_double_click)
 
-        self.file_lbl = LocalizedLabel(box, text="当前文件: (未选择)", bg=COLOR_CARD,
+        self.file_lbl = LocalizedLabel(box, text=tr("当前文件: (未选择)"), bg=COLOR_CARD,
                                  fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8), anchor=tk.W)
         self.file_lbl.pack(fill=tk.X, padx=10, pady=(0, 6))
 
@@ -226,11 +229,11 @@ class RemoteLogBrowser:
         row = tk.Frame(parent, bg=COLOR_BG)
         row.pack(fill=tk.X, padx=10, pady=4)
 
-        self.grep_btn = LocalizedButton(row, text="筛选 KV cache", font=("Segoe UI", 9, "bold"),
+        self.grep_btn = LocalizedButton(row, text=tr("筛选 KV cache"), font=("Segoe UI", 9, "bold"),
                                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white",
                                   padx=14, command=self._do_grep)
         self.grep_btn.pack(side=tk.LEFT)
-        self.view_btn = LocalizedButton(row, text="查看日志", font=("Segoe UI", 9),
+        self.view_btn = LocalizedButton(row, text=tr("查看日志"), font=("Segoe UI", 9),
                                   relief=tk.FLAT, bg=COLOR_CARD, fg=COLOR_PRIMARY,
                                   padx=14, command=self._view_log)
         self.view_btn.pack(side=tk.LEFT, padx=8)
@@ -247,7 +250,7 @@ class RemoteLogBrowser:
                                                      bg="#f0f5ff", fg=COLOR_TEXT,
                                                      wrap=tk.WORD)
         self.result_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=(6, 2))
-        self.result_text.insert("1.0", "(点击'筛选 KV cache'后显示 grep 结果)")
+        self.result_text.insert("1.0", tr("(点击'筛选 KV cache'后显示 grep 结果)"))
         self.result_text.config(state=tk.DISABLED)
 
         bottom = tk.Frame(box, bg=COLOR_CARD)
@@ -255,12 +258,12 @@ class RemoteLogBrowser:
         self.parsed_lbl = LocalizedLabel(bottom, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                    font=("Segoe UI", 8), anchor=tk.W)
         self.parsed_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.fill_btn = LocalizedButton(bottom, text="填入参数", font=("Segoe UI", 9, "bold"),
+        self.fill_btn = LocalizedButton(bottom, text=tr("填入参数"), font=("Segoe UI", 9, "bold"),
                                   relief=tk.FLAT, bg=COLOR_SUCCESS, fg="white",
                                   padx=12, state=tk.DISABLED,
                                   command=self._fill_params)
         self.fill_btn.pack(side=tk.RIGHT)
-        LocalizedButton(bottom, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
+        LocalizedButton(bottom, text=tr("关闭"), font=("Segoe UI", 9), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=self._on_close).pack(side=tk.RIGHT, padx=(0, 8))
 
@@ -283,7 +286,7 @@ class RemoteLogBrowser:
 
     def _reset_after_server_change(self):
         self.current_file = ""
-        self.file_lbl.config(text="当前文件: (未选择)", fg=COLOR_TEXT_MUTED)
+        self.file_lbl.config(text=tr("当前文件: (未选择)"), fg=COLOR_TEXT_MUTED)
         self.container_combo["values"] = []
         self.container_var.set("")
         self._set_container_status("")
@@ -295,9 +298,9 @@ class RemoteLogBrowser:
 
     def _browse_key(self):
         path = filedialog.askopenfilename(
-            parent=self.dialog, title="选择密钥文件",
-            filetypes=[("密钥文件", "*.pem *.key *.rsa *.ed25519"),
-                       ("所有文件", "*.*")])
+            parent=self.dialog, title=tr("选择密钥文件"),
+            filetypes=[(tr("密钥文件"), "*.pem *.key *.rsa *.ed25519"),
+                       (tr("所有文件"), "*.*")])
         if path:
             self.other_vars["key"].set(path)
 
@@ -306,29 +309,29 @@ class RemoteLogBrowser:
         try:
             port = int(self.other_vars["port"].get().strip() or "22")
         except ValueError:
-            showwarning("提示", "端口必须为数字", parent=self.dialog)
+            showwarning("提示", tr("端口必须为数字"), parent=self.dialog)
             return
         user = self.other_vars["user"].get().strip()
         password = self.other_vars["password"].get() or None
         key_path = self.other_vars["key"].get().strip() or None
 
         if not host or not user:
-            showwarning("提示", "请填写IP和用户名", parent=self.dialog)
+            showwarning("提示", tr("请填写IP和用户名"), parent=self.dialog)
             return
         if not password and not key_path:
-            showwarning("提示", "请填写密码或密钥文件路径",
+            showwarning("提示", tr("请填写密码或密钥文件路径"),
                                    parent=self.dialog)
             return
 
-        self.connect_btn.config(state=tk.DISABLED, text="连接中...")
-        self._set_conn_status("正在连接...", COLOR_WARNING)
+        self.connect_btn.config(state=tk.DISABLED, text=tr("连接中..."))
+        self._set_conn_status(tr("正在连接..."), COLOR_WARNING)
 
         def work():
             ssh = SSHManager()
             ok, msg = ssh.connect(host, port, user, password, key_path)
 
             def done():
-                self.connect_btn.config(state=tk.NORMAL, text="连接")
+                self.connect_btn.config(state=tk.NORMAL, text=tr("连接"))
                 if ok:
                     self._disconnect_other()
                     self.other_ssh = ssh
@@ -345,7 +348,7 @@ class RemoteLogBrowser:
         if self.other_ssh and self.other_ssh.connected:
             self.other_ssh.disconnect()
         self.other_ssh = None
-        self._set_conn_status("未连接", COLOR_TEXT_MUTED)
+        self._set_conn_status(tr("未连接"), COLOR_TEXT_MUTED)
 
     def _set_conn_status(self, text: str, color: str = COLOR_TEXT_MUTED):
         self.conn_status_lbl.config(text=text, fg=color)
@@ -368,15 +371,17 @@ class RemoteLogBrowser:
         if mode == "docker_logs":
             # docker logs 模式无需选择文件
             self.file_list.config(state=tk.DISABLED)
-            self.file_lbl.config(text="当前文件: docker logs 输出 (无需选择文件)",
+            self.file_lbl.config(
+                text=tr("当前文件: docker logs 输出 (无需选择文件)"),
                                  fg=COLOR_TEXT)
             self._set_entries([])
         else:
             self.file_list.config(state=tk.NORMAL)
-            self.file_lbl.config(text="当前文件: (未选择)", fg=COLOR_TEXT_MUTED)
+            self.file_lbl.config(text=tr("当前文件: (未选择)"),
+                                 fg=COLOR_TEXT_MUTED)
             if mode == "container" and not self.container_var.get():
                 # 容器未选: 先刷新容器列表, 选择后再浏览
-                self._set_action_status("请先选择容器", COLOR_WARNING)
+                self._set_action_status(tr("请先选择容器"), COLOR_WARNING)
             else:
                 ssh = self._active_ssh()
                 if ssh and ssh.connected:
@@ -388,10 +393,10 @@ class RemoteLogBrowser:
     def _refresh_containers(self):
         ssh = self._active_ssh()
         if ssh is None or not ssh.connected:
-            self._set_container_status("未连接服务器", COLOR_ERROR)
+            self._set_container_status(tr("未连接服务器"), COLOR_ERROR)
             return
 
-        self._set_container_status("获取容器列表中...", COLOR_WARNING)
+        self._set_container_status(tr("获取容器列表中..."), COLOR_WARNING)
 
         def work():
             code, out, err = ssh.execute(
@@ -400,7 +405,9 @@ class RemoteLogBrowser:
             def done():
                 if code != 0:
                     lines = (err.strip() or out.strip() or f"exit={code}").splitlines()
-                    self._set_container_status(f"获取失败: {lines[-1]}", COLOR_ERROR)
+                    self._set_container_status(
+                        trf("获取失败: {message}", message=lines[-1]),
+                        COLOR_ERROR)
                     return
                 names = []
                 for line in out.strip().splitlines():
@@ -411,11 +418,13 @@ class RemoteLogBrowser:
                 if names:
                     if not self.container_var.get() or self.container_var.get() not in names:
                         self.container_var.set(names[0])
-                    self._set_container_status(f"共 {len(names)} 个运行中容器",
+                    self._set_container_status(
+                        trf("共 {count} 个运行中容器", count=len(names)),
                                                COLOR_SUCCESS)
                 else:
                     self.container_var.set("")
-                    self._set_container_status("未发现运行中的容器", COLOR_WARNING)
+                    self._set_container_status(
+                        tr("未发现运行中的容器"), COLOR_WARNING)
 
             self.dialog.after(0, done)
 
@@ -431,19 +440,19 @@ class RemoteLogBrowser:
     def _load_dir(self, path: str = None):
         ssh = self._active_ssh()
         if ssh is None or not ssh.connected:
-            showwarning("提示", "请先连接服务器", parent=self.dialog)
+            showwarning("提示", tr("请先连接服务器"), parent=self.dialog)
             return
         if self._source_mode() == "docker_logs":
             return
         if self._source_mode() == "container" and not self.container_var.get():
-            showwarning("提示", "请先选择容器", parent=self.dialog)
+            showwarning("提示", tr("请先选择容器"), parent=self.dialog)
             return
 
         if path is None:
             path = self.path_var.get().strip() or "/"
         path = path.rstrip("/") or "/"
         self.path_var.set(path)
-        self._set_action_status("加载目录中...", COLOR_WARNING)
+        self._set_action_status(tr("加载目录中..."), COLOR_WARNING)
 
         def work():
             try:
@@ -455,7 +464,8 @@ class RemoteLogBrowser:
                         msg = err.strip() or out.strip() or f"exit={code}"
                         last = msg.splitlines()[-1] if msg.splitlines() else msg
                         self.dialog.after(0, lambda: self._set_action_status(
-                            f"列出目录失败: {last}", COLOR_ERROR))
+                            trf("列出目录失败: {message}", message=last),
+                            COLOR_ERROR))
                         return
                     entries = self._parse_ls_la(out)
                 else:
@@ -464,15 +474,16 @@ class RemoteLogBrowser:
                 def done():
                     self._set_entries(entries, path)
                     if entries:
-                        self._set_action_status(f"已加载 {len(entries)} 项",
-                                                COLOR_SUCCESS)
+                        self._set_action_status(
+                            trf("已加载 {count} 项", count=len(entries)),
+                            COLOR_SUCCESS)
                     else:
-                        self._set_action_status("目录为空", COLOR_WARNING)
+                        self._set_action_status(tr("目录为空"), COLOR_WARNING)
 
                 self.dialog.after(0, done)
             except Exception as exc:
                 self.dialog.after(0, lambda: self._set_action_status(
-                    f"列出目录失败: {exc}", COLOR_ERROR))
+                    trf("列出目录失败: {message}", message=exc), COLOR_ERROR))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -508,7 +519,7 @@ class RemoteLogBrowser:
         current = path if path is not None else self.path_var.get()
         if current and current != "/":
             self._entries.append({"name": "..", "type": "parent"})
-            self.file_list.insert(tk.END, "../ (上级目录)")
+            self.file_list.insert(tk.END, tr("../ (上级目录)"))
 
         for entry in entries:
             self._entries.append(entry)
@@ -546,7 +557,8 @@ class RemoteLogBrowser:
             return
         path = self._join_path(self.path_var.get(), entry["name"])
         self.current_file = path
-        self.file_lbl.config(text=f"当前文件: {path}", fg=COLOR_TEXT)
+        self.file_lbl.config(
+            text=trf("当前文件: {path}", path=path), fg=COLOR_TEXT)
 
     def _on_list_double_click(self, _event):
         selection = self.file_list.curselection()
@@ -602,14 +614,14 @@ class RemoteLogBrowser:
     def _require_ready(self) -> Optional[SSHManager]:
         ssh = self._active_ssh()
         if ssh is None or not ssh.connected:
-            showwarning("提示", "请先连接服务器", parent=self.dialog)
+            showwarning("提示", tr("请先连接服务器"), parent=self.dialog)
             return None
         mode = self._source_mode()
         if mode in ("container", "docker_logs") and not self.container_var.get():
-            showwarning("提示", "请先选择容器", parent=self.dialog)
+            showwarning("提示", tr("请先选择容器"), parent=self.dialog)
             return None
         if mode != "docker_logs" and not self.current_file:
-            showwarning("提示", "请先在列表中选择日志文件",
+            showwarning("提示", tr("请先在列表中选择日志文件"),
                                    parent=self.dialog)
             return None
         return ssh
@@ -620,12 +632,12 @@ class RemoteLogBrowser:
             return
         cmd = self._grep_command()
         if cmd is None:
-            showwarning("提示", "无法生成筛选命令, 请检查容器/文件选择",
+            showwarning("提示", tr("无法生成筛选命令, 请检查容器/文件选择"),
                                    parent=self.dialog)
             return
 
         self.grep_btn.config(state=tk.DISABLED)
-        self._set_action_status("筛选中...", COLOR_WARNING)
+        self._set_action_status(tr("筛选中..."), COLOR_WARNING)
 
         def work():
             code, out, err = ssh.execute(cmd, timeout=180)
@@ -653,29 +665,36 @@ class RemoteLogBrowser:
 
             parts = []
             if kv is not None:
-                parts.append(f"单个DP组KV cache = {kv:,} tokens")
+                parts.append(trf("单个DP组KV cache = {value:,} tokens",
+                                 value=kv))
             if max_len is not None:
-                parts.append(f"模型最大上下文 = {max_len:,} tokens")
+                parts.append(trf("模型最大上下文 = {value:,} tokens",
+                                 value=max_len))
             if parts:
                 self.parsed_lbl.config(text="  |  ".join(parts), fg=COLOR_SUCCESS)
                 self.fill_btn.config(state=tk.NORMAL)
-                self._set_action_status("筛选完成, 可一键填入参数", COLOR_SUCCESS)
+                self._set_action_status(
+                    tr("筛选完成, 可一键填入参数"), COLOR_SUCCESS)
             else:
-                self.parsed_lbl.config(text="未解析到 KV cache / 最大上下文数值",
+                self.parsed_lbl.config(
+                    text=tr("未解析到 KV cache / 最大上下文数值"),
                                        fg=COLOR_WARNING)
                 self.fill_btn.config(state=tk.DISABLED)
-                self._set_action_status("有匹配行但未解析出数值", COLOR_WARNING)
+                self._set_action_status(tr("有匹配行但未解析出数值"),
+                                        COLOR_WARNING)
         elif code == 1:
-            self.result_text.insert("1.0", "(未找到匹配行, 请确认选择的是 vLLM 启动日志)\n")
+            self.result_text.insert(
+                "1.0", tr("(未找到匹配行, 请确认选择的是 vLLM 启动日志)\n"))
             self.parsed_lbl.config(text="", fg=COLOR_TEXT_MUTED)
             self.fill_btn.config(state=tk.DISABLED)
-            self._set_action_status("未找到匹配行", COLOR_WARNING)
+            self._set_action_status(tr("未找到匹配行"), COLOR_WARNING)
         else:
             msg = err.strip() or out.strip() or f"exit={code}"
-            self.result_text.insert("1.0", f"筛选失败:\n{msg}\n")
+            self.result_text.insert(
+                "1.0", trf("筛选失败:\n{message}\n", message=msg))
             self.parsed_lbl.config(text="", fg=COLOR_TEXT_MUTED)
             self.fill_btn.config(state=tk.DISABLED)
-            self._set_action_status("筛选失败", COLOR_ERROR)
+            self._set_action_status(tr("筛选失败"), COLOR_ERROR)
 
         self.result_text.config(state=tk.DISABLED)
 
@@ -705,14 +724,17 @@ class RemoteLogBrowser:
         filled = []
         if self.parsed_kv is not None and self.kv_cache_var is not None:
             self.kv_cache_var.set(str(self.parsed_kv))
-            filled.append(f"单个DP组KV cache={self.parsed_kv:,}")
+            filled.append(trf("单个DP组KV cache={value:,}",
+                              value=self.parsed_kv))
         if self.parsed_max_len is not None and self.max_req_len_var is not None:
             self.max_req_len_var.set(str(self.parsed_max_len))
-            filled.append(f"模型最大上下文={self.parsed_max_len:,}")
+            filled.append(trf("模型最大上下文={value:,}",
+                              value=self.parsed_max_len))
 
         if filled:
-            self._set_action_status("已填入: " + "; ".join(filled), COLOR_SUCCESS)
-            showinfo("成功", "已填入:\n" + "\n".join(filled),
+            self._set_action_status(
+                tr("已填入: ") + "; ".join(filled), COLOR_SUCCESS)
+            showinfo("成功", tr("已填入:\n") + "\n".join(filled),
                                 parent=self.dialog)
 
     def _view_log(self):
@@ -721,12 +743,12 @@ class RemoteLogBrowser:
             return
         cmd = self._view_command()
         if cmd is None:
-            showwarning("提示", "无法生成查看命令, 请检查容器/文件选择",
+            showwarning("提示", tr("无法生成查看命令, 请检查容器/文件选择"),
                                    parent=self.dialog)
             return
 
         self.view_btn.config(state=tk.DISABLED)
-        self._set_action_status("加载日志中...", COLOR_WARNING)
+        self._set_action_status(tr("加载日志中..."), COLOR_WARNING)
 
         def work():
             code, out, err = ssh.execute(cmd, timeout=180)
@@ -734,12 +756,15 @@ class RemoteLogBrowser:
             def done():
                 self.view_btn.config(state=tk.NORMAL)
                 if code == 0:
-                    self._open_viewer(cmd, out if out.strip() else "(日志为空)")
-                    self._set_action_status("日志已加载", COLOR_SUCCESS)
+                    self._open_viewer(
+                        cmd, out if out.strip() else tr("(日志为空)"))
+                    self._set_action_status(tr("日志已加载"), COLOR_SUCCESS)
                 else:
                     msg = err.strip() or out.strip() or f"exit={code}"
                     lines = msg.splitlines()
-                    self._set_action_status(f"查看失败: {lines[-1]}", COLOR_ERROR)
+                    self._set_action_status(
+                        trf("查看失败: {message}", message=lines[-1]),
+                        COLOR_ERROR)
 
             self.dialog.after(0, done)
 
@@ -747,19 +772,22 @@ class RemoteLogBrowser:
 
     def _open_viewer(self, source_desc: str, content: str):
         window = tk.Toplevel(self.dialog)
-        window.title("日志查看")
+        window.title(tr("日志查看"))
         window.geometry("920x600")
         window.configure(bg=COLOR_BG)
 
         header = tk.Frame(window, bg=COLOR_CARD, bd=1, relief=tk.SOLID)
         header.pack(fill=tk.X)
-        LocalizedLabel(header, text="来源命令:", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+        LocalizedLabel(header, text=tr("来源命令:"), bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8), anchor=tk.W).pack(fill=tk.X, padx=10, pady=(8, 0))
         LocalizedLabel(header, text=source_desc, bg=COLOR_CARD, fg=COLOR_TEXT,
                  font=("Consolas", 8), anchor=tk.W).pack(fill=tk.X, padx=10)
-        tail_note = (f"已加载内容: {len(content)} 字符 "
-                     f"(文件取尾部 {VIEW_TAIL_BYTES // 1024 // 1024}MB, "
-                     f"docker logs 取尾部 {VIEW_DOCKER_LOGS_LINES} 行)")
+        tail_note = trf(
+            "已加载内容: {chars} 字符 "
+            "(文件取尾部 {file_mb}MB, docker logs 取尾部 {docker_lines} 行)",
+            chars=len(content),
+            file_mb=VIEW_TAIL_BYTES // 1024 // 1024,
+            docker_lines=VIEW_DOCKER_LOGS_LINES)
         LocalizedLabel(header, text=tail_note, bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 8), anchor=tk.W).pack(fill=tk.X, padx=10,
                                                          pady=(0, 8))
@@ -787,9 +815,9 @@ class RemoteLogBrowser:
             window.clipboard_clear()
             window.clipboard_append(content)
 
-        LocalizedButton(buttons, text="复制全部", font=("Segoe UI", 8), relief=tk.FLAT,
+        LocalizedButton(buttons, text=tr("复制全部"), font=("Segoe UI", 8), relief=tk.FLAT,
                   bg=COLOR_PRIMARY, fg="white", padx=12,
                   command=_copy_all).pack(side=tk.LEFT)
-        LocalizedButton(buttons, text="关闭", font=("Segoe UI", 8), relief=tk.FLAT,
+        LocalizedButton(buttons, text=tr("关闭"), font=("Segoe UI", 8), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=window.destroy).pack(side=tk.RIGHT)

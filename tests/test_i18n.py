@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import tkinter as tk
+import re
 from pathlib import Path
 from unittest import mock
 
@@ -67,10 +68,12 @@ class LanguageSwitchTests(unittest.TestCase):
 
             def walk(widget):
                 for child in widget.winfo_children():
+                    if isinstance(child, tk.Toplevel):
+                        texts.append(child.title())
                     try:
                         text = child.cget("text")
                         if isinstance(text, str) and text.strip():
-                            texts.append(text)
+                            texts.append(text.strip())
                     except Exception:
                         pass
                     walk(child)
@@ -95,14 +98,18 @@ class LanguageSwitchTests(unittest.TestCase):
         try:
             i18n.set_language("en")
             browser = RemoteLogBrowser(root, FakeSSH())
+            browser._open_viewer("cat /var/log/vllm.log", "hello")
             texts = []
+            texts.append(browser.dialog.title())
 
             def walk(widget):
                 for child in widget.winfo_children():
+                    if isinstance(child, tk.Toplevel):
+                        texts.append(child.title())
                     try:
                         text = child.cget("text")
                         if isinstance(text, str) and text.strip():
-                            texts.append(text)
+                            texts.append(text.strip())
                     except Exception:
                         pass
                     walk(child)
@@ -110,8 +117,58 @@ class LanguageSwitchTests(unittest.TestCase):
             walk(browser.dialog)
             self.assertIn("Other server", texts)
             self.assertIn("Filter KV cache", texts)
+            self.assertIn("Server", texts)
+            self.assertIn("Current execution host (not connected)", texts)
+            self.assertIn("Log source", texts)
+            self.assertIn("Host file", texts)
+            self.assertIn("File in container", texts)
+            self.assertIn("Container log (docker logs)", texts)
+            self.assertIn(
+                "File browser (double-click to enter a directory, "
+                "single-click to select a file)", texts)
+            self.assertIn("View log", texts)
+            self.assertIn("Fill parameters", texts)
+            self.assertIn("Remote log tool - filter KV cache / view log", texts)
+            self.assertIn("Log viewer", texts)
+            self.assertIn("Source command:", texts)
+            self.assertIn("Copy all", texts)
+            self.assertIn(
+                "Loaded content: 5 characters "
+                "(files use the last 2MB; docker logs use the last 5000 lines)",
+                texts)
+            self.assertFalse(
+                [text for text in texts if re.search(r"[\u4e00-\u9fff]", text)])
         finally:
             root.destroy()
+
+    def test_remote_log_browser_dynamic_messages_are_english(self):
+        i18n.set_language("en")
+        self.assertEqual(
+            i18n.trf("当前执行机 ({host}:{port})", host="10.0.0.1", port=22),
+            "Current execution host (10.0.0.1:22)")
+        self.assertEqual(
+            i18n.trf("共 {count} 个运行中容器", count=3),
+            "3 running container(s)")
+        self.assertEqual(
+            i18n.trf("已加载 {count} 项", count=12), "Loaded 12 item(s)")
+        self.assertEqual(
+            i18n.trf("当前文件: {path}", path="/var/log/vllm.log"),
+            "Current file: /var/log/vllm.log")
+        self.assertEqual(
+            i18n.trf("单个DP组KV cache = {value:,} tokens", value=1234567),
+            "KV cache per DP group = 1,234,567 tokens")
+        self.assertEqual(
+            i18n.trf("模型最大上下文 = {value:,} tokens", value=32768),
+            "Model max context = 32,768 tokens")
+        self.assertEqual(
+            i18n.trf("查看失败: {message}", message="permission denied"),
+            "View failed: permission denied")
+        self.assertIn(
+            "Loaded content: 5 characters",
+            i18n.trf(
+                "已加载内容: {chars} 字符 "
+                "(文件取尾部 {file_mb}MB, docker logs 取尾部 {docker_lines} 行)",
+                chars=5, file_mb=2, docker_lines=5000))
 
 
 class DynamicMessageI18nTests(unittest.TestCase):

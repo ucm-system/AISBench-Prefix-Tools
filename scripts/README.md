@@ -59,6 +59,8 @@ python3 aisbench_test.py \
   2>&1 | tee -a ${LOG_DIR}/test_16384_512.log
 ```
 
+`--prefix_num` 可在交互式设计器中按用例调整，默认与 `--data_num` 保持一致。
+
 ---
 
 ## extract_metrics.py — 测试日志性能指标提取

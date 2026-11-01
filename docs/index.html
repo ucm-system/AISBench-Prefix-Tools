@@ -370,10 +370,10 @@ build_exe.bat</code></pre>
 <section id="step4">
   <h2>步骤 4：设计测试用例</h2>
   <span class="step-badge">STEP 4 / 5</span>
-  <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、最小请求数、并发数和 KV 使用率。</p>
+  <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、前缀数量、最小请求数、并发数和 KV 使用率。</p>
   <figure class="figure">
-    <img src="images/step4-testcases-20261030.png?v=20261030" alt="步骤 4：测试用例设计界面">
-    <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024</figcaption>
+    <img src="images/step4-testcases-20261101.png?v=20261101" alt="步骤 4：测试用例设计界面">
+    <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024；前缀数量默认等于请求数</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th><th>示例</th></tr></thead>
@@ -391,7 +391,8 @@ build_exe.bat</code></pre>
 并发数 = floor(total_kv_cache / (input_len + output_len))</code></pre>
   <ul>
     <li>生成前会自动跳过超出模型最大上下文长度的选项。</li>
-    <li>表格支持双击编辑 Input、Output、请求数和并发数。</li>
+    <li>表格支持双击编辑 Input、Output、请求数、前缀数量和并发数。</li>
+    <li>前缀数量对应 AISBench 命令的 <code>--prefix_num</code> 参数，默认与该用例请求数一致；修改请求数时自动同步，用户单独修改后保持自定义值。</li>
     <li>支持添加、复制和删除用例。</li>
     <li>请求数低于最小值时仅提醒，不会强制拦截。</li>
   </ul>
@@ -465,8 +466,8 @@ build_exe.bat</code></pre>
   <h2>结果对比分析</h2>
   <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 5 的结果摘要右侧打开。</p>
   <figure class="figure">
-    <img src="images/result-compare-20261031.png?v=20261031" alt="结果对比分析界面">
-    <figcaption>选择两个结果 CSV 后，可自定义 A/B 标注并生成差异表格、柱状图和图片导出</figcaption>
+    <img src="images/result-compare-20261031.png?v=20261031-2" alt="结果对比分析界面">
+    <figcaption>选择两个结果 CSV 后，可自定义 A/B 标注并生成差异表格、柱状图和图片导出；窗口支持全屏，表格支持拖拽平移</figcaption>
   </figure>
   <h3>使用步骤</h3>
   <ol>
@@ -488,7 +489,7 @@ build_exe.bat</code></pre>
   <table>
     <thead><tr><th>区域</th><th>说明</th></tr></thead>
     <tbody>
-      <tr><td>差异表格</td><td>展示 Req A/B、Max_CC A/B，以及每个指标的 A 值、B 值、Δ 和 Δ%。</td></tr>
+      <tr><td>差异表格</td><td>展示 Req A/B、Max_CC A/B，以及每个指标的 A 值、B 值、Δ 和 Δ%。窗口可最大化/全屏，表格支持鼠标拖拽、滚轮纵向滚动和 Shift+滚轮横向滚动。</td></tr>
       <tr><td>柱状图</td><td>每个指标自动绘制分组柱状图；图例使用自定义 A/B 标注，横坐标展示输入、输出、请求数和 Max_CC。</td></tr>
       <tr><td>导出 CSV</td><td>将当前差异表格保存为新的 CSV 文件，默认文件名包含 A/B 标注。</td></tr>
       <tr><td>导出图片</td><td>把每个已勾选指标的柱状图导出为 1280×640 PNG，文件名包含 A/B 标注与指标名。</td></tr>

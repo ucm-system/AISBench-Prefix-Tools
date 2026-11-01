@@ -81,6 +81,8 @@ class LanguageSwitchTests(unittest.TestCase):
             self.assertIn("Label A:", texts)
             self.assertIn("Label B:", texts)
             self.assertIn("Export comparison charts", texts)
+            self.assertIn("TTFT average (ms)", texts)
+            self.assertIn("■ Throughput", texts)
         finally:
             root.destroy()
 
@@ -229,6 +231,69 @@ class DynamicMessageI18nTests(unittest.TestCase):
         self.assertEqual(msg, "Authentication failed; check username/password/key")
 
         self.assertEqual(mgr.execute("ls"), (-1, "", "Not connected to the remote host"))
+
+    def test_test_case_table_and_calculation_details_are_english(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path", return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.designer.set_kv_cache_info(1_000_000, 2, 8192)
+                    app.designer.set_input_lengths([4096])
+                    app.designer.set_output_lengths([1024])
+                    app.designer.set_repeat_rate(0.8)
+                    app.designer.set_request_rate(0)
+                    app.designer.generate_test_cases()
+                    app._refresh_test_tree()
+
+                    self.assertIn("请求数(推荐)",
+                                  app.test_tree.heading("data_rec")["text"])
+                    self.assertIn("用例 1", app.calc_detail_text.get("1.0", "end-1c"))
+
+                    app.language_var.set("English")
+                    app._on_language_change()
+
+                    self.assertEqual(
+                        app.test_tree.heading("data_rec")["text"],
+                        "Requests (recommended)")
+                    self.assertEqual(
+                        app.test_tree.heading("data_min")["text"],
+                        "Requests (minimum)")
+                    self.assertEqual(
+                        app.test_tree.heading("concurrency")["text"],
+                        "Concurrency")
+                    self.assertEqual(
+                        app.test_tree.heading("kv_usage")["text"], "KV usage")
+
+                    details = app.calc_detail_text.get("1.0", "end-1c")
+                    self.assertIn("Case 1", details)
+                    self.assertIn("Concurrency (formula)", details)
+                    self.assertIn("Minimum requests", details)
+                    self.assertIn("KV usage", details)
+                    self.assertNotIn("请求数", details)
+                    self.assertNotIn("并发数", details)
+                finally:
+                    app.root.destroy()
+
+    def test_docker_manager_logs_are_english(self):
+        from docker_manager import DockerManager
+
+        class FakeSSH:
+            def file_exists(self, _path):
+                return True
+
+            def execute(self, _command):
+                return 0, "", ""
+
+        i18n.set_language("en")
+        manager = DockerManager(FakeSSH())
+        manager.remote_work_base = "/tmp/aisbench_deploy"
+        messages = []
+        self.assertTrue(manager.remove_work_dir(messages.append))
+        text = "".join(messages)
+        self.assertIn("Deleting temporary deployment directory: /tmp/aisbench_deploy", text)
+        self.assertIn("Host temporary directory deleted", text)
+        self.assertNotIn("删除临时部署目录", text)
 
 
 class LanguageSwitchPreservesStateTests(unittest.TestCase):

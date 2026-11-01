@@ -162,6 +162,36 @@ class ResultCompareDialogTests(unittest.TestCase):
         finally:
             i18n.set_language("zh")
 
+    def test_difference_table_is_resizable_fullscreen_and_draggable(self):
+        i18n.set_language("en")
+        try:
+            # 结果对比窗口在打开时固定语言；按英文语言重新创建后再验收
+            self.dialog.dialog.destroy()
+            self.dialog = ResultCompareDialog(self.root)
+            self._load_and_compare()
+            self.assertTrue(all(self.dialog.dialog.resizable()))
+            self.assertEqual(self.dialog.fullscreen_btn.cget("text"), "Full screen")
+
+            tree = self.dialog.compare_tree
+            with mock.patch.object(tree, "xview_scroll") as xview_scroll, \
+                    mock.patch.object(tree, "yview_scroll") as yview_scroll:
+                tree.event_generate("<ButtonPress-1>", x=10, y=10)
+                tree.event_generate("<B1-Motion>", x=34, y=42)
+                self.assertTrue(xview_scroll.called)
+                self.assertTrue(yview_scroll.called)
+            self.assertTrue(tree.bind("<ButtonPress-2>"))
+            self.assertTrue(tree.bind("<B2-Motion>"))
+
+            scrollbars = [
+                widget for widget in tree.master.winfo_children()
+                if isinstance(widget, tk.Scrollbar)
+            ]
+            orientations = {str(widget.cget("orient")) for widget in scrollbars}
+            self.assertIn("vertical", orientations)
+            self.assertIn("horizontal", orientations)
+        finally:
+            i18n.set_language("zh")
+
     def test_export_csv_default_name_contains_labels(self):
         self._load_and_compare()
         captured = {}

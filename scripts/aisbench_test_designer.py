@@ -312,6 +312,7 @@ class InteractiveTestCaseDesigner:
                     'input_len': input_len,
                     'output_len': output_len,
                     'data_num_recommended': recommended_data_num,
+                    'prefix_num': recommended_data_num,
                     'data_num_min': min_data_num,
                     'concurrency_recommended': max_concurrency,
                     'concurrency_max': max_concurrency,
@@ -330,7 +331,8 @@ class InteractiveTestCaseDesigner:
         
         print(f"\n{Colors.BOLD}生成的测试用例推荐参数:{Colors.END}")
         print("-" * 120)
-        print(f"{'#':>3} {'Input':>12} {'Output':>12} {'请求数(推荐)':>14} {'请求数(最小)':>14} {'并发(推荐)':>14} {'KV使用率':>12}")
+        print(f"{'#':>3} {'Input':>12} {'Output':>12} {'请求数(推荐)':>14} "
+              f"{'前缀数量':>14} {'请求数(最小)':>14} {'并发(推荐)':>14} {'KV使用率':>12}")
         print("-" * 120)
         
         for i, case in enumerate(self.test_cases, 1):
@@ -338,7 +340,8 @@ class InteractiveTestCaseDesigner:
                        (case['input_len'] + case['output_len']) / 
                        self.total_kv_cache * 100)
             print(f"{i:>3} {case['input_len']:>12,} {case['output_len']:>12,} "
-                  f"{case['data_num_recommended']:>14,} {case['data_num_min']:>14,} "
+                  f"{case['data_num_recommended']:>14,} {case['prefix_num']:>14,} "
+                  f"{case['data_num_min']:>14,} "
                   f"{case['concurrency_recommended']:>14,} {kv_usage:>11.1f}%")
         
         print("-" * 120)
@@ -409,10 +412,11 @@ class InteractiveTestCaseDesigner:
         )
         
         for case in self.test_cases:
-            case['data_num_recommended'] = max(
-                1,
-                int(case['data_num_recommended'] * factor)
-            )
+            old_data_num = case['data_num_recommended']
+            new_data_num = max(1, int(old_data_num * factor))
+            case['data_num_recommended'] = new_data_num
+            if case['prefix_num'] == old_data_num:
+                case['prefix_num'] = new_data_num
             if case['data_num_recommended'] < case['data_num_min']:
                 self.print_warning(
                     f"用例 Input={case['input_len']:,} 请求数 ({case['data_num_recommended']:,}) "
@@ -454,11 +458,13 @@ class InteractiveTestCaseDesigner:
         ) - 1
         
         case = self.test_cases[case_idx]
+        old_data_num = case['data_num_recommended']
         
         print(f"\n{Colors.BOLD}修改用例 #{case_idx + 1}:{Colors.END}")
         print(f"  输入长度: {case['input_len']:,}")
         print(f"  输出长度: {case['output_len']:,}")
         print(f"  当前请求数: {case['data_num_recommended']:,} (最小: {case['data_num_min']:,})")
+        print(f"  当前前缀数量: {case['prefix_num']:,} (默认与请求数一致)")
         print(f"  当前并发数: {case['concurrency_recommended']:,} (最大: {case['concurrency_max']:,})")
         
         new_data_num = self.get_int_input(
@@ -473,6 +479,19 @@ class InteractiveTestCaseDesigner:
                     f"低于该值不会在HBM之外的KV Cache缓存介质中命中"
                 )
             case['data_num_recommended'] = new_data_num
+
+        prefix_default = case['prefix_num']
+        if (new_data_num > 0
+                and case['prefix_num'] == old_data_num):
+            prefix_default = case['data_num_recommended']
+
+        new_prefix_num = self.get_int_input(
+            "新的前缀数量 (输入0保持当前值; 默认与请求数一致)",
+            default=prefix_default,
+            min_val=0
+        )
+        if new_prefix_num > 0:
+            case['prefix_num'] = new_prefix_num
         
         new_concurrency = self.get_int_input(
             "新的并发数 (输入0保持当前值)",
@@ -567,6 +586,7 @@ class InteractiveTestCaseDesigner:
             'input_len': input_len,
             'output_len': output_len,
             'data_num_recommended': data_num,
+            'prefix_num': data_num,
             'data_num_min': min_data_num,
             'concurrency_recommended': concurrency,
             'concurrency_max': max_concurrency,
@@ -614,7 +634,7 @@ class InteractiveTestCaseDesigner:
                 f"--input_len {case['input_len']} "
                 f"--output_len {case['output_len']} "
                 f"--data_num {case['data_num_recommended']} "
-                f"--prefix_num {case['data_num_recommended']} "
+                f"--prefix_num {case['prefix_num']} "
                 f"--concurrency {case['concurrency_recommended']} "
                 f"--dataset_type prefix_cache "
                 f"--repeat_rate {int(self.repeat_rate * 100)}% "

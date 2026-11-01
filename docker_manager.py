@@ -12,6 +12,7 @@ import shlex
 from datetime import datetime
 from typing import Optional, Tuple, List, Callable
 from ssh_manager import SSHManager
+from i18n import tr, trf
 
 
 class DockerManager:
@@ -34,7 +35,7 @@ class DockerManager:
         code, out, err = self.ssh.execute("docker --version 2>&1")
         if code == 0:
             return True, out.strip()
-        return False, f"Docker未安装或不在PATH中: {err}"
+        return False, trf("Docker未安装或不在PATH中: {error}", error=err)
 
     def work_dir_exists(self) -> bool:
         """检查远程工作目录是否已存在"""
@@ -43,15 +44,15 @@ class DockerManager:
     def clean_work_dir(self, callback: Callable[[str], None] = None) -> bool:
         """清理并重建临时部署目录(仅部署过程中短暂使用)"""
         if callback:
-            callback(f"清理临时部署目录: {self.remote_work_base}\n")
+            callback(trf("清理临时部署目录: {path}\n", path=self.remote_work_base))
         code, _, _ = self.ssh.execute(f"rm -rf {self.remote_work_base}")
         if code == 0:
             self.ssh.mkdir_p(self.remote_work_base)
             if callback:
-                callback("  ✓ 清理完成\n")
+                callback(tr("  ✓ 清理完成\n"))
             return True
         if callback:
-            callback("  ✗ 清理失败\n")
+            callback(tr("  ✗ 清理失败\n"))
         return False
 
     def remove_work_dir(self, callback: Callable[[str], None] = None) -> bool:
@@ -59,14 +60,14 @@ class DockerManager:
         if not self.ssh.file_exists(self.remote_work_base):
             return True
         if callback:
-            callback(f"删除临时部署目录: {self.remote_work_base}\n")
+            callback(trf("删除临时部署目录: {path}\n", path=self.remote_work_base))
         code, _, _ = self.ssh.execute(f"rm -rf {self.remote_work_base}")
         if code == 0:
             if callback:
-                callback("  ✓ 已删除宿主机临时目录\n")
+                callback(tr("  ✓ 已删除宿主机临时目录\n"))
             return True
         if callback:
-            callback("  ✗ 临时目录删除失败\n")
+            callback(tr("  ✗ 临时目录删除失败\n"))
         return False
 
     @staticmethod
@@ -137,14 +138,14 @@ class DockerManager:
         返回 (success, image_name)
         """
         if callback:
-            callback(f"正在加载镜像: docker load -i {remote_tar_path}\n")
+            callback(trf("正在加载镜像: docker load -i {path}\n", path=remote_tar_path))
 
         cmd = f"docker load -i {remote_tar_path}"
         exit_code = self.ssh.execute_with_callback(cmd, callback, timeout=600)
 
         if exit_code != 0:
             if callback:
-                callback(f"\n镜像加载失败 (exit_code={exit_code})\n")
+                callback(trf("\n镜像加载失败 (exit_code={code})\n", code=exit_code))
             return False, ""
 
         # 从输出中解析镜像名称
@@ -171,12 +172,12 @@ class DockerManager:
                 "docker images --format '{{.Repository}}:{{.Tag}} {{.CreatedSince}}' | head -20"
             )
             if callback:
-                callback(f"\n可用镜像列表:\n{out}\n")
-            return False, "无法自动识别镜像名称，请手动指定"
+                callback(trf("\n可用镜像列表:\n{images}\n", images=out))
+            return False, tr("无法自动识别镜像名称，请手动指定")
 
         self.image_name = image_name
         if callback:
-            callback(f"\n识别到镜像: {image_name}\n")
+            callback(trf("\n识别到镜像: {image}\n", image=image_name))
         return True, image_name
 
     def generate_container_name(self) -> str:
@@ -194,7 +195,7 @@ class DockerManager:
     def remove_container(self, name: str, callback: Callable[[str], None] = None) -> bool:
         """停止并删除容器"""
         if callback:
-            callback(f"停止并删除容器: {name}\n")
+            callback(trf("停止并删除容器: {container}\n", container=name))
         self.ssh.execute(f"docker stop {name} 2>/dev/null")
         self.ssh.execute(f"docker rm {name} 2>/dev/null")
         return True
@@ -211,7 +212,8 @@ class DockerManager:
         # 如果容器已存在，先删除
         if self.container_exists(container_name):
             if callback:
-                callback(f"容器 {container_name} 已存在，正在删除旧容器...\n")
+                callback(trf("容器 {container} 已存在，正在删除旧容器...\n",
+                             container=container_name))
             self.remove_container(container_name)
 
         cmd = (
@@ -225,12 +227,12 @@ class DockerManager:
         )
 
         if callback:
-            callback(f"创建容器命令:\n{cmd}\n\n")
+            callback(trf("创建容器命令:\n{command}\n\n", command=cmd))
 
         exit_code = self.ssh.execute_with_callback(cmd, callback, timeout=60)
 
         if exit_code != 0:
-            return False, f"容器创建失败 (exit_code={exit_code})"
+            return False, trf("容器创建失败 (exit_code={code})", code=exit_code)
 
         # 验证容器是否运行
         time.sleep(2)
@@ -241,10 +243,10 @@ class DockerManager:
             self.container_name = container_name
             self.code_host_path = ""
             if callback:
-                callback(f"\n容器 {container_name} 已启动运行\n")
+                callback(trf("\n容器 {container} 已启动运行\n", container=container_name))
             return True, container_name
         else:
-            return False, f"容器启动失败，状态: {out}"
+            return False, trf("容器启动失败，状态: {status}", status=out)
 
     def list_managed_containers(self) -> List[dict]:
         """列出本工具创建/遗留的容器(含已停止的)
@@ -284,23 +286,24 @@ class DockerManager:
                                  callback: Callable[[str], None] = None) -> Tuple[bool, str]:
         """将宿主机暂存代码复制到容器内工作区"""
         if not self.container_name:
-            return False, "容器未创建"
+            return False, tr("容器未创建")
         if not host_code_path:
-            return False, "宿主机代码暂存路径为空"
+            return False, tr("宿主机代码暂存路径为空")
 
         parent_dir = self.code_mount_path.rsplit("/", 1)[0]
         if callback:
-            callback(f"容器内创建工作区: {parent_dir}\n")
+            callback(trf("容器内创建工作区: {path}\n", path=parent_dir))
         code, _, _ = self.ssh.execute(
             f"docker exec {self.container_name} mkdir -p {parent_dir}"
         )
         if code != 0:
-            return False, "容器内创建工作区失败"
+            return False, tr("容器内创建工作区失败")
 
         if callback:
             callback(
-                f"导入测试代码到容器: docker cp {host_code_path}/. "
-                f"{self.container_name}:{self.code_mount_path}\n"
+                trf("导入测试代码到容器: docker cp {source}/. {container}:{destination}\n",
+                    source=host_code_path, container=self.container_name,
+                    destination=self.code_mount_path)
             )
         cmd = (
             f"docker cp {host_code_path}/. "
@@ -308,7 +311,7 @@ class DockerManager:
         )
         exit_code = self.ssh.execute_with_callback(cmd, callback, timeout=300)
         if exit_code != 0:
-            return False, f"代码导入容器失败 (exit_code={exit_code})"
+            return False, trf("代码导入容器失败 (exit_code={code})", code=exit_code)
 
         # 验证代码目录已就绪
         code, out, _ = self.ssh.execute(
@@ -316,9 +319,9 @@ class DockerManager:
             f"&& docker exec {self.container_name} ls {self.code_mount_path}"
         )
         if code != 0 or not out.strip():
-            return False, "代码导入后校验失败"
+            return False, tr("代码导入后校验失败")
         if callback:
-            callback(f"  ✓ 代码已就绪(容器内): {self.code_mount_path}\n")
+            callback(trf("  ✓ 代码已就绪(容器内): {path}\n", path=self.code_mount_path))
         return True, self.code_mount_path
 
     def upload_directory(self, local_dir: str, remote_dir: str,
@@ -328,11 +331,11 @@ class DockerManager:
         返回 (success, remote_dir 或 错误信息)
         """
         if not self.ssh.connected or not self.ssh.sftp:
-            return False, "SSH未连接"
+            return False, tr("SSH未连接")
 
         local_dir = os.path.abspath(local_dir)
         if not os.path.isdir(local_dir):
-            return False, f"本地目录不存在: {local_dir}"
+            return False, trf("本地目录不存在: {path}", path=local_dir)
 
         # 收集文件清单 (排除缓存/版本库文件)
         file_list = []
@@ -347,9 +350,9 @@ class DockerManager:
 
         total = len(file_list)
         if total == 0:
-            return False, f"本地目录为空: {local_dir}"
+            return False, trf("本地目录为空: {path}", path=local_dir)
         if callback:
-            callback(f"  共 {total} 个文件待上传\n")
+            callback(trf("  共 {count} 个文件待上传\n", count=total))
 
         self.ssh.mkdir_p(remote_dir)
         created_dirs = {remote_dir}
@@ -368,11 +371,12 @@ class DockerManager:
             ok = self.ssh.upload_file(full, remote_path)
             done += 1
             if callback:
-                callback(f"\r  上传中: {done}/{total}  {rel}")
+                callback(trf("\r  上传中: {done}/{total}  {file}",
+                             done=done, total=total, file=rel))
             if not ok:
                 if callback:
-                    callback(f"\n  ✗ 上传失败: {rel}\n")
-                return False, f"上传失败: {rel}"
+                    callback(trf("\n  ✗ 上传失败: {file}\n", file=rel))
+                return False, trf("上传失败: {file}", file=rel)
 
         if callback:
             callback("\n")
@@ -393,21 +397,21 @@ class DockerManager:
 
         cmd = f"cd {extract_dir} && unzip -o {remote_zip_path}"
         if callback:
-            callback(f"解压代码包: {cmd}\n")
+            callback(trf("解压代码包: {command}\n", command=cmd))
 
         exit_code = self.ssh.execute_with_callback(cmd, callback, timeout=120)
 
         if exit_code != 0:
             # 尝试安装unzip
             if callback:
-                callback("unzip不可用，尝试安装...\n")
+                callback(tr("unzip不可用，尝试安装...\n"))
             self.ssh.execute("yum install -y unzip 2>/dev/null || apt-get install -y unzip 2>/dev/null")
             exit_code = self.ssh.execute_with_callback(
                 f"cd {extract_dir} && unzip -o {remote_zip_path}", callback, timeout=120
             )
 
         if exit_code != 0:
-            return False, "解压失败"
+            return False, tr("解压失败")
 
         # 查找解压后的目录名
         zip_name = os.path.basename(remote_zip_path).replace('.zip', '')
@@ -418,7 +422,7 @@ class DockerManager:
             full_path = f"{extract_dir}/{d}"
             if self.ssh.file_exists(full_path):
                 if callback:
-                    callback(f"代码解压到: {full_path}\n")
+                    callback(trf("代码解压到: {path}\n", path=full_path))
                 return True, full_path
 
         # 查找最新创建的目录
@@ -427,7 +431,7 @@ class DockerManager:
         if dirs:
             return True, dirs[0]
 
-        return False, "无法确定解压目录"
+        return False, tr("无法确定解压目录")
 
     def exec_in_container(self, command: str,
                          callback: Callable[[str], None] = None,
@@ -437,7 +441,7 @@ class DockerManager:
         """
         if not self.container_name:
             if callback:
-                callback("错误: 容器未创建\n")
+                callback(tr("错误: 容器未创建\n"))
             return -1
 
         cmd = f"docker exec -w {self.code_mount_path} {self.container_name} {command}"

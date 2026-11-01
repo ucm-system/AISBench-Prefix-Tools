@@ -482,14 +482,28 @@ class ResultCompareDialog:
         self.selected_metrics: List[Tuple[str, str, str, int]] = []
 
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("结果对比分析")
+        self.dialog.title(tr("结果对比分析"))
         self.dialog.geometry("1080x780")
         self.dialog.minsize(900, 640)
+        self.dialog.resizable(True, True)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         self.dialog.configure(bg=COLOR_BG)
+        self.dialog.bind("<F11>", lambda _event: self._toggle_fullscreen())
 
         self._build_ui()
+
+    def _toggle_fullscreen(self):
+        """在普通窗口和系统最大化窗口之间切换."""
+        try:
+            if self.dialog.state() == "zoomed":
+                self.dialog.state("normal")
+            else:
+                self.dialog.state("zoomed")
+        except tk.TclError:
+            # 非Windows平台没有zoomed状态时, 使用无装饰全屏作为等价能力
+            self.dialog.attributes(
+                "-fullscreen", not bool(self.dialog.attributes("-fullscreen")))
 
     # ============================================================
     #  UI 构建
@@ -657,7 +671,8 @@ class ResultCompareDialog:
 
         self.metric_vars = []
         for category in categories:
-            LocalizedLabel(self.metrics_inner, text=f"■ {category}", bg=COLOR_CARD,
+            LocalizedLabel(self.metrics_inner, text=f"■ {tr(category)}",
+                     bg=COLOR_CARD,
                      fg=COLOR_PRIMARY, font=("Segoe UI", 8, "bold"),
                      anchor=tk.W).pack(fill=tk.X, pady=(6, 1))
             for field, name, unit, _decimals, cat in METRIC_FIELDS:
@@ -665,7 +680,8 @@ class ResultCompareDialog:
                     continue
                 var = tk.BooleanVar(value=field in DEFAULT_METRICS)
                 self.metric_vars.append(var)
-                text = f"{name} ({unit})" if unit else name
+                display_name = tr(name)
+                text = f"{display_name} ({unit})" if unit else display_name
                 LocalizedCheckbutton(self.metrics_inner, text=text, variable=var,
                                bg=COLOR_CARD, fg=COLOR_TEXT,
                                font=("Segoe UI", 8), anchor=tk.W
@@ -694,6 +710,11 @@ class ResultCompareDialog:
                                            fg=COLOR_TEXT_MUTED,
                                            font=("Segoe UI", 8))
         self.compare_status_lbl.pack(side=tk.LEFT, padx=10)
+        self.fullscreen_btn = LocalizedButton(
+            action_row, text="全屏", font=("Segoe UI", 9), relief=tk.FLAT,
+            bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
+            command=self._toggle_fullscreen)
+        self.fullscreen_btn.pack(side=tk.RIGHT, padx=(4, 0))
         LocalizedButton(action_row, text="关闭", font=("Segoe UI", 9), relief=tk.FLAT,
                   bg=COLOR_CARD, fg=COLOR_TEXT, padx=12,
                   command=self.dialog.destroy).pack(side=tk.RIGHT)
@@ -707,6 +728,9 @@ class ResultCompareDialog:
         LocalizedLabel(table_pane, text="差异对比表 (Δ = B - A):", bg=COLOR_BG,
                  fg=COLOR_TEXT, font=("Segoe UI", 9, "bold"),
                  anchor=tk.W).pack(fill=tk.X, pady=(0, 4))
+        LocalizedLabel(table_pane, text="拖动表格或使用滚轮/Shift+滚轮上下左右平移",
+                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
+                 anchor=tk.W).pack(fill=tk.X, pady=(0, 3))
         self.table_container = tk.Frame(table_pane, bg=COLOR_BG)
         self.table_container.pack(fill=tk.BOTH, expand=True)
 
@@ -906,7 +930,8 @@ class ResultCompareDialog:
         self.export_image_btn.config(
             state=tk.NORMAL if PIL_AVAILABLE else tk.DISABLED)
         self.compare_status_lbl.config(
-            text=f"已对比 {len(selected_matches)} 个用例 × {len(selected_metrics)} 个指标",
+            text=trf("已对比 {cases} 个用例 × {metrics} 个指标",
+                     cases=len(selected_matches), metrics=len(selected_metrics)),
             fg=COLOR_SUCCESS)
 
     def _build_table(self, selected_matches: List[Dict],
@@ -915,13 +940,14 @@ class ResultCompareDialog:
             child.destroy()
 
         columns = ["match", "input", "output", "req", "max_cc"]
-        headings = [("匹配", 52), ("Input", 70), ("Output", 76),
+        headings = [(tr("匹配"), 52), (tr("Input"), 70), (tr("Output"), 76),
                     ("Req A/B", 86), ("Max_CC A/B", 96)]
         for field, name, _unit, _decimals in selected_metrics:
             columns.extend([f"{field}_a", f"{field}_b",
                             f"{field}_diff", f"{field}_pct"])
-            headings.extend([(f"{name} A", 82), (f"{name} B", 82),
-                             (f"{name} Δ", 82), (f"{name} Δ%", 68)])
+            display_name = tr(name)
+            headings.extend([(f"{display_name} A", 82), (f"{display_name} B", 82),
+                             (f"{display_name} Δ", 82), (f"{display_name} Δ%", 68)])
 
         frame = tk.Frame(self.table_container, bg=COLOR_BG)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -935,15 +961,18 @@ class ResultCompareDialog:
         vsb = tk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
         hsb = tk.Scrollbar(frame, orient=tk.HORIZONTAL, command=tree.xview)
         tree.config(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        tree.grid(row=0, column=0, sticky=tk.NSEW)
+        vsb.grid(row=0, column=1, sticky=tk.NS)
+        hsb.grid(row=1, column=0, sticky=tk.EW)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        self._enable_table_panning(tree)
 
         self.compare_rows = []
         for match in selected_matches:
             key_a = _case_key(match["row_a"])
             key_b = _case_key(match["row_b"])
-            values = ["精确" if match["exact"] else "输入",
+            values = [tr("精确") if match["exact"] else tr("输入"),
                       format_len(key_a[0])]
             if match["exact"]:
                 values.append(format_len(key_a[1]))
@@ -961,6 +990,7 @@ class ResultCompareDialog:
                           "Max_CC A/B": values[4]}
             for field, name, _unit, decimals in selected_metrics:
                 result = compute_comparison(match, field)
+                display_name = tr(name)
                 values.extend([
                     format_value(result["a"], decimals),
                     format_value(result["b"], decimals),
@@ -969,16 +999,59 @@ class ResultCompareDialog:
                     (f"{result['pct']:+.1f}%"
                      if result["pct"] is not None else "-"),
                 ])
-                row_record[f"{name} A"] = values[-4]
-                row_record[f"{name} B"] = values[-3]
-                row_record[f"{name} Δ"] = values[-2]
-                row_record[f"{name} Δ%"] = values[-1]
+                row_record[f"{display_name} A"] = values[-4]
+                row_record[f"{display_name} B"] = values[-3]
+                row_record[f"{display_name} Δ"] = values[-2]
+                row_record[f"{display_name} Δ%"] = values[-1]
 
             self.compare_rows.append(row_record)
             tree.insert("", tk.END, values=values)
 
         self.compare_tree = tree
-        self.compare_metrics = [name for _f, name, _u, _d in selected_metrics]
+        self.compare_metrics = [tr(name) for _f, name, _u, _d in selected_metrics]
+
+    @staticmethod
+    def _enable_table_panning(tree: ttk.Treeview):
+        """让差异表支持鼠标拖拽和滚轮纵向/横向滚动."""
+        pan_state = {"x": 0, "y": 0}
+
+        def start_pan(event):
+            pan_state["x"] = event.x
+            pan_state["y"] = event.y
+
+        def pan(event):
+            dx = pan_state["x"] - event.x
+            dy = pan_state["y"] - event.y
+            # Treeview没有Canvas的scan接口, 按像素差转换为滚动单位.
+            if abs(dx) >= 8:
+                tree.xview_scroll(int(dx / 8), "units")
+                pan_state["x"] = event.x
+            if abs(dy) >= 8:
+                tree.yview_scroll(int(dy / 8), "units")
+                pan_state["y"] = event.y
+
+        tree.bind("<ButtonPress-1>", start_pan, add="+")
+        tree.bind("<B1-Motion>", pan, add="+")
+        tree.bind("<ButtonPress-2>", start_pan, add="+")
+        tree.bind("<B2-Motion>", pan, add="+")
+
+        def wheel(event):
+            if event.state & 0x0001:  # Shift
+                tree.xview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def bind_wheel(_event):
+            tree.bind_all("<MouseWheel>", wheel)
+
+        def unbind_wheel(_event):
+            try:
+                tree.unbind_all("<MouseWheel>")
+            except tk.TclError:
+                pass
+
+        tree.bind("<Enter>", bind_wheel)
+        tree.bind("<Leave>", unbind_wheel)
 
     def _build_charts(self, selected_matches: List[Dict],
                       selected_metrics: List[Tuple[str, str, str, int]]):
@@ -998,7 +1071,7 @@ class ResultCompareDialog:
                 values_a.append(result["a"])
                 values_b.append(result["b"])
 
-            chart = BarChartWidget(self.charts_inner, title=name, labels=labels,
+            chart = BarChartWidget(self.charts_inner, title=tr(name), labels=labels,
                                    values_a=values_a, values_b=values_b,
                                    name_a=name_a, name_b=name_b,
                                    unit=unit, decimals=decimals)
@@ -1081,6 +1154,7 @@ class ResultCompareDialog:
         exported: List[str] = []
 
         for field, name, unit, decimals in self.selected_metrics:
+            display_name = tr(name)
             labels: List[str] = []
             values_a: List[Optional[float]] = []
             values_b: List[Optional[float]] = []
@@ -1091,11 +1165,11 @@ class ResultCompareDialog:
                 values_b.append(result["b"])
 
             file_name = (f"compare_{label_a}_vs_{label_b}_"
-                         f"{sanitize_name(name, 'metric')}.png")
+                         f"{sanitize_name(display_name, 'metric')}.png")
             path = os.path.join(directory, file_name)
             try:
                 written = render_chart_png(
-                    path, title=name, labels=labels, values_a=values_a,
+                    path, title=display_name, labels=labels, values_a=values_a,
                     values_b=values_b, name_a=name_a, name_b=name_b,
                     unit=unit, decimals=decimals)
                 if written:

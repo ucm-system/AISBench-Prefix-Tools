@@ -289,6 +289,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
       <tr><td><code>input_len</code></td><td>输入 token 长度</td><td>用户选择或手动编辑</td></tr>
       <tr><td><code>output_len</code></td><td>输出 token 长度</td><td>用户选择或手动编辑</td></tr>
       <tr><td><code>repeat_rate</code></td><td>前缀命中率</td><td>用户配置，范围 0~1</td></tr>
+      <tr><td><code>prefix_num</code></td><td>前缀数量</td><td>默认等于请求数；用户可按用例单独编辑</td></tr>
     </tbody>
   </table>
   <h3>7.2 计算公式</h3>
@@ -301,6 +302,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
     <li><b>推荐请求数</b>：预留两倍余量，降低随机波动对结论的影响。</li>
     <li><b>并发数</b>：让 KV cache 使用率接近 100%，同时避免单纯因为资源不足导致异常。</li>
     <li><b>最大请求长度</b>：用于过滤超出模型上下文的非法组合。</li>
+    <li><b>前缀数量</b>：默认跟随请求数，用户单独修改后固定为自定义值，最终写入 <code>--prefix_num</code>。</li>
   </ul>
   <div class="callout warn">
     <b>边界情况</b>

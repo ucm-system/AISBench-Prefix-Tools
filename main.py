@@ -206,6 +206,15 @@ class WizardApp:
         "执行测试",
     ]
 
+    # 测试用例表格可双击编辑的字段 (列号 -> TestCase属性)
+    TEST_TREE_EDITABLE_FIELDS = {
+        '#2': 'input_len',
+        '#3': 'output_len',
+        '#4': 'data_num_recommended',
+        '#5': 'prefix_num',
+        '#7': 'concurrency_recommended',
+    }
+
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("AISBenchPrefixTools")
@@ -538,7 +547,10 @@ class WizardApp:
         if snapshot.get("test_rows"):
             for values in snapshot["test_rows"]:
                 self.test_tree.insert("", tk.END, values=values)
-        if "calc_detail" in snapshot and snapshot["calc_detail"]:
+        # 计算明细按当前语言重新渲染, 避免语言切换后保留旧语言文本
+        if self.designer.test_cases:
+            self._show_calc_details()
+        elif "calc_detail" in snapshot and snapshot["calc_detail"]:
             self.calc_detail_text.insert("1.0", snapshot["calc_detail"])
 
         # ---- 恢复步骤5: 命令/结果 ----
@@ -546,6 +558,9 @@ class WizardApp:
             self.commands_text.insert("1.0", snapshot["commands"])
         if snapshot.get("summary"):
             self.summary_text.config(text=snapshot["summary"])
+        if self.designer.test_cases:
+            # 摘要同样按当前语言重新渲染
+            self.summary_text.config(text=self.designer.get_summary())
         if snapshot.get("result_rows"):
             for values in snapshot["result_rows"]:
                 self.results_tree.insert("", tk.END, values=values)
@@ -1590,7 +1605,7 @@ class WizardApp:
     def _cancel_deploy(self):
         """取消部署"""
         self._cancel_flag.set()
-        self._log_docker("\n⚠ 正在取消部署...\n")
+        self._log_docker(tr("\n⚠ 正在取消部署...\n"))
 
     def _start_deploy(self):
         """开始部署流程"""
@@ -1700,32 +1715,32 @@ class WizardApp:
             self.docker.remote_work_base = work_dir
 
         # Step 1: 检查Docker
-        self._log_docker("[1/5] 检查Docker环境...\n")
+        self._log_docker(tr("[1/5] 检查Docker环境...\n"))
         ok, msg = self.docker.check_docker_installed()
         if not ok:
-            self._log_docker(f"  ✗ {msg}\n")
+            self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
             return
-        self._log_docker(f"  ✓ {msg}\n\n")
+        self._log_docker(trf("  ✓ {message}\n\n", message=tr(msg)))
 
         if self._cancel_flag.is_set():
-            self._log_docker("  ⚹ 已取消\n")
+            self._log_docker(tr("  ⚹ 已取消\n"))
             return
 
         # 确保临时部署目录存在（仅部署期间暂存镜像tar/代码）
         self.ssh.mkdir_p(self.docker.remote_work_base)
 
         # Step 2: 优先复用执行机已有镜像; 仅在上传模式下加载tar包
-        self._log_docker("[2/5] 准备AISBench镜像...\n")
+        self._log_docker(tr("[2/5] 准备AISBench镜像...\n"))
         if selected_image:
             self.root.after(0, lambda n=selected_image: self.docker_info_labels["tar"].config(text=n))
             if not self.docker.image_exists(selected_image):
-                self._log_docker(f"  ✗ 镜像不存在: {selected_image}\n")
-                self._log_docker("  → 请返回本步骤重新查看已有镜像，或改用上传模式\n")
+                self._log_docker(trf("  ✗ 镜像不存在: {image}\n", image=selected_image))
+                self._log_docker(tr("  → 请返回本步骤重新查看已有镜像，或改用上传模式\n"))
                 return
 
             image_name = selected_image
-            self._log_docker(f"  ✓ 复用执行机已有镜像: {image_name}\n")
-            self._log_docker("  → 跳过镜像上传和docker load\n\n")
+            self._log_docker(trf("  ✓ 复用执行机已有镜像: {image}\n", image=image_name))
+            self._log_docker(tr("  → 跳过镜像上传和docker load\n\n"))
             self.docker.image_name = image_name
         else:
             tar_name = os.path.basename(tar_path)
@@ -1736,51 +1751,54 @@ class WizardApp:
 
             if image_name and self.docker.image_exists(image_name):
                 # 镜像已存在，跳过上传和加载
-                self._log_docker(f"  ✓ 镜像已存在: {image_name}\n")
-                self._log_docker(f"  → 跳过上传和docker load\n\n")
+                self._log_docker(trf("  ✓ 镜像已存在: {image}\n", image=image_name))
+                self._log_docker(tr("  → 跳过上传和docker load\n\n"))
                 self.docker.image_name = image_name
             else:
                 # 镜像不存在，需要上传和加载
                 if image_name:
-                    self._log_docker(f"  镜像 {image_name} 不存在，需要上传并加载\n")
+                    self._log_docker(trf("  镜像 {image} 不存在，需要上传并加载\n", image=image_name))
                 else:
-                    self._log_docker(f"  无法从tar包预读镜像名，将上传后由docker load识别\n")
+                    self._log_docker(tr("  无法从tar包预读镜像名，将上传后由docker load识别\n"))
 
                 tar_size = os.path.getsize(tar_path)
-                self._log_docker(f"  上传镜像tar包 ({tar_size//1024//1024}MB)...\n")
+                self._log_docker(trf("  上传镜像tar包 ({size}MB)...\n", size=tar_size//1024//1024))
                 self.remote_tar_path = f"{self.docker.remote_work_base}/{tar_name}"
 
                 def _upload_progress(transferred, total):
                     pct = transferred * 100 // total if total > 0 else 0
-                    self._log_docker(f"\r  上传中: {transferred//1024//1024}MB / {total//1024//1024}MB ({pct}%)")
+                    self._log_docker(trf(
+                        "\r  上传中: {transferred}MB / {total}MB ({percent}%)",
+                        transferred=transferred//1024//1024,
+                        total=total//1024//1024, percent=pct))
 
                 ok = self.ssh.upload_file(tar_path, self.remote_tar_path, _upload_progress)
                 self._log_docker("\n")
                 if not ok:
-                    self._log_docker("  ✗ 镜像上传失败\n")
+                    self._log_docker(tr("  ✗ 镜像上传失败\n"))
                     return
-                self._log_docker("  ✓ 镜像上传完成\n")
+                self._log_docker(tr("  ✓ 镜像上传完成\n"))
 
                 # Docker load
-                self._log_docker("  加载Docker镜像...\n")
+                self._log_docker(tr("  加载Docker镜像...\n"))
                 ok, image_name = self.docker.load_image(
                     self.remote_tar_path,
                     callback=lambda t: self._log_docker(t)
                 )
                 if not ok:
-                    self._log_docker(f"  ✗ 镜像加载失败: {image_name}\n")
+                    self._log_docker(trf("  ✗ 镜像加载失败: {image}\n", image=image_name))
                     return
                 self._log_docker("\n")
 
         self.root.after(0, lambda n=image_name: self.docker_info_labels["image"].config(text=n))
 
         if self._cancel_flag.is_set():
-            self._log_docker("  ⚹ 已取消\n")
+            self._log_docker(tr("  ⚹ 已取消\n"))
             return
 
         # Step 3: 暂存测试代码 (内置目录 / 本地zip包)
         if self.code_source_var.get() == "builtin":
-            self._log_docker("[3/5] 暂存内置测试代码...\n")
+            self._log_docker(tr("[3/5] 暂存内置测试代码...\n"))
             code_src_dir = self._get_bundled_code_dir()
             extracted_path = f"{self.docker.remote_work_base}/aisbench_auto_tools_prefix-main"
 
@@ -1789,18 +1807,18 @@ class WizardApp:
                 callback=lambda t: self._log_docker(t)  # 直接写缓冲区
             )
             if not ok:
-                self._log_docker(f"  ✗ 代码上传失败: {msg}\n")
+                self._log_docker(trf("  ✗ 代码上传失败: {message}\n", message=tr(msg)))
                 return
             self.root.after(0, lambda: self.docker_info_labels["zip"].config(text="内置代码包"))
         else:
-            self._log_docker("[3/5] 暂存并解压代码zip包...\n")
+            self._log_docker(tr("[3/5] 暂存并解压代码zip包...\n"))
             zipf = self.zip_path.get().strip()
             zip_name = os.path.basename(zipf)
             remote_zip = f"{self.docker.remote_work_base}/{zip_name}"
 
             ok = self.ssh.upload_file(zipf, remote_zip)
             if not ok:
-                self._log_docker("  ✗ 代码包上传失败\n")
+                self._log_docker(tr("  ✗ 代码包上传失败\n"))
                 return
 
             ok, extracted_path = self.docker.extract_code_zip(
@@ -1809,48 +1827,50 @@ class WizardApp:
                 callback=lambda t: self._log_docker(t)  # 直接写缓冲区
             )
             if not ok:
-                self._log_docker(f"  ✗ 代码解压失败\n")
+                self._log_docker(tr("  ✗ 代码解压失败\n"))
                 return
             self.root.after(0, lambda n=zip_name: self.docker_info_labels["zip"].config(text=n))
 
-        self._log_docker(f"  ✓ 代码暂存完成: {extracted_path}\n\n")
+        self._log_docker(trf("  ✓ 代码暂存完成: {path}\n\n", path=extracted_path))
 
         if self._cancel_flag.is_set():
-            self._log_docker("  ⚹ 已取消\n")
+            self._log_docker(tr("  ⚹ 已取消\n"))
             return
 
         # Step 4: 创建容器(仅挂载模型路径, 代码随后导入)
-        self._log_docker("[4/5] 创建并启动容器...\n")
+        self._log_docker(tr("[4/5] 创建并启动容器...\n"))
         container_name = self.docker.generate_container_name()
         ok, msg = self.docker.create_container(
             image_name, model_path, container_name,
             callback=lambda t: self._log_docker(t)  # 直接写缓冲区
         )
         if not ok:
-            self._log_docker(f"  ✗ {msg}\n")
+            self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
             return
 
         self.root.after(0, lambda n=container_name: self.docker_info_labels["container"].config(text=n))
         self.root.after(0, lambda m=model_path: self.docker_info_labels["model"].config(text=m))
-        self._log_docker(f"\n  ✓ 容器 {container_name} 已启动运行\n")
+        self._log_docker(trf("\n  ✓ 容器 {container} 已启动运行\n", container=container_name))
 
         # Step 5: 导入代码到容器并删除宿主机暂存目录
-        self._log_docker("[5/5] 导入测试代码到容器并清理暂存目录...\n")
+        self._log_docker(tr("[5/5] 导入测试代码到容器并清理暂存目录...\n"))
         ok, msg = self.docker.copy_code_into_container(
             extracted_path,
             callback=lambda t: self._log_docker(t)
         )
         if not ok:
-            self._log_docker(f"  ✗ {msg}\n")
-            self._log_docker("  → 暂存目录暂不删除，可用于排障；修复后可重新部署\n")
+            self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
+            self._log_docker(tr("  → 暂存目录暂不删除，可用于排障；修复后可重新部署\n"))
             return
 
-        self._log_docker(f"  清理宿主机临时目录: {self.docker.remote_work_base}\n")
+        self._log_docker(trf("  清理宿主机临时目录: {path}\n", path=self.docker.remote_work_base))
         self.docker.remove_work_dir(callback=lambda t: self._log_docker(t))
         self.docker.code_host_path = ""
         self.root.after(0, lambda: self.work_dir_status.config(
             text="部署后已自动清理", fg=COLOR_SUCCESS))
-        self._log_docker(f"  ✓ 部署完成! 代码工作区: {self.docker.code_mount_path} (容器内)\n")
+        self._log_docker(trf(
+            "  ✓ 部署完成! 代码工作区: {path} (容器内)\n",
+            path=self.docker.code_mount_path))
 
         # 初始化ConfigManager
         self.config_mgr = ConfigManager(self.docker)
@@ -2256,20 +2276,22 @@ class WizardApp:
         # Pane 1: 测试用例表格
         tree_pane = tk.Frame(self.cases_paned, bg=COLOR_BG)
         self.cases_paned.add(tree_pane, minsize=160, stretch="always")
-        LocalizedLabel(tree_pane, text="测试用例 (双击单元格可编辑 Input/Output/请求数/并发数):",
+        LocalizedLabel(tree_pane, text="测试用例 (双击单元格可编辑 Input/Output/请求数/前缀数量/并发数):",
                bg=COLOR_BG, fg=COLOR_TEXT,
                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(0, 4))
 
         tree_frame = tk.Frame(tree_pane)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ("num", "input", "output", "data_rec", "data_min", "concurrency", "kv_usage")
+        columns = ("num", "input", "output", "data_rec", "prefix_num",
+                   "data_min", "concurrency", "kv_usage")
         self.test_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=4,
                                       selectmode="browse")
 
-        headings = [("#", 40), ("Input", 80), ("Output", 80),
-                    ("请求数(推荐)", 120), ("请求数(最小)", 120),
-                    ("并发数", 80), ("KV使用率", 80)]
+        headings = [("#", 40), (tr("Input"), 80), (tr("Output"), 80),
+                    (tr("请求数(推荐)"), 120), (tr("前缀数量(prefix_num)"), 130),
+                    (tr("请求数(最小)"), 120), (tr("并发数"), 80),
+                    (tr("KV使用率"), 80)]
         for col, (title, width) in zip(columns, headings):
             self.test_tree.heading(col, text=title)
             self.test_tree.column(col, width=width, anchor=tk.CENTER)
@@ -2292,7 +2314,8 @@ class WizardApp:
                                                            bg="#f0f5ff", fg="#1e293b",
                                                            wrap=tk.WORD)
         self.calc_detail_text.pack(fill=tk.BOTH, expand=True, pady=(4, 8))
-        self.calc_detail_text.insert("1.0", "(点击\"生成测试用例\"后显示详细计算过程)")
+        self.calc_detail_text.insert(
+            "1.0", tr("(点击\"生成测试用例\"后显示详细计算过程)"))
 
     def _show_calc_details(self):
         """显示代入值计算公式"""
@@ -2310,15 +2333,32 @@ class WizardApp:
             min_req = int(min_req_raw)
             rec_req = min_req * 2
             kv_usage = case.concurrency_recommended * total / kv * 100
-            lines.append(f"用例{i}  input={case.input_len:,}  output={case.output_len:,}  dp={dp}  repeat_rate={rate*100:.0f}%")
-            lines.append(f"  并发数(公式) = floor({kv:,} / ({case.input_len:,}+{case.output_len:,}))")
-            lines.append(f"              = floor({max_cc_raw:.2f}) = {case.concurrency_max}")
+            lines.append(trf(
+                "用例 {index}  input={input:,}  output={output:,}  dp={dp}  repeat_rate={rate}%",
+                index=i, input=case.input_len, output=case.output_len, dp=dp,
+                rate=rate * 100))
+            lines.append(trf(
+                "  并发数(公式) = floor({kv:,} / ({input:,}+{output:,}))",
+                kv=kv, input=case.input_len, output=case.output_len))
+            lines.append(trf(
+                "              = floor({raw:.2f}) = {value:,}",
+                raw=max_cc_raw, value=case.concurrency_max))
             if case.concurrency_recommended != case.concurrency_max:
-                lines.append(f"  并发数(实际) = {case.concurrency_recommended:,}  (用户手动调整)")
-            lines.append(f"  最小请求数 = floor({kv:,} / {case.input_len:,} / {rate}) + 1")
+                lines.append(trf(
+                    "  并发数(实际) = {value:,}  (用户手动调整)",
+                    value=case.concurrency_recommended))
+            lines.append(trf(
+                "  最小请求数 = floor({kv:,} / {input:,} / {rate}) + 1",
+                kv=kv, input=case.input_len, rate=rate))
             lines.append(f"            = floor({min_req_raw:.2f}) = {min_req}")
-            lines.append(f"  推荐请求数 = {min_req} × 2 = {rec_req}  (实际: {case.data_num_recommended:,})")
-            lines.append(f"  KV使用率  = {case.concurrency_recommended} × {total:,} / {kv:,} × 100% = {kv_usage:.2f}%")
+            lines.append(trf(
+                "  推荐请求数 = {minimum:,} × 2 = {recommended:,}  (实际: {actual:,})",
+                minimum=min_req, recommended=rec_req,
+                actual=case.data_num_recommended))
+            lines.append(trf(
+                "  KV使用率  = {concurrency} × {total:,} / {kv:,} × 100% = {usage:.2f}%",
+                concurrency=case.concurrency_recommended, total=total, kv=kv,
+                usage=kv_usage))
             lines.append("")
         self.calc_detail_text.insert("1.0", "\n".join(lines).rstrip())
 
@@ -2421,8 +2461,9 @@ class WizardApp:
             kv_usage = self.designer.get_kv_usage(case)
             self.test_tree.insert("", tk.END, values=(
                 i, _fmt(case.input_len), _fmt(case.output_len),
-                f"{case.data_num_recommended:,}", f"{case.data_num_min:,}",
-                f"{case.concurrency_recommended:,}", f"{kv_usage:.1f}%"
+                f"{case.data_num_recommended:,}", f"{case.prefix_num:,}",
+                f"{case.data_num_min:,}", f"{case.concurrency_recommended:,}",
+                f"{kv_usage:.1f}%"
             ))
         self._show_calc_details()
 
@@ -2443,12 +2484,7 @@ class WizardApp:
         if not row_id:
             return
 
-        EDITABLE = {
-            '#2': 'input_len',
-            '#3': 'output_len',
-            '#4': 'data_num_recommended',
-            '#6': 'concurrency_recommended',
-        }
+        EDITABLE = self.TEST_TREE_EDITABLE_FIELDS
         if col_id not in EDITABLE:
             return
         field = EDITABLE[col_id]
@@ -2486,45 +2522,7 @@ class WizardApp:
                 entry.destroy()
                 return
 
-            if field == 'input_len':
-                new_total = num_val + case.output_len
-                if (self.designer.max_request_length > 0
-                        and new_total > self.designer.max_request_length):
-                    showwarning("参数超出限制",
-                                trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
-                                    "超过模型最大上下文 ({max_len:,})",
-                                    input_len=num_val, output_len=case.output_len,
-                                    total=new_total,
-                                    max_len=self.designer.max_request_length))
-                    entry.destroy()
-                    return
-                case.input_len = num_val
-            elif field == 'output_len':
-                new_total = case.input_len + num_val
-                if (self.designer.max_request_length > 0
-                        and new_total > self.designer.max_request_length):
-                    showwarning("参数超出限制",
-                                trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
-                                    "超过模型最大上下文 ({max_len:,})",
-                                    input_len=case.input_len, output_len=num_val,
-                                    total=new_total,
-                                    max_len=self.designer.max_request_length))
-                    entry.destroy()
-                    return
-                case.output_len = num_val
-            elif field == 'data_num_recommended':
-                case.data_num_recommended = num_val
-                if num_val < case.data_num_min:
-                    showwarning(
-                        "请求数低于最小值",
-                        trf("请求数 ({count:,}) 低于最小请求数 ({min_count:,})\n\n"
-                            "低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
-                            "不会在HBM之外的KV Cache缓存介质中命中。\n\n"
-                            "如需覆盖HBM之外的缓存介质, 请将请求数提高至 {raise_to:,} 及以上。",
-                            count=num_val, min_count=case.data_num_min,
-                            raise_to=case.data_num_min))
-            elif field == 'concurrency_recommended':
-                case.concurrency_recommended = num_val
+            self._apply_tree_edit(case, field, num_val)
 
             entry.destroy()
             self._refresh_test_tree()
@@ -2539,11 +2537,57 @@ class WizardApp:
         entry.bind('<Escape>', _cancel)
         entry.bind('<FocusOut>', _confirm)
 
+    def _apply_tree_edit(self, case, field: str, num_val: int):
+        """应用测试用例表格中的单格编辑结果"""
+        if field == 'input_len':
+            new_total = num_val + case.output_len
+            if (self.designer.max_request_length > 0
+                    and new_total > self.designer.max_request_length):
+                showwarning("参数超出限制",
+                            trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
+                                "超过模型最大上下文 ({max_len:,})",
+                                input_len=num_val, output_len=case.output_len,
+                                total=new_total,
+                                max_len=self.designer.max_request_length))
+                return
+            case.input_len = num_val
+        elif field == 'output_len':
+            new_total = case.input_len + num_val
+            if (self.designer.max_request_length > 0
+                    and new_total > self.designer.max_request_length):
+                showwarning("参数超出限制",
+                            trf("输入+输出长度 ({input_len:,}+{output_len:,}={total:,}) "
+                                "超过模型最大上下文 ({max_len:,})",
+                                input_len=case.input_len, output_len=num_val,
+                                total=new_total,
+                                max_len=self.designer.max_request_length))
+                return
+            case.output_len = num_val
+        elif field == 'data_num_recommended':
+            old_data_num = case.data_num_recommended
+            case.data_num_recommended = num_val
+            if case.prefix_num == old_data_num:
+                # 前缀数量默认与请求数保持一致; 用户单独修改过则不覆盖。
+                case.prefix_num = num_val
+            if num_val < case.data_num_min:
+                showwarning(
+                    "请求数低于最小值",
+                    trf("请求数 ({count:,}) 低于最小请求数 ({min_count:,})\n\n"
+                        "低于该值时, 请求前缀总量不会超出HBM KV Cache容量, "
+                        "不会在HBM之外的KV Cache缓存介质中命中。\n\n"
+                        "如需覆盖HBM之外的缓存介质, 请将请求数提高至 {raise_to:,} 及以上。",
+                        count=num_val, min_count=case.data_num_min,
+                        raise_to=case.data_num_min))
+        elif field == 'prefix_num':
+            case.prefix_num = num_val
+        elif field == 'concurrency_recommended':
+            case.concurrency_recommended = num_val
+
     def _add_test_case(self):
         """添加自定义测试用例"""
         dialog = tk.Toplevel(self.root)
         dialog.title("添加测试用例")
-        dialog.geometry("360x210")
+        dialog.geometry("360x260")
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -2551,6 +2595,7 @@ class WizardApp:
             ("输入长度:", "input_len"),
             ("输出长度:", "output_len"),
             ("请求数 (留空=推荐):", "data_num"),
+            ("前缀数量 (留空=与请求数一致):", "prefix_num"),
             ("并发数 (留空=推荐):", "concurrency"),
         ]
         entry_vars = {}
@@ -2571,18 +2616,22 @@ class WizardApp:
                 return
 
             data_num = None
+            prefix_num = None
             concurrency = None
             try:
                 if entry_vars['data_num'].get().strip():
                     data_num = int(entry_vars['data_num'].get())
+                if entry_vars['prefix_num'].get().strip():
+                    prefix_num = int(entry_vars['prefix_num'].get())
                 if entry_vars['concurrency'].get().strip():
                     concurrency = int(entry_vars['concurrency'].get())
             except ValueError:
-                showwarning("提示", "请求数和并发数必须为数字", parent=dialog)
+                showwarning("提示", "请求数、前缀数量和并发数必须为数字", parent=dialog)
                 return
 
             try:
-                self.designer.add_custom_case(il, ol, data_num, concurrency)
+                self.designer.add_custom_case(il, ol, data_num, concurrency,
+                                              prefix_num)
             except ValueError as e:
                 showwarning("参数超出限制", str(e), parent=dialog)
                 return

@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
+from i18n import tr, trf
 
 
 @dataclass
@@ -18,7 +19,13 @@ class TestCase:
     concurrency_max: int
     repeat_rate: float
     dp: int
+    prefix_num: Optional[int] = None
     is_custom: bool = False
+
+    def __post_init__(self):
+        # 前缀数量默认与请求数保持一致; 用户显式修改后可独立调整。
+        if self.prefix_num is None or self.prefix_num <= 0:
+            self.prefix_num = self.data_num_recommended
 
     def to_dict(self) -> dict:
         return {
@@ -28,6 +35,7 @@ class TestCase:
             'data_num_min': self.data_num_min,
             'concurrency_recommended': self.concurrency_recommended,
             'concurrency_max': self.concurrency_max,
+            'prefix_num': self.prefix_num,
             'repeat_rate': self.repeat_rate,
             'dp': self.dp,
             'is_custom': self.is_custom,
@@ -105,6 +113,7 @@ class TestDesigner:
                     output_len=output_len,
                     data_num_recommended=recommended_data_num,
                     data_num_min=min_data_num,
+                    prefix_num=recommended_data_num,
                     concurrency_recommended=max_concurrency,
                     concurrency_max=max_concurrency,
                     repeat_rate=self.repeat_rate,
@@ -112,12 +121,19 @@ class TestDesigner:
                 ))
 
     def adjust_data_num(self, factor: float):
-        """调整所有用例的请求数（乘系数; 允许低于最小请求数）"""
+        """调整所有用例的请求数（乘系数; 允许低于最小请求数）
+
+        前缀数量默认跟随请求数; 用户已单独修改过前缀数量时保持不变。
+        """
         for case in self.test_cases:
-            case.data_num_recommended = max(
+            old_data_num = case.data_num_recommended
+            new_data_num = max(
                 1,
-                int(case.data_num_recommended * factor)
+                int(old_data_num * factor)
             )
+            case.data_num_recommended = new_data_num
+            if case.prefix_num == old_data_num:
+                case.prefix_num = new_data_num
 
     def adjust_concurrency(self, factor: float):
         """调整所有用例的并发数（乘系数）"""
@@ -127,15 +143,23 @@ class TestDesigner:
                 int(case.concurrency_recommended * factor)
             )
 
-    def adjust_single_case(self, idx: int, data_num: int = None, concurrency: int = None):
+    def adjust_single_case(self, idx: int, data_num: int = None,
+                           concurrency: int = None, prefix_num: int = None):
         """修改单个用例的参数 (请求数允许低于最小值, 由调用方提醒)"""
         if idx < 0 or idx >= len(self.test_cases):
             return
         case = self.test_cases[idx]
+        old_data_num = case.data_num_recommended
         if data_num is not None and data_num > 0:
             case.data_num_recommended = data_num
         if concurrency is not None and concurrency > 0:
             case.concurrency_recommended = max(1, concurrency)
+        if prefix_num is not None and prefix_num > 0:
+            case.prefix_num = max(1, prefix_num)
+        elif (data_num is not None and data_num > 0
+              and case.prefix_num == old_data_num):
+            # 前缀数量未单独设置时, 跟随请求数变化。
+            case.prefix_num = case.data_num_recommended
 
     def delete_case(self, idx: int) -> bool:
         """删除用例"""
@@ -155,6 +179,7 @@ class TestDesigner:
                 output_len=src.output_len,
                 data_num_recommended=src.data_num_recommended,
                 data_num_min=src.data_num_min,
+                prefix_num=src.prefix_num,
                 concurrency_recommended=src.concurrency_recommended,
                 concurrency_max=src.concurrency_max,
                 repeat_rate=src.repeat_rate,
@@ -165,19 +190,28 @@ class TestDesigner:
         return False
 
     def add_custom_case(self, input_len: int, output_len: int,
-                        data_num: int = None, concurrency: int = None):
+                        data_num: int = None, concurrency: int = None,
+                        prefix_num: int = None):
         """添加自定义用例 (校验长度不超模型最大上下文)"""
         if self.max_request_length > 0 and input_len + output_len > self.max_request_length:
             raise ValueError(
-                f"输入+输出长度 ({input_len:,}+{output_len:,}={input_len + output_len:,}) "
-                f"超过模型最大上下文 ({self.max_request_length:,}), "
-                f"vLLM将返回Bad Request拒绝该请求")
+                trf("输入+输出长度 ({input:,}+{output:,}={total:,}) "
+                    "超过模型最大上下文 ({max_len:,}), "
+                    "vLLM将返回Bad Request拒绝该请求",
+                    input=input_len, output=output_len,
+                    total=input_len + output_len,
+                    max_len=self.max_request_length))
         max_concurrency = max(1, int(self.total_kv_cache / (input_len + output_len)))
         min_data_num = int(self.total_kv_cache / input_len / self.repeat_rate) + 1
         recommended_data_num = min_data_num * 2
 
         if data_num is None:
             data_num = recommended_data_num
+
+        if prefix_num is None:
+            prefix_num = data_num
+        else:
+            prefix_num = max(1, prefix_num)
 
         if concurrency is None:
             concurrency = max_concurrency
@@ -189,6 +223,7 @@ class TestDesigner:
             output_len=output_len,
             data_num_recommended=data_num,
             data_num_min=min_data_num,
+            prefix_num=prefix_num,
             concurrency_recommended=concurrency,
             concurrency_max=max_concurrency,
             repeat_rate=self.repeat_rate,
@@ -216,7 +251,7 @@ class TestDesigner:
                 f"--input_len {case.input_len} "
                 f"--output_len {case.output_len} "
                 f"--data_num {case.data_num_recommended} "
-                f"--prefix_num {case.data_num_recommended} "
+                f"--prefix_num {case.prefix_num} "
                 f"--concurrency {case.concurrency_recommended} "
                 f"--dataset_type prefix_cache "
                 f"--repeat_rate {int(self.repeat_rate * 100)}% "
@@ -313,12 +348,16 @@ class TestDesigner:
     def get_summary(self) -> str:
         """获取测试摘要"""
         lines = []
-        lines.append(f"单个DP组KV cache: {self.single_kv_cache:,} tokens")
-        lines.append(f"DP组数: {self.dp}")
-        lines.append(f"总KV cache: {self.total_kv_cache:,} tokens")
-        lines.append(f"最大请求长度: {self.max_request_length:,}")
-        lines.append(f"前缀命中率: {self.repeat_rate*100:.0f}%")
-        rate_str = "Burst模式" if self.request_rate == 0 else f"{self.request_rate} req/s"
-        lines.append(f"请求发送速率: {rate_str}")
-        lines.append(f"测试用例数: {len(self.test_cases)}")
+        lines.append(trf("单个DP组KV cache: {value:,} tokens",
+                         value=self.single_kv_cache))
+        lines.append(trf("DP组数: {value}", value=self.dp))
+        lines.append(trf("总KV cache: {value:,} tokens",
+                         value=self.total_kv_cache))
+        lines.append(trf("最大请求长度: {value:,}", value=self.max_request_length))
+        lines.append(trf("前缀命中率: {value}%",
+                         value=f"{self.repeat_rate * 100:.0f}"))
+        rate_str = (tr("Burst模式") if self.request_rate == 0
+                    else f"{self.request_rate} req/s")
+        lines.append(trf("请求发送速率: {value}", value=rate_str))
+        lines.append(trf("测试用例数: {value}", value=len(self.test_cases)))
         return '\n'.join(lines)

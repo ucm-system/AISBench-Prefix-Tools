@@ -259,6 +259,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                     app.root.destroy()
 
     def test_exit_cleanup_popup_is_english(self):
+        from task_manager import TaskStatus
         with tempfile.TemporaryDirectory() as tmp:
             settings_file = Path(tmp) / "settings.json"
             with mock.patch("settings_manager.settings_path", return_value=settings_file):
@@ -266,33 +267,28 @@ class DynamicMessageI18nTests(unittest.TestCase):
                 try:
                     app.language_var.set("English")
                     app._on_language_change()
-                    app.work_dir_var.set("/tmp/aisbench_deploy")
-                    docker = mock.Mock()
-                    docker.container_name = "aisbench-test-abc"
-                    docker.container_is_running.return_value = True
-                    app.docker = docker
+                    task = mock.Mock()
+                    task.display_name = "ds_x"
+                    task.container_name = "aisbench-test-abc"
+                    task.deploy_work_dir = "/tmp/aisbench_deploy"
+                    app.task_manager = mock.Mock()
+                    app.task_manager.active_tasks.return_value = []
+                    app.task_manager.tasks_with_containers.return_value = [task]
                     with mock.patch("i18n._show_dialog") as ask:
                         ask.return_value = None
                         app._exit_check_cleanup()
                     args, _kwargs = ask.call_args
                     self.assertEqual(args[0], "askyesnocancel")
                     self.assertEqual(args[1], "Cleanup reminder")
-                    self.assertIn("The Docker container is still running!", args[2])
-                    self.assertIn("Container: aisbench-test-abc", args[2])
-                    self.assertIn(
-                        "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
-                        args[2])
-                    self.assertIn(
-                        "Clean up the remote environment before exiting?", args[2])
-                    self.assertIn("Test task state: Not marked", args[2])
-                    self.assertIn(
-                        "create the task again (redeploy the container)", args[2])
-                    self.assertIn(
-                        "exiting directly will terminate it abnormally", args[2])
+                    self.assertIn("remote containers not cleaned", args[2])
+                    self.assertIn("aisbench-test-abc", args[2])
+                    self.assertIn("/tmp/aisbench_deploy", args[2])
+                    self.assertIn("Clean up before exiting?", args[2])
                 finally:
                     app.root.destroy()
 
-    def test_cleanup_reminder_is_english_with_state_and_redeploy_note(self):
+    def test_task_cleanup_confirm_is_english(self):
+        from task_manager import TaskStatus
         with tempfile.TemporaryDirectory() as tmp:
             settings_file = Path(tmp) / "settings.json"
             with mock.patch("settings_manager.settings_path",
@@ -301,52 +297,47 @@ class DynamicMessageI18nTests(unittest.TestCase):
                 try:
                     app.language_var.set("English")
                     app._on_language_change()
-                    app.work_dir_var.set("/tmp/aisbench_deploy")
-                    docker = mock.Mock()
-                    docker.container_name = "aisbench-test-abc"
-                    docker.read_test_state.return_value = "completed"
-                    docker.container_is_running.return_value = True
-                    app.docker = docker
+                    app.ssh = mock.Mock()
+                    app.ssh.connected = True
+                    task = mock.Mock()
+                    task.display_name = "ds_english"
+                    task.container_name = "aisbench-test-abc"
+                    task.deploy_work_dir = "/tmp/aisbench_deploy"
+                    app.task_manager = mock.Mock()
+                    app.task_manager.get.return_value = task
+                    app.selected_task_id = "t1"
                     with mock.patch("main.askyesno", return_value=False) as ask:
-                        app._show_cleanup_reminder()
-                    message = ask.call_args_list[0].args[1]
-                    self.assertIn("Tests complete!", message)
-                    self.assertIn("Test task state: Completed", message)
-                    self.assertIn(
-                        "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
-                        message)
-                    self.assertIn(
-                        "create the task again (redeploy the container)", message)
-                    self.assertIn(
-                        "the container will be removed after cleanup", message)
-                finally:
-                    app.root.destroy()
-
-    def test_cleanup_confirm_is_english_with_state_and_redeploy_note(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            settings_file = Path(tmp) / "settings.json"
-            with mock.patch("settings_manager.settings_path",
-                            return_value=settings_file):
-                app = main.WizardApp()
-                try:
-                    app.language_var.set("English")
-                    app._on_language_change()
-                    app.work_dir_var.set("/tmp/aisbench_deploy")
-                    docker = mock.Mock()
-                    docker.container_name = "aisbench-test-abc"
-                    docker.read_test_state.return_value = "abnormal"
-                    docker.container_is_running.return_value = True
-                    app.docker = docker
-                    with mock.patch("main.askyesno", return_value=False) as ask:
-                        app._cleanup_environment()
+                        app._cleanup_selected_task()
                     message = ask.call_args.args[1]
-                    self.assertIn("Docker container: aisbench-test-abc", message)
-                    self.assertIn("Test task state: Abnormally terminated",
-                                  message)
-                    self.assertIn(
-                        "To run test cases again after cleanup, "
-                        "create the task again (redeploy the container).",
-                        message)
+                    self.assertIn("ds_english", message)
+                    self.assertIn("Container: aisbench-test-abc", message)
+                    self.assertIn("/tmp/aisbench_deploy", message)
+                    self.assertIn("create the task again", message)
+                finally:
+                    app.root.destroy()
+
+    def test_cancel_task_confirm_is_english(self):
+        from task_manager import TaskStatus
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.json"
+            with mock.patch("settings_manager.settings_path",
+                            return_value=settings_file):
+                app = main.WizardApp()
+                try:
+                    app.language_var.set("English")
+                    app._on_language_change()
+                    task = mock.Mock()
+                    task.display_name = "ds_running"
+                    task.status = TaskStatus.RUNNING
+                    app.task_manager = mock.Mock()
+                    app.task_manager.get.return_value = task
+                    app.selected_task_id = "t1"
+                    with mock.patch("main.askyesno", return_value=False) as ask:
+                        app._cancel_selected_task()
+                    message = ask.call_args.args[1]
+                    self.assertIn("ds_running", message)
+                    self.assertIn("Cancel task", ask.call_args.args[0])
+                    self.assertIn("stopping the container", message)
                 finally:
                     app.root.destroy()
 
@@ -499,39 +490,46 @@ class LanguageSwitchPreservesStateTests(unittest.TestCase):
                 finally:
                     app.root.destroy()
 
-    def test_language_switch_restores_results_and_status(self):
+    def test_language_switch_preserves_tasklist_selection(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings_file = Path(tmp) / "settings.json"
             with mock.patch("settings_manager.settings_path", return_value=settings_file):
                 app = main.WizardApp()
                 try:
                     app.current_step = 1
-                    app.deployed = True
                     app.local_output_var.set("D:/results/run1")
-                    app.results_tree.insert("", tk.END, values=(
-                        "4,096", "1,024", "10,000", "100", "50",
-                        "12.34", "56.78", "0.12", "0.03", "9.87",
-                        "85.2", "12.3"))
-                    app.results_info_lbl.config(
-                        text="1 records  |  CSV: r.csv  |  Log: logs")
-                    app.deploy_btn.config(text="Redeploy")
+                    task = mock.Mock()
+                    task.id = "t1"
+                    task.display_name = "task-en"
+                    task.status = "completed"
+                    task.status_label.return_value = "Done"
+                    task.created_at = __import__("datetime").datetime(2026, 11, 2)
+                    task.finished_at = None
+                    task.image_name = "img"
+                    task.inputs = mock.Mock(selected_image="img", tar_path="", model_path="/m")
+                    task.container_name = "c1"
+                    task.csv_path = "r.csv"
+                    task.result_dir = ""
+                    task.results = []
+                    task.resources_cleaned = False
+                    task.log_buffer = mock.Mock()
+                    task.log_buffer.poll.return_value = ([], "")
+                    app.task_manager = mock.Mock()
+                    app.task_manager.get.return_value = task
+                    app.task_manager.all_tasks.return_value = [task]
+                    app.task_manager.tasks = {"t1": task}
+                    app._refresh_task_table()
+                    app._select_task("t1", reset_log=True)
 
                     app.language_var.set("English")
                     app._on_language_change()
 
                     self.assertEqual(app.current_step, 1)
                     self.assertEqual(app.local_output_var.get(), "D:/results/run1")
-                    first = app.results_tree.get_children()[0]
-                    self.assertEqual(
-                        app.results_tree.item(first)["values"][0], "4,096")
-                    self.assertEqual(
-                        app.results_info_lbl.cget("text"),
-                        "1 records  |  CSV: r.csv  |  Log: logs")
-                    self.assertEqual(app.deploy_btn.cget("text"), "Redeploy")
-                    self.assertTrue(app.deployed)
+                    self.assertEqual(app.selected_task_id, "t1")
+                    self.assertIn("task-en", app.task_log_title_lbl.cget("text"))
                 finally:
                     app.root.destroy()
-
 
 class DialogButtonI18nTests(unittest.TestCase):
     """Dialog buttons (OK/Cancel/Yes/No) must follow the selected language."""

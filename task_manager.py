@@ -156,6 +156,11 @@ class TaskLogBuffer:
             self._shown = len(self.lines)
             return new, self._pending
 
+    def reset_shown(self):
+        """重置UI已消费计数(切换任务/清空日志视图后从头显示)"""
+        with self._lock:
+            self._shown = 0
+
     def finalize(self):
         with self._lock:
             self.finalize_locked()
@@ -292,6 +297,21 @@ class TaskInputs:
     def from_dict(cls, data: dict) -> "TaskInputs":
         valid = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in valid})
+
+
+def build_designer_from_inputs(inp: TaskInputs) -> TestDesigner:
+    """从任务输入快照重建测试设计器(用例等执行期数据固定)"""
+    d = TestDesigner()
+    d.set_kv_cache_info(
+        int(inp.kv_cache or 0), int(inp.dp or 1), int(inp.max_req_len or 0))
+    d.set_repeat_rate(float(inp.repeat_rate or 0.9))
+    d.set_request_rate(float(inp.request_rate or 0))
+    d.input_lengths = list(inp.input_lengths or [])
+    d.output_lengths = list(inp.output_lengths or [])
+    d.test_cases = [TestCase(**{k: v for k, v in c.items()
+                                if k in TestCase.__dataclass_fields__})
+                    for c in (inp.cases or [])]
+    return d
 
 
 class Task:
@@ -680,19 +700,8 @@ class TaskRunner:
     # ---- 阶段3: 测试执行 ----
 
     def _build_designer(self) -> TestDesigner:
-        """从任务输入快照重建测试设计器(用例等执行期数据固定)"""
-        inp = self.task.inputs
-        d = TestDesigner()
-        d.set_kv_cache_info(
-            int(inp.kv_cache or 0), int(inp.dp or 1), int(inp.max_req_len or 0))
-        d.set_repeat_rate(float(inp.repeat_rate or 0.9))
-        d.set_request_rate(float(inp.request_rate or 0))
-        d.input_lengths = list(inp.input_lengths or [])
-        d.output_lengths = list(inp.output_lengths or [])
-        d.test_cases = [TestCase(**{k: v for k, v in c.items()
-                                    if k in TestCase.__dataclass_fields__})
-                        for c in (inp.cases or [])]
-        return d
+        """从任务输入快照重建测试设计器"""
+        return build_designer_from_inputs(self.task.inputs)
 
     def _run_tests(self):
         task = self.task

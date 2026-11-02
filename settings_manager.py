@@ -23,6 +23,11 @@ def settings_path() -> Path:
     return _settings_dir() / "settings.json"
 
 
+def app_data_dir() -> Path:
+    """工具本地数据目录(任务元数据/任务日志等)"""
+    return _settings_dir()
+
+
 def load_settings() -> Dict[str, object]:
     path = settings_path()
     if not path.exists():

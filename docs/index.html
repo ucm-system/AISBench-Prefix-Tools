@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -168,10 +168,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
 <a class="nav-link" href="#language">界面语言</a>
     <div class="nav-group">使用流程</div>
     <a class="nav-link" href="#step1"><span class="num">1</span>SSH 连接</a>
-    <a class="nav-link" href="#step2"><span class="num">2</span>Docker 部署与模型</a>
-    <a class="nav-link" href="#step3"><span class="num">3</span>配置 config.py</a>
-    <a class="nav-link" href="#step4"><span class="num">4</span>设计测试用例</a>
-    <a class="nav-link" href="#step5"><span class="num">5</span>执行测试</a>
+    <a class="nav-link" href="#step2"><span class="num">2</span>创建任务</a>
     <div class="nav-group">分析工具</div>
     <a class="nav-link" href="#logtools">远程日志工具</a>
     <a class="nav-link" href="#compare">结果对比分析</a>
@@ -201,8 +198,8 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
   <div class="toc-features">
     <div class="feature">
       <div class="icon">🚀</div>
-      <h4>五步向导</h4>
-      <p>从 SSH 连接到生成结果 CSV，一条流程完成远程环境部署与测试执行。</p>
+      <h4>两步向导</h4>
+      <p>连接执行机后，在“创建任务”一页完成资源选择、用例设计与一键部署执行。</p>
     </div>
     <div class="feature">
       <div class="icon">🧮</div>
@@ -223,16 +220,14 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
   <h3>整体流程</h3>
   <div class="flow">
     <span class="node">连接执行机</span><span class="arrow">→</span>
-    <span class="node">选择镜像与模型并部署</span><span class="arrow">→</span>
-    <span class="node">写入 config.py</span><span class="arrow">→</span>
-    <span class="node">设计用例</span><span class="arrow">→</span>
-    <span class="node">执行测试</span><span class="arrow">→</span>
+    <span class="node">创建任务（选资源 · 设用例）</span><span class="arrow">→</span>
+    <span class="node">一键部署并执行</span><span class="arrow">→</span>
     <span class="node">生成 CSV</span><span class="arrow">→</span>
     <span class="node">对比分析</span>
   </div>
   <div class="callout">
     <b>截图说明</b>
-    本页步骤截图已同步至 2026-10-28 的五步向导界面；如浏览器仍显示旧图，请强制刷新页面。
+    本页截图已同步至 2026-11-02 的两步向导界面；如浏览器仍显示旧图，请强制刷新页面。
   </div>
 </section>
 
@@ -257,7 +252,7 @@ build_exe.bat</code></pre>
   </div>
   <div class="callout warn">
     <b>镜像下载</b>
-    当前推荐镜像：AISBench v3.1-20261013-master。若执行机没有可用镜像，可在步骤 2 的上传模式点击“镜像下载链接”，或直接访问 GitHub Releases 下载。
+    当前推荐镜像：AISBench v3.1-20261013-master。若执行机没有可用镜像，可在“创建任务”页的上传模式点击“镜像下载链接”，或直接访问 GitHub Releases 下载。
   </div>
 </section>
 
@@ -268,21 +263,21 @@ build_exe.bat</code></pre>
   <p>界面控件、弹窗提示（如“下一步”校验、部署与清理确认、结果摘要）、远程日志工具（服务器/日志来源/筛选结果与查看日志窗口）以及状态栏动态消息均随所选语言显示；弹窗按钮（确定/取消/是/否）也由程序自绘并跟随所选语言，不受操作系统语言影响。</p>
   <p>切换语言只改变界面呈现：当前步骤、SSH 登录信息、镜像/模型/配置输入与执行结果都会完整保留，不会跳回第一步。</p>
   <figure class="figure">
-    <img src="images/step2-docker-en-20261030.png?v=20261030" alt="English interface example">
-    <figcaption>English 界面示例：步骤 2 的 Docker 部署与模型配置页面</figcaption>
+    <img src="images/step2-task-resources-en-20261102.png?v=20261102" alt="English interface example">
+    <figcaption>English 界面示例：“创建任务”页的任务资源分区</figcaption>
   </figure>
 </section>
 
 <section id="step1">
   <h2>步骤 1：SSH 连接执行机</h2>
-  <span class="step-badge">STEP 1 / 5</span>
-  <p>填写执行机 IP、SSH 端口、用户名以及密码或密钥，点击“测试连接”。状态栏确认连接成功后，左侧步骤 2 才会进入可用状态。</p>
+  <span class="step-badge">STEP 1 / 2</span>
+  <p>填写执行机 IP、SSH 端口、用户名以及密码或密钥，点击“测试连接”。状态栏确认连接成功后，左侧“创建任务”即可进入下一步。</p>
   <div class="callout">
     <b>连接后自动体检</b>
     连接成功后工具会自动扫描本工具创建的容器；如发现上次退出未清理的 <code>aisbench-test-*</code> 容器，会提示打开清理窗口勾选删除。
   </div>
   <figure class="figure">
-    <img src="images/step1-connection-20261030.png?v=20261030" alt="步骤 1：SSH 连接执行机界面">
+    <img src="images/step1-connection-20261102.png?v=20261102" alt="步骤 1：SSH 连接执行机界面">
     <figcaption>连接成功状态示例：192.168.1.30:22，用户 root，密码认证</figcaption>
   </figure>
   <table>
@@ -301,81 +296,34 @@ build_exe.bat</code></pre>
 </section>
 
 <section id="step2">
-  <h2>步骤 2：Docker 部署与模型配置</h2>
-  <span class="step-badge">STEP 2 / 5</span>
-  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像；镜像下拉框左侧提供“筛选”输入框，可按关键字（不区分大小写）实时过滤长镜像名。未发现可用镜像时自动切换为上传 tar 包。模型、vLLM 服务、代码来源、临时部署目录、残留容器清理与部署日志都在同一页面完成。</p>
+  <h2>步骤 2：创建任务</h2>
+  <span class="step-badge">STEP 2 / 2</span>
+  <p>原“Docker 部署 / 配置 config.py / 设计测试用例 / 执行测试”四个步骤已合并为本页。页面按 <b>① 任务资源 → ② 测试参数与用例设计 → ③ 创建并执行任务</b> 三个分区组织；完成配置后点击 <b>🚀 创建任务</b>，一键完成容器部署、config.py 写入与测试执行。创建容器不再需要填写模型名称、服务 IP / 端口——这些服务参数默认自动生成。</p>
+
+  <h3>① 任务资源（镜像 · 代码 · 模型）</h3>
   <figure class="figure">
-    <img src="images/step2-docker-20261030.png?v=20261030" alt="步骤 2：Docker 部署与模型配置界面">
-    <figcaption>部署完成示例：复用已有镜像启动容器，测试代码已导入容器，宿主机临时目录自动清理</figcaption>
+    <img src="images/step2-task-resources-20261102.png?v=20261102" alt="创建任务页：任务资源分区">
+    <figcaption>任务资源分区：选择已有镜像（支持关键字筛选）、测试代码与模型路径；vLLM 服务参数默认自动生成</figcaption>
   </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th></tr></thead>
     <tbody>
       <tr><td>AISBench 镜像来源</td><td>点击“查看已有镜像”读取执行机镜像列表并选择；支持关键字筛选（显示“筛选: N/M 个镜像”），未发现镜像时自动切换到上传模式。</td></tr>
       <tr><td>镜像 tar 包</td><td>上传模式专用，选择本地 AISBench Docker 镜像文件；可点击“镜像下载链接”直达 Releases。</td></tr>
-      <tr><td>临时部署目录</td><td>默认 <code>/tmp/AISBench_Prefix_Tools</code>；仅部署期间暂存镜像 tar 和代码，导入容器后自动删除。</td></tr>
-      <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器（含测试任务状态列），可同时清理旧版遗留的临时目录。</td></tr>
       <tr><td>测试代码来源</td><td>默认使用程序内置代码，也可选择本地 zip 包。</td></tr>
       <tr><td>模型路径</td><td>远程执行机上的模型权重目录，可点击“浏览远程目录”定位。</td></tr>
-      <tr><td>模型名称</td><td>对应 vLLM 的 <code>--served-model-name</code> 参数。</td></tr>
-      <tr><td>vLLM 服务 IP / 端口</td><td>推理服务访问地址，端口通常为 <code>8000</code>。</td></tr>
-      <tr><td>API Key</td><td>服务鉴权令牌；未开启鉴权时留空。</td></tr>
+      <tr><td>vLLM 服务连接</td><td><b>默认自动生成，无需填写</b>：模型名称 <code>ds</code>、IP = 执行机 IP、端口 <code>8000</code>；页面显示自动摘要（如“自动: ds @ 192.168.1.30:8000”）。特殊场景可点击“高级设置 ▾”展开修改 模型名称 / 服务 IP / 端口 / API Key / POD_INFO。</td></tr>
+      <tr><td>临时部署目录</td><td>默认 <code>/tmp/AISBench_Prefix_Tools</code>；仅部署期间暂存镜像 tar 和代码，导入容器后自动删除。</td></tr>
+      <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器（含测试任务状态列），可同时清理旧版遗留的临时目录。</td></tr>
     </tbody>
   </table>
 
-  <h3>自动执行流程</h3>
-  <div class="flow">
-    <span class="node">检查 Docker</span><span class="arrow">→</span>
-    <span class="node">复用已有镜像或上传加载</span><span class="arrow">→</span>
-    <span class="node">暂存测试代码</span><span class="arrow">→</span>
-    <span class="node">创建容器(仅挂载模型)</span><span class="arrow">→</span>
-    <span class="node">docker cp 导入代码</span><span class="arrow">→</span>
-    <span class="node">删除宿主机临时目录</span>
-  </div>
-  <ul>
-    <li>已有镜像模式会先校验镜像仍存在，然后跳过上传与 <code>docker load</code>。</li>
-    <li>上传模式会优先读取 tar 包 <code>manifest.json</code>；镜像已存在时同样跳过重复加载。</li>
-    <li>容器自动命名 <code>aisbench-test-MMDDHHMM</code>，并附加管理 label <code>org.aisbench-prefix-tools.managed=true</code>。</li>
-    <li>模型路径按原路径挂载；测试代码不挂载，而是在容器创建后通过 <code>docker cp</code> 导入 <code>/benchmark/ais_bench/aisbench_auto_tools_prefix-main</code>。</li>
-    <li>部署完成后在容器工作目录写入 <code>.aisbench_test_state</code> 测试状态标记（初始化），后续测试执行会更新为执行中 / 执行完成 / 异常终止。</li>
-    <li>代码导入成功后立即删除宿主机临时目录，宿主机不再保留代码、config.py 或日志。</li>
-    <li>config.py 与测试脚本直接写入容器内部（内容经 base64 编码，避免引号转义问题）。</li>
-    <li>部署失败时临时目录会保留用于排障，修复后重新部署即可。</li>
-  </ul>
-  <div class="callout good">
-    <b>重复执行</b>
-    同名旧容器会自动删除并重建；也可以先手动清理容器后再点击部署。
-  </div>
-</section>
-<section id="step3">
-  <h2>步骤 3：配置 config.py</h2>
-  <span class="step-badge">STEP 3 / 5</span>
-  <p>模型与服务字段会从步骤 2 自动带入。确认或修改配置后点击“保存配置到容器”，配置会直接写入容器内部工作区；再用“验证配置”回读容器内文件并与界面值逐项比对。</p>
+  <h3>② 测试参数与用例设计</h3>
   <figure class="figure">
-    <img src="images/step3-config-20261030.png?v=20261030" alt="步骤 3：config.py 配置界面">
-    <figcaption>配置示例：ds 模型、远程模型路径、vLLM 服务 192.168.1.30:8000</figcaption>
+    <img src="images/step2-task-testcases-20261102.png?v=20261102" alt="创建任务页：测试参数与用例设计分区">
+    <figcaption>测试参数分区：KV cache 信息、日志筛选工具、输入/输出长度与生成的用例表格</figcaption>
   </figure>
-  <table>
-    <thead><tr><th>字段</th><th>默认值 / 示例</th><th>说明</th></tr></thead>
-    <tbody>
-      <tr><td>MODEL_NAME</td><td><code>ds</code></td><td>步骤 2 中填写的模型名称。</td></tr>
-      <tr><td>MODEL_PATH</td><td>模型目录</td><td>模型权重在远程机上的路径。</td></tr>
-      <tr><td>HOST_IP / HOST_PORT</td><td><code>8000</code></td><td>vLLM 服务地址。</td></tr>
-      <tr><td>DATASET_PATH</td><td>自动填充</td><td>测试代码在容器内部的工作区路径。</td></tr>
-      <tr><td>DEFAULT_PERFORMANCE_TEST</td><td><code>default_perf</code></td><td>稳态测试填写 <code>stable_stage</code>。</td></tr>
-      <tr><td>OUTPUT_DIR</td><td><code>./outputs/default</code></td><td>容器内日志输出目录。</td></tr>
-      <tr><td>POD_INFO</td><td><code>[]</code></td><td>多 DP 场景必填，格式如 <code>ip:port,ip:port</code>。</td></tr>
-    </tbody>
-  </table>
-</section>
-<section id="step4">
-  <h2>步骤 4：设计测试用例</h2>
-  <span class="step-badge">STEP 4 / 5</span>
   <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、前缀数量、最小请求数、并发数和 KV 使用率。</p>
-  <figure class="figure">
-    <img src="images/step4-testcases-20261101.png?v=20261101" alt="步骤 4：测试用例设计界面">
-    <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024；前缀数量默认等于请求数</figcaption>
-  </figure>
   <table>
     <thead><tr><th>字段</th><th>说明</th><th>示例</th></tr></thead>
     <tbody>
@@ -399,16 +347,64 @@ build_exe.bat</code></pre>
   </ul>
   <div class="callout">
     <b>手动查询命令</b>
-    界面会给出可复制的 grep 命令；也可以点击“从日志自动获取”打开远程日志工具自动解析。
+    界面会给出可复制的 grep 命令（<code>grep -e 'KV cache size' -e 'Maximum concurrency'</code>，通用关键词兼容 GPU / NPU 日志）；也可以点击“从日志自动获取”打开远程日志工具自动解析。
   </div>
-</section>
-<section id="step5">
-  <h2>步骤 5：执行测试并生成 CSV</h2>
-  <span class="step-badge">STEP 5 / 5</span>
-  <p>确认本地结果保存目录后，点击“执行测试 → 生成CSV”。工具会将测试脚本写入容器内部、先检查模型路径、逐用例执行、从容器下载日志并在本地解析 CSV。</p>
+
+  <h3>③ 创建并执行任务</h3>
   <figure class="figure">
-    <img src="images/step5-execute-20261030.png?v=20261030" alt="步骤 5：测试执行与结果摘要界面">
-    <figcaption>执行完成示例：4 个用例的吞吐、延迟与命中率摘要，容器日志已下载到本地</figcaption>
+    <img src="images/step2-task-run-20261102.png?v=20261102" alt="创建任务页：创建并执行任务分区">
+    <figcaption>创建并执行任务分区：部署环境信息、一键创建任务按钮与部署日志</figcaption>
+  </figure>
+  <p>完成资源与用例配置后，点击 <b>🚀 创建任务</b>，工具按以下流程自动执行：</p>
+  <div class="flow">
+    <span class="node">部署容器</span><span class="arrow">→</span>
+    <span class="node">自动写入 config.py</span><span class="arrow">→</span>
+    <span class="node">执行测试</span><span class="arrow">→</span>
+    <span class="node">下载日志</span><span class="arrow">→</span>
+    <span class="node">解析 CSV</span>
+  </div>
+  <h3>部署自动执行流程</h3>
+  <div class="flow">
+    <span class="node">检查 Docker</span><span class="arrow">→</span>
+    <span class="node">复用已有镜像或上传加载</span><span class="arrow">→</span>
+    <span class="node">暂存测试代码</span><span class="arrow">→</span>
+    <span class="node">创建容器(仅挂载模型)</span><span class="arrow">→</span>
+    <span class="node">docker cp 导入代码</span><span class="arrow">→</span>
+    <span class="node">删除宿主机临时目录</span>
+  </div>
+  <ul>
+    <li>已有镜像模式会先校验镜像仍存在，然后跳过上传与 <code>docker load</code>。</li>
+    <li>上传模式会优先读取 tar 包 <code>manifest.json</code>；镜像已存在时同样跳过重复加载。</li>
+    <li>容器自动命名 <code>aisbench-test-MMDDHHMM</code>，并附加管理 label <code>org.aisbench-prefix-tools.managed=true</code>。</li>
+    <li>模型路径按原路径挂载；测试代码不挂载，而是在容器创建后通过 <code>docker cp</code> 导入 <code>/benchmark/ais_bench/aisbench_auto_tools_prefix-main</code>。</li>
+    <li>部署完成后在容器工作目录写入 <code>.aisbench_test_state</code> 测试状态标记（初始化），后续测试执行会更新为执行中 / 执行完成 / 异常终止。</li>
+    <li>代码导入成功后立即删除宿主机临时目录，宿主机不再保留代码、config.py 或日志。</li>
+    <li>config.py 与测试脚本直接写入容器内部（内容经 base64 编码，避免引号转义问题）。</li>
+    <li>部署失败时临时目录会保留用于排障，修复后重新部署即可。</li>
+  </ul>
+  <h3>config.py 自动写入</h3>
+  <p>配置文件不再需要单独步骤和手工保存：每次执行测试前，工具自动生成 config.py 写入容器并回读验证。MODEL_NAME / HOST_IP / HOST_PORT 等服务参数默认自动生成（高级设置可覆盖），MODEL_PATH 来自任务资源，DATASET_PATH 自动指向容器内代码工作区；写入结果与关键配置会输出到执行日志。</p>
+  <table>
+    <thead><tr><th>字段</th><th>默认值 / 来源</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>MODEL_NAME</td><td><code>ds</code></td><td>自动；可在高级设置中修改（对应 vLLM 的 <code>--served-model-name</code>）。</td></tr>
+      <tr><td>MODEL_PATH</td><td>任务资源中的模型路径</td><td>模型权重在远程机上的路径。</td></tr>
+      <tr><td>HOST_IP / HOST_PORT</td><td>执行机 IP / <code>8000</code></td><td>自动；高级设置可修改。</td></tr>
+      <tr><td>DATASET_PATH</td><td>自动填充</td><td>测试代码在容器内部的工作区路径。</td></tr>
+      <tr><td>DEFAULT_PERFORMANCE_TEST</td><td><code>default_perf</code></td><td>稳态测试填写 <code>stable_stage</code>。</td></tr>
+      <tr><td>OUTPUT_DIR</td><td><code>./outputs/default</code></td><td>容器内日志输出目录。</td></tr>
+      <tr><td>POD_INFO</td><td><code>[]</code></td><td>多 DP 场景在高级设置中填写，格式如 <code>ip:port,ip:port</code>。</td></tr>
+    </tbody>
+  </table>
+  <div class="callout good">
+    <b>智能复用</b>
+    点击“创建任务”时若本会话已部署容器且模型路径 / 镜像未变化，会跳过部署直接写入配置并执行测试（执行日志提示“复用已部署容器”）；需要强制重新部署时可点击“仅部署容器”或先清理环境。容器就绪后也可单独点击“执行测试 → 生成CSV”重复执行（每次执行前自动重新写入 config.py）。
+  </div>
+
+  <h3>任务执行与结果</h3>
+  <figure class="figure">
+    <img src="images/step2-task-results-20261102.png?v=20261102" alt="创建任务页：任务执行与结果分区">
+    <figcaption>任务执行与结果分区：命令预览、执行日志与结果摘要表格</figcaption>
   </figure>
   <div class="flow">
     <span class="node">预检查模型路径</span><span class="arrow">→</span>
@@ -431,7 +427,7 @@ build_exe.bat</code></pre>
 </section>
 <section id="logtools">
   <h2>远程日志工具</h2>
-  <p>在步骤 4 点击“从日志自动获取”或“查看日志”，即可打开远程日志工具。它支持选择服务器、日志来源和具体日志文件，并直接给出筛选结果。</p>
+  <p>在“创建任务”页的测试参数分区点击“从日志自动获取 / 查看日志”，即可打开远程日志工具。它支持选择服务器、日志来源和具体日志文件，并直接给出筛选结果。</p>
   <figure class="figure">
     <img src="images/log-tools.png?v=20261030" alt="远程日志工具和 KV cache 筛选结果">
     <figcaption>选择日志来源后一键筛选 KV cache 关键行，并可一键填入测试参数</figcaption>
@@ -465,7 +461,7 @@ build_exe.bat</code></pre>
 </section>
 <section id="compare">
   <h2>结果对比分析</h2>
-  <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在步骤 5 的结果摘要右侧打开。</p>
+  <p>结果对比分析是独立入口，不需要连接执行服务器。可以从左侧边栏打开，也可以在“创建任务”页的结果摘要右侧打开。</p>
   <figure class="figure">
     <img src="images/result-compare-20261031.png?v=20261031-2" alt="结果对比分析界面">
     <figcaption>选择两个结果 CSV 后，可自定义 A/B 标注并生成差异表格、柱状图和图片导出；窗口支持全屏，表格支持拖拽平移</figcaption>
@@ -503,12 +499,12 @@ build_exe.bat</code></pre>
 </section>
 <section id="cleanup">
   <h2>环境清理与退出</h2>
-  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在步骤 2 通过“清理残留容器”删除。清理提示会显示容器内测试任务状态，并提醒：清理后如需再次执行测试，需要从步骤 2 Docker 部署重新开始。</p>
+  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在“创建任务”页通过“清理残留容器”删除。清理提示会显示容器内测试任务状态，并提醒：清理后如需再次执行测试，需要重新创建任务（重新部署容器）。</p>
   <table>
     <thead><tr><th>操作</th><th>结果</th></tr></thead>
     <tbody>
       <tr><td>清理远程环境</td><td>停止并删除容器，删除残留暂存文件；本地结果不受影响。</td></tr>
-      <tr><td>清理残留容器</td><td>步骤 2 提供勾选列表，可跨会话删除 <code>aisbench-test-*</code> 容器和旧版遗留的临时目录；列表会显示每个容器的测试任务状态。</td></tr>
+      <tr><td>清理残留容器</td><td>“创建任务”页提供勾选列表，可跨会话删除 <code>aisbench-test-*</code> 容器和旧版遗留的临时目录；列表会显示每个容器的测试任务状态。</td></tr>
       <tr><td>保留环境</td><td>容器保留，便于继续排查或复用；下次连接时会再次提醒。</td></tr>
       <tr><td>退出程序</td><td>点击“完成”或窗口关闭按钮；若容器仍在运行，会再次提醒。</td></tr>
     </tbody>
@@ -527,7 +523,7 @@ build_exe.bat</code></pre>
   </table>
   <div class="callout">
     <b>清理后如何再次测试</b>
-    清理会停止并删除容器；config.py、测试脚本和日志都保存在容器内部。因此清理后如需再次执行测试用例，需要从步骤 2 Docker 部署重新开始，再依次保存配置、生成测试用例并执行。
+    清理会停止并删除容器；config.py、测试脚本和日志都保存在容器内部。因此清理后如需再次执行测试用例，重新点击“创建任务”即可重新部署容器、自动写入配置并执行测试（用例设计已保留，无需重新填写）。
   </div>
   <div class="callout good">
     <b>安全边界</b>
@@ -538,11 +534,11 @@ build_exe.bat</code></pre>
 <section id="faq">
   <h2>常见问题</h2>
   <h3>执行机已有镜像，还需要上传 tar 包吗？</h3>
-  <p>不需要。在步骤 2 点击“查看已有镜像”并选择镜像，部署时会校验该镜像仍存在，然后跳过上传与 docker load。未发现可用镜像时才切换到上传模式。</p>
+  <p>不需要。在“创建任务”页点击“查看已有镜像”并选择镜像，部署时会校验该镜像仍存在，然后跳过上传与 docker load。未发现可用镜像时才切换到上传模式。</p>
   <h3>执行机镜像太多，找不到目标镜像怎么办？</h3>
   <p>查看已有镜像后，在下拉框左侧的“筛选”输入框输入关键字（如 <code>aisbench</code>、镜像 tag、仓库名片段），列表会按子串实时过滤且不区分大小写，并显示“筛选: N/M 个镜像”；清空关键字即可恢复完整列表。若当前关键字无匹配，会提示调整关键字而不是自动切换到上传模式。</p>
   <h3>上传镜像后无法自动识别镜像名？</h3>
-  <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在步骤 2 部署日志中查看结果。</p>
+  <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在任务页部署日志中查看结果。</p>
   <h3>如何切换中文 / English 界面？</h3>
   <p>在左侧边栏底部选择 <code>语言 / Language</code>；界面会立即重建，选择会保存到本机用户配置，下次启动自动恢复。弹窗提示与状态栏动态消息也会同步切换。</p>
   <h3>模型路径浏览看不到文件？</h3>
@@ -552,9 +548,9 @@ build_exe.bat</code></pre>
   <h3>如何重新部署？</h3>
   <p>再次点击“开始部署”会删除同名旧容器并重新创建，也可以先手动删除容器后重试。</p>
   <h3>上次退出没有清理，怎么删除遗留容器？</h3>
-  <p>重新连接后工具会自动扫描并提醒；也可以在步骤 2 点击“清理残留容器”，勾选要删除的容器，可同时清理旧版遗留的临时目录。列表会显示容器内测试任务状态（初始化 / 执行中 / 执行完成 / 异常终止），便于判断上次测试是否中断。</p>
+  <p>重新连接后工具会自动扫描并提醒；也可以在“创建任务”页点击“清理残留容器”，勾选要删除的容器，可同时清理旧版遗留的临时目录。列表会显示容器内测试任务状态（初始化 / 执行中 / 执行完成 / 异常终止），便于判断上次测试是否中断。</p>
   <h3>清理环境后想再次执行测试怎么办？</h3>
-  <p>清理会停止并删除容器，config.py、测试脚本和日志都保存在容器内部。需要回到步骤 2 重新执行 Docker 部署，再依次保存配置、生成测试用例并执行测试。</p>
+  <p>清理会停止并删除容器，config.py、测试脚本和日志都保存在容器内部。重新点击“创建任务”即可重新部署容器、自动写入配置并执行测试；用例设计已保留，无需重新填写。</p>
   <h3>远程的 /tmp/AISBench_Prefix_Tools 目录为什么部署后不见了？</h3>
   <p>该目录现在只是部署暂存区，代码通过 docker cp 导入容器后会自动删除；后续 config.py、脚本和日志都在容器内部。</p>
   <h3>结果 CSV 可以单独解析吗？</h3>

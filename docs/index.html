@@ -559,6 +559,8 @@ build_exe.bat</code></pre>
   <p>该目录现在只是部署暂存区，代码通过 docker cp 导入容器后会自动删除；后续 config.py、脚本和日志都在容器内部。</p>
   <h3>结果 CSV 可以单独解析吗？</h3>
   <p>可以。对比分析工具只要求 CSV 表头与本工具生成格式一致；日志解析脚本也可独立调用。</p>
+  <h3>双击 EXE 提示“Windows 已保护你的电脑 / 阻止了无法识别的应用启动”怎么办？</h3>
+  <p>这是 Microsoft Defender SmartScreen 的信誉机制提示，不是病毒查杀结果。原因是发布的 EXE 目前未做代码签名，且文件通过网络下载时会被 Windows 附加“网络来源”标记（Mark of the Web），SmartScreen 对没有信誉记录的新程序默认拦截。可在弹窗中点击 <b>更多信息</b> → <b>仍要运行</b>；或右键 EXE → <b>属性</b> → 勾选底部的 <b>解除锁定</b>；或用 PowerShell 执行 <code>Unblock-File .\AISBench-Prefix-Tools.exe</code>；也可从源码运行或本地打包。要从根本上消除提示，需要对 EXE 做代码签名（EV / OV 代码签名证书或 Azure Trusted Signing，可在 CI 中集成）。</p>
 </section>
 
 <section id="download">
@@ -568,6 +570,7 @@ build_exe.bat</code></pre>
     <ul>
       <li><a href="https://github.com/ucm-system/AISBench-Prefix-Tools/releases/latest">最新稳定版</a>：适合正式测试。</li>
       <li><a href="https://github.com/ucm-system/AISBench-Prefix-Tools/actions/workflows/build-main.yml">手动构建</a>：按需在 Actions 页面触发，产物从 Artifacts 下载。</li>
+      <li>首次运行若提示“Windows 已保护你的电脑”，点击 <b>更多信息</b> → <b>仍要运行</b>，或右键 EXE → 属性 → 勾选 <b>解除锁定</b>。详见常见问题。</li>
       <li><a href="https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master">AISBench 镜像 v3.1-20261013-master</a>：当前推荐镜像下载地址。</li>
     </ul>
   </div>

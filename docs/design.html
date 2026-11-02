@@ -175,14 +175,13 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>3.3 用户主流程</h3>
   <div class="flow">
     <span class="node">连接服务器</span><span class="arrow">→</span>
-    <span class="node">创建任务（选资源 · 设用例）</span><span class="arrow">→</span>
-    <span class="node">一键部署并执行</span><span class="arrow">→</span>
-    <span class="node">生成 CSV</span><span class="arrow">→</span>
+    <span class="node">创建任务（选资源 · 设用例 · 确认）</span><span class="arrow">→</span>
+    <span class="node">任务列表（执行 · 日志 · 结果）</span><span class="arrow">→</span>
     <span class="node">对比分析</span>
   </div>
   <div class="callout good">
     <b>交互原则</b>
-    向导仅两步：连接执行机后进入“创建任务”单页，页面内按“任务资源 / 测试参数与用例 / 创建并执行”三个分区组织，一键完成部署、配置与执行；服务参数默认自动生成，减少重复输入和手工传递错误。
+    界面共三页：连接执行机后进入“创建任务”单页，页面内按“任务资源 / 服务配置 / 测试参数与用例 / 创建任务”四个分区组织，确认全量信息后一键完成部署、配置与执行；任务状态与日志统一在“任务列表”页查看，支持多任务并行管理；服务参数默认自动生成，减少重复输入和手工传递错误。
   </div>
 </section>
 
@@ -200,7 +199,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <table>
     <thead><tr><th>层次</th><th>职责</th><th>关键内容</th></tr></thead>
     <tbody>
-      <tr><td>交互层</td><td>接收用户输入，展示流程与结果</td><td>两步向导（SSH连接 / 创建任务）、日志工具、结果对比窗口</td></tr>
+      <tr><td>交互层</td><td>接收用户输入，展示流程与结果</td><td>三页界面（SSH连接 / 创建任务 / 任务列表）、日志工具、结果对比窗口</td></tr>
       <tr><td>流程编排层</td><td>控制步骤顺序与状态流转</td><td>步骤校验、任务调度、错误提示</td></tr>
       <tr><td>远程执行层</td><td>管理远程主机与容器</td><td>SSH/SFTP、Docker 部署、docker cp 代码导入、容器内脚本执行、日志下载、残留容器清理</td></tr>
       <tr><td>数据生成层</td><td>生成配置和测试脚本</td><td>config.py、run_tests.sh、用例参数计算</td></tr>
@@ -224,7 +223,8 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <table>
     <thead><tr><th>模块</th><th>核心职责</th><th>主要协作对象</th></tr></thead>
     <tbody>
-      <tr><td><code>main.py</code></td><td>GUI 主程序，两步向导与任务编排</td><td>所有业务模块</td></tr>
+      <tr><td><code>main.py</code></td><td>GUI 主程序，三页界面与任务编排</td><td>所有业务模块</td></tr>
+      <tr><td><code>task_manager.py</code></td><td>任务引擎：多任务并行、独立SSH/容器/日志、元数据持久化</td><td>ssh/docker/config/designer/parser</td></tr>
       <tr><td><code>ssh_manager.py</code></td><td>SSH/SFTP 连接、命令执行、文件传输</td><td>GUI、Docker 管理器</td></tr>
       <tr><td><code>docker_manager.py</code></td><td>执行机镜像列表查询、已有镜像复用、tar上传加载、容器创建、代码导入容器、容器内文件读写、脚本执行、日志下载、残留容器识别与清理</td><td>SSH 管理器</td></tr>
       <tr><td><code>config_manager.py</code></td><td>生成 config.py 并直接写入容器内部</td><td>GUI、容器</td></tr>
@@ -244,16 +244,18 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
 
 <section id="workflow">
   <h2>6. 执行流程设计</h2>
-  <h3>6.1 两步向导</h3>
+  <h3>6.1 三页界面</h3>
   <ol>
     <li><b>SSH 连接</b>：校验远程主机可达性和认证方式；连接后自动扫描残留容器。</li>
-    <li><b>创建任务</b>：单页完成原四步内容，按三个分区组织：
+    <li><b>创建任务</b>：单页完成原四步内容，按四个分区组织：
       <ul>
-        <li><b>任务资源</b>：查看并选择执行机已有镜像（支持关键字筛选）；无可用镜像时上传 tar 包；选择测试代码来源与模型路径。vLLM 服务参数默认自动生成，可展开高级设置修改。</li>
+        <li><b>任务资源</b>：可选任务名（留空自动 服务名_时间）；查看并选择执行机已有镜像（支持关键字筛选）；无可用镜像时上传 tar 包；选择测试代码来源与模型路径；可浏览远程目录选择临时部署基目录。</li>
+        <li><b>服务配置</b>：vLLM 服务连接参数独立分区、两行多列紧凑排布，默认自动生成，特殊场景修改。</li>
         <li><b>测试参数与用例设计</b>：从日志筛选或手工填写 KV cache 参数，自动生成并支持编辑测试用例。</li>
-        <li><b>创建并执行任务</b>：点击“创建任务”一键完成 部署容器 → 自动写入 config.py（含回读验证）→ 执行测试 → 下载日志 → 解析 CSV；已部署容器可智能复用，也支持仅部署 / 单独重复执行。</li>
+        <li><b>创建任务</b>：先弹出全量信息确认对话框（预览随时可用），确认后一键完成 部署容器 → 自动写入 config.py（含回读验证）→ 执行测试 → 下载日志 → 解析 CSV。</li>
       </ul>
     </li>
+    <li><b>任务列表</b>：任务创建后自动进入；查看每个任务的运行状态、全量执行日志（支持全屏）与结果摘要，支持复制新建 / 取消 / 清理资源 / 删除数据；多任务并行执行，每个任务独立 SSH 连接、容器与临时子目录，元数据持久化，重启后自动恢复任务列表。</li>
   </ol>
   <h3>6.2 部署数据流</h3>
   <div class="flow">

@@ -198,6 +198,8 @@ class LiveLogHandler:
 class WizardApp:
     """向导式GUI主程序"""
 
+    APP_VERSION = "1.9.0"
+
     STEP_TITLES = [
         "SSH连接",
         "创建任务",
@@ -673,6 +675,16 @@ class WizardApp:
 
     def _on_mousewheel(self, event):
         """全局滚轮: 指针下可滚动组件优先, 滚到边界后滚动整页"""
+        delta = getattr(event, "delta", 0)
+        if delta == 0:
+            return
+        # Windows高精度滚轮/触控板会产生小于120的delta,
+        # int(delta/120)会被截断为0导致"滚动条按钮可拖动但滚轮不生效"。
+        # 对小于120的delta按方向滚动1个单位, 常规±120鼠标保持原行为。
+        if abs(delta) >= 120:
+            units = int(-delta / 120)
+        else:
+            units = -1 if delta > 0 else 1
         widget = self.root.winfo_containing(event.x_root, event.y_root)
         target = None
         while widget is not None and widget is not self._content_canvas:
@@ -683,14 +695,14 @@ class WizardApp:
 
         if target is not None:
             first, last = target.yview()
-            if (event.delta > 0 and first > 0.0) or \
-               (event.delta < 0 and last < 1.0):
+            if (delta > 0 and first > 0.0) or \
+               (delta < 0 and last < 1.0):
                 # 组件自身可继续滚动; 事件已由其默认绑定处理时避免重复滚动
                 if event.widget is not target:
-                    target.yview_scroll(-1 * int(event.delta / 120), "units")
+                    target.yview_scroll(units, "units")
                 return
 
-        self._content_canvas.yview_scroll(-1 * int(event.delta / 120), "units")
+        self._content_canvas.yview_scroll(units, "units")
 
     def _build_step_header(self, parent, title, desc=""):
         """构建步骤标题"""

@@ -87,8 +87,8 @@ class PrefixNumGuiTests(unittest.TestCase):
                             return_value=settings_file):
                 app = main.WizardApp()
         try:
-            app.current_step = 3
-            app._show_step(3)
+            app.current_step = 1
+            app._show_step(1)
             app.designer.set_kv_cache_info(1_000_000, 2, 8192)
             app.designer.set_input_lengths([4096])
             app.designer.set_output_lengths([1024])

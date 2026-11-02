@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Generate fresh user-guide screenshots from the current GUI implementation.
 
 The script intentionally populates sample values instead of connecting to a
@@ -19,6 +19,7 @@ from PIL import ImageGrab
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "docs" / "images"
+DATE = "20261102"
 
 
 class FakeDockerManager:
@@ -47,10 +48,32 @@ def capture(app, filename):
 
 def prepare_window(app):
     app.root.title("AISBenchPrefixTools")
-    app.root.geometry("1180x800+40+40")
+    app.root.geometry("1180x800+40+30")
     app.root.attributes("-topmost", True)
     app.root.update_idletasks()
     app.root.update()
+
+
+def scroll_to_widget(app, widget, top_margin=0.05):
+    """滚动到指定控件(用于对合并后的长页面分段截图)"""
+    y = 0
+    node = widget
+    while node is not None and node is not app.content_container:
+        y += node.winfo_y()
+        node = node.master
+
+    total = app.content_container.winfo_reqheight()
+    view = app._content_canvas.winfo_height()
+    scrollable = max(1, total - view)
+    fraction = max(0.0, min(1.0, (y - int(top_margin * view)) / scrollable))
+    app._content_canvas.yview_moveto(fraction)
+    app.root.update_idletasks()
+    app.root.update()
+
+
+def capture_section(app, anchor, filename):
+    scroll_to_widget(app, anchor)
+    capture(app, filename)
 
 
 def populate_step1(app):
@@ -63,7 +86,7 @@ def populate_step1(app):
                                fg=COLOR_SUCCESS)
 
 
-def populate_step2(app):
+def populate_task_resources(app):
     app._show_step(1)
 
     app.remote_images = [
@@ -93,9 +116,6 @@ def populate_step2(app):
     app.host_ip_var.set("192.168.1.30")
     app.host_port_var.set("8000")
     app.api_key_var.set("")
-    app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
-    app.work_dir_status.config(text="部署后已自动清理", fg=COLOR_SUCCESS)
-    app.residual_status_lbl.config(text="无残留容器", fg=COLOR_SUCCESS)
 
     app.docker = FakeDockerManager()
     app.docker_info_labels["tar"].config(
@@ -112,7 +132,37 @@ def populate_step2(app):
         text="aisbench-test-10281120"
     )
 
+    app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
+    app.work_dir_status.config(text="部署后已自动清理", fg=COLOR_SUCCESS)
+    app.residual_status_lbl.config(text="无残留容器", fg=COLOR_SUCCESS)
+
+
+def populate_task_testcases(app):
+    app.kv_cache_var.set("198469")
+    app.dp_var.set("4")
+    app.max_req_len_var.set("131072")
+    app.repeat_rate_var.set("0.9")
+    app.request_rate_var.set("0")
+
+    app.designer.set_kv_cache_info(198469, 4, 131072)
+    app.designer.set_repeat_rate(0.9)
+    app.designer.set_request_rate(0)
+    app.designer.set_input_lengths([16384, 32768])
+    app.designer.set_output_lengths([512, 1024])
+    app.designer.generate_test_cases()
+
+    for length, var in app.input_length_vars.items():
+        var.set(length in (16384, 32768))
+    for length, var in app.output_length_vars.items():
+        var.set(length in (512, 1024))
+
+    app._refresh_test_tree()
+
+
+def populate_task_run(app):
     app.deploy_btn.config(text="重新部署")
+    app.create_task_btn.config(text="🚀 创建任务")
+
     app.docker_log.delete(1.0, "end")
     app.docker_log.insert(
         "1.0",
@@ -138,63 +188,19 @@ def populate_step2(app):
     )
 
 
-def populate_step3(app):
-    app._show_step(2)
-
-    app.config_entry_vars["model_name"].set("ds")
-    app.config_entry_vars["model_path"].set(
-        "/mnt/models/DeepSeek-V4-Flash-w8a8-mtp"
-    )
-    app.config_entry_vars["host_ip"].set("192.168.1.30")
-    app.config_entry_vars["host_port"].set("8000")
-    app.config_entry_vars["api_key"].set("")
-    app.config_entry_vars["dataset_path"].set(
-        "/benchmark/ais_bench/aisbench_auto_tools_prefix-main"
-    )
-    app.config_entry_vars["work_path"].set("/benchmark")
-    app.config_entry_vars["default_perf"].set("default_perf")
-    app.config_entry_vars["output_dir"].set("./outputs/default")
-    app.config_entry_vars["pod_info"].set("")
-    app._sync_config_vars()
-    app.config_status_lbl.config(text="✓ 已保存并验证通过", fg=COLOR_SUCCESS)
-
-
-def populate_step4(app):
-    app._show_step(3)
-
-    app.kv_cache_var.set("198469")
-    app.dp_var.set("4")
-    app.max_req_len_var.set("131072")
-    app.repeat_rate_var.set("0.9")
-    app.request_rate_var.set("0")
-
-    app.designer.set_kv_cache_info(198469, 4, 131072)
-    app.designer.set_repeat_rate(0.9)
-    app.designer.set_request_rate(0)
-    app.designer.set_input_lengths([16384, 32768])
-    app.designer.set_output_lengths([512, 1024])
-    app.designer.generate_test_cases()
-
-    for length, var in app.input_length_vars.items():
-        var.set(length in (16384, 32768))
-    for length, var in app.output_length_vars.items():
-        var.set(length in (512, 1024))
-
-    app._refresh_test_tree()
-
-
-def populate_step5(app):
-    app._show_step(4)
-
+def populate_task_results(app):
     app.local_output_var.set(r"C:\Users\tester\aisbench_results")
     app._refresh_commands()
-    app.exec_test_btn.config(text="重新执行测试")
+    app.exec_test_btn.config(text="执行测试 → 生成CSV")
     app.cleanup_btn.config(state="normal")
 
     app.exec_log.delete(1.0, "end")
     app.exec_log.insert(
         "1.0",
         "\n".join([
+            "[配置] 自动写入config.py到容器...",
+            "  ✓ config.py已写入并验证一致: /benchmark/ais_bench/aisbench_auto_tools_prefix-main/config.py",
+            "    MODEL_PATH=/mnt/models/DeepSeek-V4-Flash-w8a8-mtp  MODEL_NAME=ds  HOST=192.168.1.30:8000",
             "[0/4] 预检查: 验证容器内MODEL_PATH...",
             "  ✓ OK: MODEL_PATH=/mnt/models/DeepSeek-V4-Flash-w8a8-mtp",
             "[1/4] 生成测试脚本...",
@@ -202,7 +208,6 @@ def populate_step5(app):
             "[2/4] 写入测试脚本到容器并执行...",
             "  ✓ 测试脚本执行完成",
             "[3/4] 下载测试日志到本地...",
-            "  容器内日志目录: /benchmark/ais_bench/aisbench_auto_tools_prefix-main/test_logs_20261030_1120",
             "  共下载 4 个日志文件",
             "[4/4] 解析日志生成CSV结果...",
             "  ✓ CSV生成完成: results_test_logs_20261030_1120.csv",
@@ -234,28 +239,30 @@ def main():
 
     populate_step1(app)
     app._show_step(0)
-    capture(app, "step1-connection-20261030.png")
+    capture(app, f"step1-connection-{DATE}.png")
 
-    populate_step2(app)
-    capture(app, "step2-docker-20261030.png")
+    populate_task_resources(app)
+    populate_task_testcases(app)
+    populate_task_run(app)
+    populate_task_results(app)
+
+    capture_section(app, app.resources_section_header,
+                    f"step2-task-resources-{DATE}.png")
+    capture_section(app, app.testcases_section_header,
+                    f"step2-task-testcases-{DATE}.png")
+    capture_section(app, app.run_section_header,
+                    f"step2-task-run-{DATE}.png")
+    capture_section(app, app.execute_section_header,
+                    f"step2-task-results-{DATE}.png")
 
     set_language("en")
     app._rebuild_ui_for_language()
-    populate_step2(app)
-    capture(app, "step2-docker-en-20261030.png")
-
-    set_language("zh")
-    app._rebuild_ui_for_language()
-    populate_step2(app)
-
-    populate_step3(app)
-    capture(app, "step3-config-20261030.png")
-
-    populate_step4(app)
-    capture(app, "step4-testcases-20261030.png")
-
-    populate_step5(app)
-    capture(app, "step5-execute-20261030.png")
+    populate_task_resources(app)
+    populate_task_testcases(app)
+    populate_task_run(app)
+    populate_task_results(app)
+    capture_section(app, app.resources_section_header,
+                    f"step2-task-resources-en-{DATE}.png")
 
     app.root.destroy()
 

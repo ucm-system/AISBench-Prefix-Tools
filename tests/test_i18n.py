@@ -22,7 +22,8 @@ class I18nTests(unittest.TestCase):
     def test_translate_static_text(self):
         i18n.set_language("en")
         self.assertEqual(i18n.tr("SSH连接"), "SSH Connection")
-        self.assertEqual(i18n.tr("Docker部署"), "Docker Deployment")
+        self.assertEqual(i18n.tr("创建任务"), "Create Task")
+        self.assertEqual(i18n.tr("仅部署容器"), "Deploy container only")
 
     def test_unknown_text_falls_back_to_source(self):
         i18n.set_language("en")
@@ -196,14 +197,22 @@ class DynamicMessageI18nTests(unittest.TestCase):
         i18n.set_language("en")
         self.assertEqual(i18n.tr("提示"), "Notice")
         self.assertEqual(i18n.tr("请先连接到远程主机"), "Please connect to the remote host first")
-        self.assertEqual(i18n.tr("Docker容器尚未部署，是否继续?"),
-                         "Docker container is not deployed yet. Continue?")
-        self.assertEqual(i18n.tr("尚未生成测试用例，是否继续?"),
-                         "No test cases generated yet. Continue?")
-        self.assertEqual(i18n.tr("请完成镜像和模型路径选择"),
-                         "Please finish image and model path selection")
         self.assertEqual(i18n.tr("请选择本地代码zip包 (或改用程序内置)"),
                          "Please select a local code zip package (or use built-in)")
+
+    def test_create_task_page_texts_are_english(self):
+        i18n.set_language("en")
+        self.assertEqual(i18n.tr("任务资源（镜像 · 代码 · 模型）"),
+                         "Task resources (image · code · model)")
+        self.assertEqual(i18n.tr("测试参数与用例设计"),
+                         "Test parameters and case design")
+        self.assertEqual(i18n.tr("创建并执行任务"), "Create and run the task")
+        self.assertEqual(i18n.tr("🚀 创建任务"), "🚀 Create Task")
+        self.assertEqual(i18n.tr("任务执行与结果"), "Task execution and results")
+        self.assertEqual(
+            i18n.trf("自动: {model} @ {host}:{port} (可展开修改)",
+                     model="ds", host="192.168.1.30", port="8000"),
+            "Automatic: ds @ 192.168.1.30:8000 (expand to modify)")
 
     def test_test_state_labels_are_english(self):
         from docker_manager import describe_test_state
@@ -277,7 +286,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                         "Clean up the remote environment before exiting?", args[2])
                     self.assertIn("Test task state: Not marked", args[2])
                     self.assertIn(
-                        "start over from step 2 (Docker deployment)", args[2])
+                        "create the task again (redeploy the container)", args[2])
                     self.assertIn(
                         "exiting directly will terminate it abnormally", args[2])
                 finally:
@@ -307,7 +316,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                         "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
                         message)
                     self.assertIn(
-                        "start over from step 2 (Docker deployment)", message)
+                        "create the task again (redeploy the container)", message)
                     self.assertIn(
                         "the container will be removed after cleanup", message)
                 finally:
@@ -336,7 +345,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                                   message)
                     self.assertIn(
                         "To run test cases again after cleanup, "
-                        "start over from step 2 (Docker deployment).",
+                        "create the task again (redeploy the container).",
                         message)
                 finally:
                     app.root.destroy()
@@ -496,7 +505,7 @@ class LanguageSwitchPreservesStateTests(unittest.TestCase):
             with mock.patch("settings_manager.settings_path", return_value=settings_file):
                 app = main.WizardApp()
                 try:
-                    app.current_step = 4
+                    app.current_step = 1
                     app.deployed = True
                     app.local_output_var.set("D:/results/run1")
                     app.results_tree.insert("", tk.END, values=(
@@ -505,14 +514,12 @@ class LanguageSwitchPreservesStateTests(unittest.TestCase):
                         "85.2", "12.3"))
                     app.results_info_lbl.config(
                         text="1 records  |  CSV: r.csv  |  Log: logs")
-                    app.config_status_lbl.config(
-                        text="✓ Config saved and verified", fg="#16a34a")
                     app.deploy_btn.config(text="Redeploy")
 
                     app.language_var.set("English")
                     app._on_language_change()
 
-                    self.assertEqual(app.current_step, 4)
+                    self.assertEqual(app.current_step, 1)
                     self.assertEqual(app.local_output_var.get(), "D:/results/run1")
                     first = app.results_tree.get_children()[0]
                     self.assertEqual(
@@ -520,9 +527,6 @@ class LanguageSwitchPreservesStateTests(unittest.TestCase):
                     self.assertEqual(
                         app.results_info_lbl.cget("text"),
                         "1 records  |  CSV: r.csv  |  Log: logs")
-                    self.assertEqual(
-                        app.config_status_lbl.cget("text"),
-                        "✓ Config saved and verified")
                     self.assertEqual(app.deploy_btn.cget("text"), "Redeploy")
                     self.assertTrue(app.deployed)
                 finally:

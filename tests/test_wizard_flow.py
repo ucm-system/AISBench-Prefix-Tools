@@ -28,10 +28,10 @@ class LanguageResetMixin:
 
 
 class WizardFlowTests(unittest.TestCase):
-    def test_docker_and_file_steps_are_merged(self):
+    def test_deploy_config_cases_execute_steps_are_merged_into_create_task(self):
         self.assertEqual(
             main.WizardApp.STEP_TITLES,
-            ["SSH连接", "Docker部署", "配置文件", "测试用例", "执行测试"],
+            ["SSH连接", "创建任务"],
         )
 
     def test_residual_container_cleanup_is_supported(self):
@@ -45,6 +45,239 @@ class WizardFlowTests(unittest.TestCase):
         self.assertNotIn("code_host_path", signature.parameters)
         self.assertIn("org.aisbench-prefix-tools.managed=true",
                       main.DockerManager.MANAGED_LABEL)
+
+
+class CreateTaskFlowTests(LanguageResetMixin, unittest.TestCase):
+    """步骤2-5合并为"创建任务": 服务参数自动生成, config自动写入, 一键执行"""
+
+    def _app(self):
+        with self._settings_patcher():
+            app = main.WizardApp()
+        self.addCleanup(app.root.destroy)
+        return app
+
+    def test_primary_buttons_exist(self):
+        app = self._app()
+        self.assertEqual(app.create_task_btn.cget("text"), "🚀 创建任务")
+        self.assertEqual(app.deploy_btn.cget("text"), "仅部署容器")
+
+    def test_service_fields_are_hidden_by_default_and_expandable(self):
+        app = self._app()
+        app._show_step(1)
+        app.root.update()
+
+        self.assertFalse(app.service_advanced_var.get())
+        self.assertFalse(app.service_advanced_frame.winfo_ismapped())
+
+        app._toggle_service_advanced()
+        app.root.update()
+        self.assertTrue(app.service_advanced_var.get())
+        self.assertTrue(app.service_advanced_frame.winfo_ismapped())
+        self.assertEqual(app.service_toggle_btn.cget("text"), "收起 ▴")
+
+        app._toggle_service_advanced()
+        app.root.update()
+        self.assertFalse(app.service_advanced_var.get())
+        self.assertFalse(app.service_advanced_frame.winfo_ismapped())
+
+    def test_build_config_dict_uses_automatic_service_defaults(self):
+        app = self._app()
+        app.conn_vars["host"].set("192.168.5.10")
+        app.model_path_var.set("/mnt/models/ds")
+
+        config = app._build_config_dict()
+
+        self.assertEqual(config["model_name"], "ds")
+        self.assertEqual(config["host_ip"], "192.168.5.10")
+        self.assertEqual(config["host_port"], "8000")
+        self.assertEqual(config["model_path"], "/mnt/models/ds")
+        self.assertEqual(config["work_path"], "/benchmark")
+        self.assertEqual(config["pod_info"], "")
+
+        # 高级设置可覆盖默认值
+        app.model_name_var.set("qwen")
+        app.host_port_var.set("9000")
+        config = app._build_config_dict()
+        self.assertEqual(config["model_name"], "qwen")
+        self.assertEqual(config["host_port"], "9000")
+
+    def test_write_config_automatically_writes_and_verifies(self):
+        from config_manager import ConfigManager
+
+        app = self._app()
+        app.conn_vars["host"].set("192.168.5.10")
+        app.model_path_var.set("/mnt/models/ds")
+        docker = mock.Mock()
+        docker.code_mount_path = (
+            "/benchmark/ais_bench/aisbench_auto_tools_prefix-main")
+        app.docker = docker
+
+        config_mgr = mock.Mock(wraps=ConfigManager(docker))
+        content = config_mgr.generate_config_content(app._build_config_dict())
+        config_mgr.read_config_from_container.return_value = content
+        app.config_mgr = config_mgr
+
+        self.assertTrue(app._write_config_automatically())
+        config_mgr.write_config_to_container.assert_called_once()
+        written = config_mgr.write_config_to_container.call_args.args[0]
+        self.assertEqual(written["model_name"], "ds")
+        self.assertEqual(written["host_ip"], "192.168.5.10")
+
+        # 回读不一致时中止执行
+        config_mgr.read_config_from_container.return_value = (
+            content.replace('MODEL_PATH = "/mnt/models/ds"',
+                            'MODEL_PATH = "/wrong/path"'))
+        self.assertFalse(app._write_config_automatically())
+
+    def test_prepare_and_run_tests_writes_config_first(self):
+        app = self._app()
+
+        with mock.patch.object(app, "_write_config_automatically",
+                               return_value=False) as write_config:
+            with mock.patch.object(app, "_run_test_sequence") as run:
+                app._prepare_and_run_tests("D:/results")
+
+        write_config.assert_called_once()
+        run.assert_not_called()
+
+    def test_create_task_warns_when_no_test_cases(self):
+        app = self._app()
+        app.ssh = mock.Mock()
+        app.ssh.connected = True
+        app.ssh.execute.return_value = (0, "", "")
+        app.image_source_var.set("existing")
+        app.remote_image_var.set("aisbench:v3.1")
+        app.model_path_var.set("/mnt/models/ds")
+        app.work_dir_var.set("/tmp/aisbench_deploy")
+        app.local_output_var.set("D:/results")
+
+        with mock.patch("main.showwarning") as warn:
+            app._create_task()
+
+        warn.assert_called_once()
+        self.assertIn("请先生成测试用例", warn.call_args.args[1])
+
+    def test_container_reusable_requires_running_and_same_model(self):
+        app = self._app()
+        docker = mock.Mock()
+        docker.container_name = "aisbench-test-0101"
+        docker.container_is_running.return_value = True
+        app.docker = docker
+        app.deployed = True
+        app.deployed_model_path = "/mnt/models/ds"
+        app.deployed_image = "aisbench:v3.1"
+        app.remote_image_var.set("aisbench:v3.1")
+
+        self.assertTrue(app._container_reusable("/mnt/models/ds"))
+
+        # 模型路径变化后不能复用(挂载在创建容器时固定)
+        self.assertFalse(app._container_reusable("/mnt/models/other"))
+        # 容器停止后不能复用
+        docker.container_is_running.return_value = False
+        self.assertFalse(app._container_reusable("/mnt/models/ds"))
+
+    def test_task_sequence_reuses_container_without_redeploy(self):
+        app = self._app()
+        docker = mock.Mock()
+        docker.container_name = "aisbench-test-0101"
+        app.docker = docker
+        inputs = {
+            "image_mode": "existing",
+            "selected_image": "aisbench:v3.1",
+            "tar": "",
+            "model": "/mnt/models/ds",
+            "work_dir": "/tmp/aisbench_deploy",
+        }
+
+        with mock.patch.object(app, "_write_config_automatically",
+                               return_value=True) as write_config:
+            with mock.patch.object(app, "_run_test_sequence") as run:
+                app._task_sequence(inputs, "D:/results", reuse=True)
+
+        write_config.assert_called_once()
+        run.assert_called_once_with("D:/results")
+        docker.stop_and_remove.assert_not_called()
+
+    def test_task_sequence_deploys_when_not_reusable(self):
+        app = self._app()
+        app.docker = mock.Mock()
+        app.docker.container_name = None
+        inputs = {
+            "image_mode": "existing",
+            "selected_image": "aisbench:v3.1",
+            "tar": "",
+            "model": "/mnt/models/ds",
+            "work_dir": "/tmp/aisbench_deploy",
+        }
+
+        with mock.patch.object(app, "_deploy_sequence", return_value=True) as deploy:
+            with mock.patch.object(app, "_write_config_automatically",
+                                   return_value=True) as write_config:
+                with mock.patch.object(app, "_run_test_sequence") as run:
+                    app._task_sequence(inputs, "D:/results", reuse=False)
+
+        deploy.assert_called_once_with("/mnt/models/ds", "", "aisbench:v3.1")
+        write_config.assert_called_once()
+        run.assert_called_once_with("D:/results")
+
+    def test_task_sequence_stops_when_deploy_fails(self):
+        app = self._app()
+        app.docker = mock.Mock()
+        app.docker.container_name = None
+        inputs = {
+            "image_mode": "existing",
+            "selected_image": "aisbench:v3.1",
+            "tar": "",
+            "model": "/mnt/models/ds",
+            "work_dir": "/tmp/aisbench_deploy",
+        }
+
+        with mock.patch.object(app, "_deploy_sequence", return_value=False):
+            with mock.patch.object(app, "_write_config_automatically") as write_config:
+                with mock.patch.object(app, "_run_test_sequence") as run:
+                    app._task_sequence(inputs, "D:/results", reuse=False)
+
+        write_config.assert_not_called()
+        run.assert_not_called()
+
+    def test_collect_task_inputs_keeps_existing_docker_reference(self):
+        app = self._app()
+        app.ssh = mock.Mock()
+        app.ssh.connected = True
+        app.ssh.execute.return_value = (0, "", "")
+        docker = mock.Mock()
+        docker.container_name = "aisbench-test-0101"
+        app.docker = docker
+        app.image_source_var.set("existing")
+        app.remote_image_var.set("aisbench:v3.1")
+        app.model_path_var.set("/mnt/models/ds")
+        app.work_dir_var.set("/tmp/aisbench_deploy")
+
+        inputs = app._collect_task_inputs()
+
+        self.assertIsNotNone(inputs)
+        self.assertIs(app.docker, docker)
+        self.assertEqual(app.docker.container_name, "aisbench-test-0101")
+
+    def test_language_switch_preserves_code_source_and_case_lengths(self):
+        app = self._app()
+        app._show_step(1)
+        app.code_source_var.set("zip")
+        app.zip_path.set("D:/code/test.zip")
+        app.input_length_vars[8192].set(True)
+        app.input_length_vars[32768].set(True)
+        app.input_length_vars[16384].set(False)
+        app.output_length_vars[512].set(False)
+
+        app.language_var.set("English")
+        app._on_language_change()
+
+        self.assertEqual(app.code_source_var.get(), "zip")
+        self.assertEqual(app.zip_path.get(), "D:/code/test.zip")
+        self.assertTrue(app.input_length_vars[8192].get())
+        self.assertFalse(app.input_length_vars[16384].get())
+        self.assertTrue(app.input_length_vars[32768].get())
+        self.assertFalse(app.output_length_vars[512].get())
 
 
 class FakeDeploySSH:
@@ -121,11 +354,15 @@ class DeploySequenceTests(unittest.TestCase):
             app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
 
             with mock.patch("main.showinfo"):
-                app._deploy_sequence(
+                deploy_ok = app._deploy_sequence(
                     "/mnt/models/ds", "", "aisbench:v3.1"
                 )
                 app._docker_log_handler.finalize()
                 app.root.update()
+
+            self.assertTrue(deploy_ok)
+            self.assertEqual(app.deployed_model_path, "/mnt/models/ds")
+            self.assertEqual(app.deployed_image, "aisbench:v3.1")
 
             run_cmd = next(
                 c for c in ssh.commands if c.startswith("docker run"))

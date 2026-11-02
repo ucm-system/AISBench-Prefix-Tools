@@ -200,10 +200,7 @@ class WizardApp:
 
     STEP_TITLES = [
         "SSH连接",
-        "Docker部署",
-        "配置文件",
-        "测试用例",
-        "执行测试",
+        "创建任务",
     ]
 
     # 测试用例表格可双击编辑的字段 (列号 -> TestCase属性)
@@ -256,6 +253,11 @@ class WizardApp:
         self.deployed = False
         self.image_source_var = tk.StringVar(value="existing")
         self.remote_image_var = tk.StringVar()
+        # vLLM服务连接参数默认自动生成, 高级场景可展开修改
+        self.service_advanced_var = tk.BooleanVar(value=False)
+        # 记录当前容器部署时使用的资源, 用于判断能否复用容器直接执行测试
+        self.deployed_model_path = ""
+        self.deployed_image = ""
 
         # 日志处理器 + 取消标志（解决后台线程阻塞UI）
         self._cancel_flag = threading.Event()
@@ -440,14 +442,18 @@ class WizardApp:
                 for k, lbl in self.docker_info_labels.items()}
         if hasattr(self, "deploy_btn"):
             snapshot["deploy_text"] = self.deploy_btn.cget("text")
-        if hasattr(self, "config_entry_vars"):
-            snapshot["config_values"] = {
-                k: v.get() for k, v in self.config_entry_vars.items()}
-        if hasattr(self, "config_status_lbl"):
-            snapshot["config_status"] = (
-                self.config_status_lbl.cget("text"), self.config_status_lbl.cget("fg"))
-        if hasattr(self, "config_preview"):
-            snapshot["config_preview"] = self.config_preview.get("1.0", "end-1c")
+        if hasattr(self, "create_task_btn"):
+            snapshot["create_task_text"] = self.create_task_btn.cget("text")
+        if hasattr(self, "code_source_var"):
+            snapshot["code_source"] = self.code_source_var.get()
+        if self.input_length_vars:
+            snapshot["input_lengths"] = {
+                length: var.get()
+                for length, var in self.input_length_vars.items()}
+        if self.output_length_vars:
+            snapshot["output_lengths"] = {
+                length: var.get()
+                for length, var in self.output_length_vars.items()}
         if hasattr(self, "residual_status_lbl"):
             snapshot["residual_status"] = (
                 self.residual_status_lbl.cget("text"),
@@ -507,7 +513,7 @@ class WizardApp:
             text, color = snapshot["conn_status"]
             self.conn_status_lbl.config(text=text, fg=color)
 
-        # ---- 恢复步骤2: 镜像/代码/模型/部署状态 ----
+        # ---- 恢复任务页: 镜像/代码/模型/部署状态 ----
         if snapshot.get("remote_images"):
             self.remote_images = snapshot["remote_images"]
             if "remote_image_filter" in snapshot:
@@ -515,6 +521,8 @@ class WizardApp:
                     snapshot["remote_image_filter"])
             else:
                 self._apply_remote_image_filter(update_selection=False)
+        if "code_source" in snapshot and hasattr(self, "code_source_var"):
+            self.code_source_var.set(snapshot["code_source"])
         self._on_image_source_change()
         self._on_code_source_change()
         if "tar_path" in snapshot:
@@ -535,32 +543,28 @@ class WizardApp:
             self.image_list_status.config(text=text, fg=color)
         if snapshot.get("deploy_text"):
             self.deploy_btn.config(text=snapshot["deploy_text"])
+        if snapshot.get("create_task_text"):
+            self.create_task_btn.config(text=snapshot["create_task_text"])
 
-        # ---- 恢复步骤3: 配置状态与预览 ----
-        if snapshot.get("config_values"):
-            for key, value in snapshot["config_values"].items():
-                if key in self.config_entry_vars:
-                    self.config_entry_vars[key].set(value)
-        self._update_config_path_label()
-        self._update_config_preview()
-        if "config_preview" in snapshot and snapshot["config_preview"]:
-            self.config_preview.delete(1.0, tk.END)
-            self.config_preview.insert("1.0", snapshot["config_preview"])
-        if snapshot.get("config_status"):
-            text, color = snapshot["config_status"]
-            self.config_status_lbl.config(text=text, fg=color)
-
-        # ---- 恢复步骤4: 测试用例与计算明细 ----
+        # ---- 恢复测试用例与计算明细 ----
         if snapshot.get("test_rows"):
             for values in snapshot["test_rows"]:
                 self.test_tree.insert("", tk.END, values=values)
+        if "input_lengths" in snapshot:
+            for length, value in snapshot["input_lengths"].items():
+                if length in self.input_length_vars:
+                    self.input_length_vars[length].set(value)
+        if "output_lengths" in snapshot:
+            for length, value in snapshot["output_lengths"].items():
+                if length in self.output_length_vars:
+                    self.output_length_vars[length].set(value)
         # 计算明细按当前语言重新渲染, 避免语言切换后保留旧语言文本
         if self.designer.test_cases:
             self._show_calc_details()
         elif "calc_detail" in snapshot and snapshot["calc_detail"]:
             self.calc_detail_text.insert("1.0", snapshot["calc_detail"])
 
-        # ---- 恢复步骤5: 命令/结果 ----
+        # ---- 恢复命令/结果 ----
         if "commands" in snapshot and snapshot["commands"]:
             self.commands_text.insert("1.0", snapshot["commands"])
         if snapshot.get("summary"):
@@ -656,11 +660,11 @@ class WizardApp:
 
         # 构建各步骤内容
         self._build_step0_connection()
-        self._build_step1_files()
-        self._build_step1_docker_section()
-        self._build_step3_config()
-        self._build_step4_testcases()
-        self._build_step5_execute()
+        # 步骤2"创建任务": 原 部署/配置/用例/执行 四个步骤合并为一页
+        self._build_task_resources_section()
+        self._build_task_testcases_section()
+        self._build_task_run_section()
+        self._build_task_execute_section()
 
         # 首次构建显示第1步; 语言切换重建时保持当前步骤(由调用方恢复)
         if not hasattr(self, "current_step"):
@@ -698,6 +702,24 @@ class WizardApp:
         if desc:
             LocalizedLabel(header, text=desc, bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                    font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(2, 0))
+
+    def _build_section_header(self, parent, number, title, desc=""):
+        """构建"创建任务"页内的分区标题(带编号徽标, 让合并后的单页结构清晰)"""
+        header = tk.Frame(parent, bg=COLOR_BG)
+        header.pack(fill=tk.X, pady=(14, 4))
+
+        badge = tk.Label(header, text=str(number), bg=COLOR_PRIMARY, fg="white",
+                         font=("Segoe UI", 10, "bold"), width=2, relief=tk.FLAT)
+        badge.pack(side=tk.LEFT, padx=(0, 8), ipady=2)
+
+        title_box = tk.Frame(header, bg=COLOR_BG)
+        title_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        LocalizedLabel(title_box, text=title, bg=COLOR_BG, fg=COLOR_TEXT,
+                       font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
+        if desc:
+            LocalizedLabel(title_box, text=desc, bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
+                           font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(2, 0))
+        return header
 
     # ============================================================
     #  Step 0: SSH连接
@@ -818,14 +840,18 @@ class WizardApp:
             showerror("连接失败", msg)
 
     # ============================================================
-    #  Step 1: Docker部署与模型配置
+    #  创建任务 - 分区1: 任务资源(镜像/代码/模型)
     # ============================================================
 
-    def _build_step1_files(self):
+    def _build_task_resources_section(self):
         frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 2: Docker部署与模型配置",
-                                "选择执行机已有AISBench镜像或上传tar包, 配置模型/vLLM服务后一键部署容器")
+        self._build_step_header(
+            frame, "步骤 2: 创建任务",
+            "配置测试资源与测试用例后, 一键完成容器部署、配置写入与测试执行")
+        self.resources_section_header = self._build_section_header(
+            frame, 1, "任务资源（镜像 · 代码 · 模型）",
+            "选择AISBench镜像与测试代码来源, 并指定模型权重路径; vLLM服务参数默认自动生成, 可展开高级设置修改")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         form.pack(fill=tk.X, pady=8)
@@ -959,35 +985,85 @@ class WizardApp:
 
         row += 1
 
-        # 模型名称
-        LocalizedLabel(form, text="模型名称 (--served-model-name):", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.model_name_var, width=30,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
+        # vLLM服务连接: 默认自动生成(模型名ds/执行机IP/端口8000), 高级场景可展开修改
+        service_row = tk.Frame(form, bg=COLOR_CARD)
+        service_row.grid(row=row, column=0, columnspan=3, sticky=tk.EW,
+                         padx=16, pady=(0, 2))
+        LocalizedLabel(service_row, text="vLLM服务连接:", bg=COLOR_CARD,
+                       fg=COLOR_TEXT, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.service_summary_lbl = LocalizedLabel(
+            service_row, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            font=("Segoe UI", 8))
+        self.service_summary_lbl.pack(side=tk.LEFT, padx=(8, 4))
+        self.service_toggle_btn = LocalizedButton(
+            service_row, text="高级设置 ▾", font=("Segoe UI", 8),
+            relief=tk.FLAT, bg="#f0f5ff", fg=COLOR_PRIMARY, padx=8,
+            command=self._toggle_service_advanced)
+        self.service_toggle_btn.pack(side=tk.LEFT)
 
         row += 1
+        # 高级服务配置(默认折叠): 模型名称/服务IP/端口/API Key/POD_INFO
+        self.service_advanced_frame = tk.Frame(form, bg="#f8fafc",
+                                                relief=tk.SOLID, bd=1)
+        self.service_advanced_frame.grid(row=row, column=0, columnspan=3,
+                                         sticky=tk.EW, padx=16, pady=(0, 8))
+        service_fields = [
+            ("模型名称 (--served-model-name):", "model_name_var"),
+            ("vLLM服务 IP:", "host_ip_var"),
+            ("vLLM服务端口:", "host_port_var"),
+            ("API Key (鉴权, 可选):", "api_key_var"),
+            ("POD_INFO (多DP必填, 格式: ip:port,ip:port):", "pod_info_var"),
+        ]
+        for i, (label, var_name) in enumerate(service_fields):
+            LocalizedLabel(self.service_advanced_frame, text=label, bg="#f8fafc",
+                           fg=COLOR_TEXT, font=("Segoe UI", 8)
+                           ).grid(row=i, column=0, sticky=tk.W, padx=12, pady=3)
+            tk.Entry(self.service_advanced_frame,
+                     textvariable=getattr(self, var_name), width=32,
+                     font=("Segoe UI", 8)
+                     ).grid(row=i, column=1, padx=12, pady=3, sticky=tk.EW)
+        self.service_advanced_frame.columnconfigure(1, weight=1)
+        LocalizedLabel(
+            self.service_advanced_frame,
+            text="留空时自动使用: 模型名称ds · IP=执行机IP · 端口8000",
+            bg="#f8fafc", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7)
+        ).grid(row=len(service_fields), column=0, columnspan=2,
+               sticky=tk.W, padx=12, pady=(2, 6))
+        if self.service_advanced_var.get():
+            self.service_advanced_frame.grid()
+        else:
+            self.service_advanced_frame.grid_remove()
 
-        # 服务IP和端口
-        LocalizedLabel(form, text="vLLM服务 IP:", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.host_ip_var, width=20,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
-
-        row += 1
-
-        LocalizedLabel(form, text="vLLM服务端口:", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.host_port_var, width=20,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
-
-        row += 1
-
-        LocalizedLabel(form, text="API Key (鉴权, 可选):", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.api_key_var, width=30,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
+        # 服务参数摘要与高级区可见性随语言重建恢复
+        self._update_service_summary()
+        for var in (self.model_name_var, self.host_ip_var, self.host_port_var):
+            var.trace_add("write", lambda *_args: self._update_service_summary())
 
         form.columnconfigure(1, weight=1)
+
+    def _toggle_service_advanced(self):
+        """展开/折叠vLLM服务连接高级设置"""
+        visible = not self.service_advanced_var.get()
+        self.service_advanced_var.set(visible)
+        if visible:
+            self.service_advanced_frame.grid()
+            self.service_toggle_btn.config(text="收起 ▴")
+        else:
+            self.service_advanced_frame.grid_remove()
+            self.service_toggle_btn.config(text="高级设置 ▾")
+
+    def _update_service_summary(self):
+        """显示自动生成的vLLM服务连接摘要"""
+        if not hasattr(self, "service_summary_lbl"):
+            return
+        host = self.host_ip_var.get().strip()
+        if not host and hasattr(self, "conn_vars"):
+            host = self.conn_vars["host"].get().strip()
+        model = self.model_name_var.get().strip() or "ds"
+        port = self.host_port_var.get().strip() or "8000"
+        summary = trf("自动: {model} @ {host}:{port} (可展开修改)",
+                      model=model, host=host or "-", port=port)
+        self.service_summary_lbl.config(text=summary)
 
     def _on_image_source_change(self):
         """切换镜像来源: 执行机已有镜像 / 本地tar包"""
@@ -1224,19 +1300,16 @@ class WizardApp:
         dialog.destroy()
 
     # ============================================================
-    #  Step 1: Docker部署区 (与文件/模型配置合并展示)
+    #  创建任务 - 分区3: 创建并执行任务(部署 → 配置 → 测试)
     # ============================================================
 
-    def _build_step1_docker_section(self):
+    def _build_task_run_section(self):
         frame = self.step_frames[1]
 
-        deploy_header = tk.Frame(frame, bg=COLOR_BG)
-        deploy_header.pack(fill=tk.X, pady=(12, 8))
-        LocalizedLabel(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
-                 font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
-        LocalizedLabel(deploy_header,
-                 text="已有镜像直接复用；代码先暂存宿主机，容器创建后导入容器并自动删除暂存目录",
-                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9)).pack(anchor=tk.W)
+        self.run_section_header = self._build_section_header(
+            frame, 3, "创建并执行任务",
+            "一键完成: 部署容器 → 写入config.py → 执行测试 → 下载并解析结果; "
+            "已有镜像直接复用, 代码导入容器后自动清理宿主机暂存目录")
 
         # 临时部署目录(仅部署过程暂存镜像tar/代码, 容器创建后自动删除)
         workdir_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -1304,15 +1377,22 @@ class WizardApp:
 
         info_frame.columnconfigure(1, weight=1)
 
-        # 部署按钮
+        # 任务执行按钮: 主按钮一键完成 部署→配置→执行; 辅助按钮支持仅部署
         btn_frame = tk.Frame(frame, bg=COLOR_BG)
         btn_frame.pack(fill=tk.X, pady=8)
 
-        self.deploy_btn = LocalizedButton(btn_frame, text="开始部署", bg=COLOR_PRIMARY,
-                                    fg="white", font=("Segoe UI", 10, "bold"),
+        self.create_task_btn = LocalizedButton(
+            btn_frame, text="🚀 创建任务", bg=COLOR_PRIMARY,
+            fg="white", font=("Segoe UI", 10, "bold"),
+            relief=tk.FLAT, padx=20, pady=6,
+            command=self._create_task)
+        self.create_task_btn.pack(side=tk.LEFT)
+
+        self.deploy_btn = LocalizedButton(btn_frame, text="仅部署容器", bg=COLOR_BORDER,
+                                    fg=COLOR_TEXT, font=("Segoe UI", 9),
                                     relief=tk.FLAT, padx=20, pady=6,
                                     command=self._start_deploy)
-        self.deploy_btn.pack(side=tk.LEFT)
+        self.deploy_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         self.cancel_deploy_btn = LocalizedButton(btn_frame, text="取消", bg=COLOR_ERROR,
                                            fg="white", font=("Segoe UI", 9),
@@ -1473,7 +1553,7 @@ class WizardApp:
                         "{listing}\n\n"
                         "这些容器可能是上次退出时未清理的。\n"
                         "是否打开清理窗口进行选择清理?\n"
-                        "(清理后如需再次执行测试, 需从步骤2 Docker部署重新开始)",
+                        "(清理后如需再次执行测试, 需在\"创建任务\"中重新部署容器)",
                         count=len(residuals), listing=listing),
                     icon=messagebox.WARNING):
                 self._open_residual_container_dialog()
@@ -1615,7 +1695,7 @@ class WizardApp:
                                trf("  {name}  [{state}]", name=n,
                                    state=state_by_name.get(n, tr("未标记")))
                                for n in names)
-                           + tr("\n\n清理后如需再次执行测试, 需从步骤2 Docker部署重新开始。"))
+                           + tr("\n\n清理后如需再次执行测试, 需在\"创建任务\"中重新部署容器。"))
             if clean_temp_var.get():
                 confirm_msg += trf("\n\n同时删除临时部署目录:\n  {work_dir}",
                                    work_dir=self.work_dir_var.get().strip())
@@ -1641,7 +1721,7 @@ class WizardApp:
                         self.docker.remote_work_base = work_dir
                     self.docker.remove_work_dir(callback=_log_async)
                 _log("✓ 清理完成\n")
-                _log(tr("如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
+                _log(tr("如需再次执行测试用例, 请重新创建任务（重新部署容器）。\n"))
 
                 def _done():
                     clean_btn.config(state=tk.NORMAL, text="清理选中")
@@ -1687,11 +1767,15 @@ class WizardApp:
         self._cancel_flag.set()
         self._log_docker(tr("\n⚠ 正在取消部署...\n"))
 
-    def _start_deploy(self):
-        """开始部署流程"""
+    def _collect_task_inputs(self) -> Optional[dict]:
+        """校验并收集创建任务所需的资源输入(镜像/代码/模型/临时目录)
+
+        返回None表示校验未通过; 通过则返回任务输入字典。
+        供"仅部署容器"与"创建任务"共用。
+        """
         if not self.ssh.connected:
             showwarning("提示", "请先连接到远程主机")
-            return
+            return None
 
         image_mode = self.image_source_var.get()
         selected_image = self.remote_image_var.get().strip()
@@ -1705,37 +1789,39 @@ class WizardApp:
                 showerror("错误", trf(
                     "未找到内置测试代码目录:\n{code_dir}\n\n请改用本地zip包模式",
                     code_dir=code_dir))
-                return
+                return None
         else:
             zipf = self.zip_path.get().strip()
             if not zipf:
                 showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
-                return
+                return None
             if not os.path.isfile(zipf):
                 showwarning("提示", trf("zip包不存在: {path}", path=zipf))
-                return
+                return None
 
         if image_mode == "existing":
             if not selected_image:
                 showwarning("提示", "请先查看并选择执行机上的镜像")
-                return
+                return None
         else:
             if not tar:
                 showwarning("提示", "请选择要上传的AISBench镜像tar包")
-                return
+                return None
             if not os.path.isfile(tar):
                 showwarning("提示", trf("镜像tar包不存在: {path}", path=tar))
-                return
+                return None
 
         if not model:
             showwarning("提示", "请先完成模型路径选择")
-            return
+            return None
         if not work_dir:
             showwarning("提示", "请输入临时部署目录路径")
-            return
+            return None
 
         # 部署前检查临时目录(仅用于暂存镜像tar/代码)
-        self.docker = DockerManager(self.ssh)
+        # 复用已有DockerManager, 避免丢失当前会话容器引用(无法复用/清理)
+        if not self.docker:
+            self.docker = DockerManager(self.ssh)
         self.docker.remote_work_base = work_dir
         if self.docker.work_dir_exists():
             code, out, _ = self.ssh.execute(f"ls -A {work_dir} 2>/dev/null")
@@ -1751,12 +1837,27 @@ class WizardApp:
                 if choice is True:
                     self.docker.remove_work_dir()
                 elif choice is None:
-                    return
+                    return None
                 # choice is False: 直接部署
+
+        return {
+            "image_mode": image_mode,
+            "selected_image": selected_image,
+            "tar": tar,
+            "model": model,
+            "work_dir": work_dir,
+        }
+
+    def _start_deploy(self):
+        """仅部署容器(不执行测试); 完整任务请使用"创建任务"按钮"""
+        inputs = self._collect_task_inputs()
+        if inputs is None:
+            return
 
         self._cancel_flag.clear()
         self._docker_log_handler.reset()
         self.docker_log.delete(1.0, tk.END)
+        self.create_task_btn.config(state=tk.DISABLED)
         self.deploy_btn.config(state=tk.DISABLED, text="部署中...")
         self.cancel_deploy_btn.config(state=tk.NORMAL)
         self.clean_work_dir_btn.config(state=tk.DISABLED)
@@ -1768,12 +1869,13 @@ class WizardApp:
 
         def _do_deploy():
             self._deploy_sequence(
-                model,
-                tar if image_mode == "upload" else "",
-                selected_image if image_mode == "existing" else "",
+                inputs["model"],
+                inputs["tar"] if inputs["image_mode"] == "upload" else "",
+                inputs["selected_image"] if inputs["image_mode"] == "existing" else "",
             )
             # 结束后恢复UI
             def _restore():
+                self.create_task_btn.config(state=tk.NORMAL)
                 self.deploy_btn.config(state=tk.NORMAL, text="重新部署")
                 self.cancel_deploy_btn.config(state=tk.DISABLED)
                 self.clean_work_dir_btn.config(state=tk.NORMAL)
@@ -1787,8 +1889,124 @@ class WizardApp:
 
         threading.Thread(target=_do_deploy, daemon=True).start()
 
-    def _deploy_sequence(self, model_path, tar_path, selected_image):
-        """部署序列"""
+    def _container_reusable(self, model_path: str) -> bool:
+        """判断当前会话容器能否复用(跳过部署直接执行测试)"""
+        if not (self.deployed and self.docker and self.docker.container_name):
+            return False
+        if not self.docker.container_is_running():
+            return False
+        if self.deployed_model_path and self.deployed_model_path != model_path:
+            return False
+        selected = self.remote_image_var.get().strip()
+        if (selected and self.deployed_image
+                and selected != self.deployed_image):
+            return False
+        return True
+
+    def _create_task(self):
+        """一键创建任务: 部署容器 → 自动写入config.py → 执行测试 → 下载并解析结果"""
+        inputs = self._collect_task_inputs()
+        if inputs is None:
+            return
+
+        if not self.designer.test_cases:
+            showwarning("提示", tr("请先生成测试用例"))
+            return
+
+        local_dir = self.local_output_var.get().strip()
+        if not local_dir:
+            showwarning("提示", tr("请选择本地结果保存目录"))
+            return
+
+        # 执行前同步最新速率, 避免生成用例后又修改速率导致命令/脚本不一致
+        if not self._sync_request_rate():
+            showwarning(
+                "提示",
+                "请求发送速率输入无效, 请输入数字\n"
+                "(支持小数如 0.3; 0 表示Burst模式)")
+            return
+
+        reuse = self._container_reusable(inputs["model"])
+
+        self._cancel_flag.clear()
+        self._docker_log_handler.reset()
+        self._exec_log_handler.reset()
+        if not reuse:
+            self.docker_log.delete(1.0, tk.END)
+        self.exec_log.delete(1.0, tk.END)
+        self._clear_results_table()
+        self.create_task_btn.config(state=tk.DISABLED, text="任务执行中...")
+        self.deploy_btn.config(state=tk.DISABLED)
+        self.exec_test_btn.config(state=tk.DISABLED)
+        self.cancel_deploy_btn.config(state=tk.NORMAL)
+        self.clean_work_dir_btn.config(state=tk.DISABLED)
+
+        # 部署日志与执行日志同时刷新
+        if self._flush_timer_id:
+            self.root.after_cancel(self._flush_timer_id)
+        self._flush_timer_id = self.root.after(200, self._flush_log_buffer)
+        if self._exec_flush_timer_id:
+            self.root.after_cancel(self._exec_flush_timer_id)
+        self._exec_flush_timer_id = self.root.after(200, self._flush_exec_log_buffer)
+
+        def _do_task():
+            self._task_sequence(inputs, local_dir, reuse)
+
+            def _restore():
+                self.create_task_btn.config(state=tk.NORMAL, text="🚀 创建任务")
+                self.deploy_btn.config(state=tk.NORMAL, text="重新部署")
+                self.exec_test_btn.config(state=tk.NORMAL, text="执行测试 → 生成CSV")
+                self.cancel_deploy_btn.config(state=tk.DISABLED)
+                self.clean_work_dir_btn.config(state=tk.NORMAL)
+                if self.docker and self.docker.container_name:
+                    self.cleanup_btn.config(state=tk.NORMAL)
+                self._docker_log_handler.finalize()
+                self._exec_log_handler.finalize()
+                if self._flush_timer_id:
+                    self.root.after_cancel(self._flush_timer_id)
+                    self._flush_timer_id = None
+                if self._exec_flush_timer_id:
+                    self.root.after_cancel(self._exec_flush_timer_id)
+                    self._exec_flush_timer_id = None
+                # 测试完成后提醒清理
+                self.root.after(200, self._show_cleanup_reminder)
+            self.root.after(0, _restore)
+
+        threading.Thread(target=_do_task, daemon=True).start()
+
+    def _task_sequence(self, inputs: dict, local_dir: str, reuse: bool):
+        """创建任务的后台执行序列(部署 → 配置 → 测试)"""
+        if reuse:
+            self._log_exec(trf(
+                "[任务] 复用已部署容器 {container}, 跳过部署直接执行测试\n",
+                container=self.docker.container_name))
+        else:
+            ok = self._deploy_sequence(
+                inputs["model"],
+                inputs["tar"] if inputs["image_mode"] == "upload" else "",
+                inputs["selected_image"] if inputs["image_mode"] == "existing" else "",
+            )
+            if not ok:
+                return
+
+        self._prepare_and_run_tests(local_dir)
+
+    def _prepare_and_run_tests(self, local_dir: str):
+        """执行测试前的自动配置写入 + 测试流水线(后台线程调用)"""
+        if not self._write_config_automatically():
+            return
+        self._run_test_sequence(local_dir)
+
+    def _deploy_sequence(self, model_path, tar_path, selected_image) -> bool:
+        """部署序列(返回是否成功; 由仅部署/创建任务两种入口共用)"""
+        # 重新部署时先清理本次会话创建的旧容器, 避免容器堆积
+        if self.docker.container_name:
+            self._log_docker(tr("[任务] 停止并删除本次会话的旧容器...\n"))
+            self.docker.stop_and_remove(
+                callback=lambda t: self._log_docker(t))
+            self.deployed = False
+            self.config_mgr = None
+
         # DockerManager已在_start_deploy中初始化，保持remote_work_base设置
         work_dir = self.work_dir_var.get().strip()
         if work_dir:
@@ -1799,12 +2017,12 @@ class WizardApp:
         ok, msg = self.docker.check_docker_installed()
         if not ok:
             self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
-            return
+            return False
         self._log_docker(trf("  ✓ {message}\n\n", message=tr(msg)))
 
         if self._cancel_flag.is_set():
             self._log_docker(tr("  ⚹ 已取消\n"))
-            return
+            return False
 
         # 确保临时部署目录存在（仅部署期间暂存镜像tar/代码）
         self.ssh.mkdir_p(self.docker.remote_work_base)
@@ -1816,7 +2034,7 @@ class WizardApp:
             if not self.docker.image_exists(selected_image):
                 self._log_docker(trf("  ✗ 镜像不存在: {image}\n", image=selected_image))
                 self._log_docker(tr("  → 请返回本步骤重新查看已有镜像，或改用上传模式\n"))
-                return
+                return False
 
             image_name = selected_image
             self._log_docker(trf("  ✓ 复用执行机已有镜像: {image}\n", image=image_name))
@@ -1856,7 +2074,7 @@ class WizardApp:
                 self._log_docker("\n")
                 if not ok:
                     self._log_docker(tr("  ✗ 镜像上传失败\n"))
-                    return
+                    return False
                 self._log_docker(tr("  ✓ 镜像上传完成\n"))
 
                 # Docker load
@@ -1867,14 +2085,14 @@ class WizardApp:
                 )
                 if not ok:
                     self._log_docker(trf("  ✗ 镜像加载失败: {image}\n", image=image_name))
-                    return
+                    return False
                 self._log_docker("\n")
 
         self.root.after(0, lambda n=image_name: self.docker_info_labels["image"].config(text=n))
 
         if self._cancel_flag.is_set():
             self._log_docker(tr("  ⚹ 已取消\n"))
-            return
+            return False
 
         # Step 3: 暂存测试代码 (内置目录 / 本地zip包)
         if self.code_source_var.get() == "builtin":
@@ -1888,7 +2106,7 @@ class WizardApp:
             )
             if not ok:
                 self._log_docker(trf("  ✗ 代码上传失败: {message}\n", message=tr(msg)))
-                return
+                return False
             self.root.after(0, lambda: self.docker_info_labels["zip"].config(text="内置代码包"))
         else:
             self._log_docker(tr("[3/5] 暂存并解压代码zip包...\n"))
@@ -1899,7 +2117,7 @@ class WizardApp:
             ok = self.ssh.upload_file(zipf, remote_zip)
             if not ok:
                 self._log_docker(tr("  ✗ 代码包上传失败\n"))
-                return
+                return False
 
             ok, extracted_path = self.docker.extract_code_zip(
                 remote_zip,
@@ -1908,14 +2126,14 @@ class WizardApp:
             )
             if not ok:
                 self._log_docker(tr("  ✗ 代码解压失败\n"))
-                return
+                return False
             self.root.after(0, lambda n=zip_name: self.docker_info_labels["zip"].config(text=n))
 
         self._log_docker(trf("  ✓ 代码暂存完成: {path}\n\n", path=extracted_path))
 
         if self._cancel_flag.is_set():
             self._log_docker(tr("  ⚹ 已取消\n"))
-            return
+            return False
 
         # Step 4: 创建容器(仅挂载模型路径, 代码随后导入)
         self._log_docker(tr("[4/5] 创建并启动容器...\n"))
@@ -1926,7 +2144,7 @@ class WizardApp:
         )
         if not ok:
             self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
-            return
+            return False
 
         self.root.after(0, lambda n=container_name: self.docker_info_labels["container"].config(text=n))
         self.root.after(0, lambda m=model_path: self.docker_info_labels["model"].config(text=m))
@@ -1941,7 +2159,7 @@ class WizardApp:
         if not ok:
             self._log_docker(trf("  ✗ {message}\n", message=tr(msg)))
             self._log_docker(tr("  → 暂存目录暂不删除，可用于排障；修复后可重新部署\n"))
-            return
+            return False
 
         self._log_docker(trf("  清理宿主机临时目录: {path}\n", path=self.docker.remote_work_base))
         self.docker.remove_work_dir(callback=lambda t: self._log_docker(t))
@@ -1959,125 +2177,11 @@ class WizardApp:
         # 设置DATASET_PATH
         self.dataset_path_var.set(self.docker.code_mount_path)
 
-        # 显示成功消息
-        self.root.after(0, lambda: showinfo("成功", "Docker部署完成!"))
+        # 记录本次部署资源, 供"创建任务"判断能否复用容器
+        self.deployed_model_path = model_path
+        self.deployed_image = image_name
 
-    # ============================================================
-    #  Step 3: 配置文件
-    # ============================================================
-
-    def _build_step3_config(self):
-        frame = self.step_frames[2]
-
-        self._build_step_header(frame, "步骤 3: 配置 config.py",
-                                "配置aisbench_auto_tools_prefix的测试参数")
-
-        form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
-        form.pack(fill=tk.X, pady=8)
-
-        config_fields = [
-            ("MODEL_NAME (模型名称)", "model_name", True),
-            ("MODEL_PATH (模型路径)", "model_path", True),
-            ("HOST_IP (vLLM服务IP)", "host_ip", True),
-            ("HOST_PORT (vLLM服务端口)", "host_port", True),
-            ("API_KEY (鉴权, 可空)", "api_key", False),
-            ("DATASET_PATH (自动设置)", "dataset_path", False),
-            ("WORK_PATH (工作路径)", "work_path", False),
-            ("DEFAULT_PERFORMANCE_TEST", "default_perf", False),
-            ("OUTPUT_DIR (输出路径)", "output_dir", False),
-            ("POD_INFO (多DP必填, 格式: ip:port,ip:port)", "pod_info", False),
-        ]
-
-        self.config_entry_vars = {}
-        defaults = {
-            'work_path': '/benchmark',
-            'default_perf': 'default_perf',
-            'output_dir': './outputs/default',
-        }
-
-        for i, (label, key, required) in enumerate(config_fields):
-            prefix = "* " if required else "  "
-            color = COLOR_ERROR if required else COLOR_TEXT_MUTED
-            LocalizedLabel(form, text=f"{prefix}{label}", bg=COLOR_CARD, fg=color,
-                   font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=16, pady=6)
-
-            var = tk.StringVar(value=defaults.get(key, ""))
-            self.config_entry_vars[key] = var
-
-            entry = tk.Entry(form, textvariable=var, width=1, font=("Segoe UI", 9))
-            entry.grid(row=i, column=1, padx=16, pady=6, sticky=tk.EW)
-
-        form.columnconfigure(1, weight=1)
-
-        # config.py 路径信息
-        path_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
-        path_frame.pack(fill=tk.X, pady=(4, 8))
-        self.config_path_lbl = LocalizedLabel(path_frame, text="config.py 位置: 尚未部署",
-                                        bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
-                                        font=("Consolas", 8), justify=tk.LEFT, anchor=tk.W)
-        self.config_path_lbl.pack(padx=16, pady=8, anchor=tk.W)
-
-        # 按钮区域
-        btn_frame = tk.Frame(frame, bg=COLOR_BG)
-        btn_frame.pack(fill=tk.X, pady=8)
-
-        LocalizedButton(btn_frame, text="保存配置到容器", bg=COLOR_PRIMARY, fg="white",
-                 font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=16, pady=4,
-                 command=self._save_config).pack(side=tk.LEFT)
-
-        LocalizedButton(btn_frame, text="验证配置(读取容器)", bg=COLOR_SUCCESS, fg="white",
-                 font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
-                 command=self._verify_config).pack(side=tk.LEFT, padx=8)
-
-        self.config_status_lbl = LocalizedLabel(btn_frame, text="", bg=COLOR_BG,
-                                         fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
-        self.config_status_lbl.pack(side=tk.LEFT, padx=12)
-
-        # 配置预览
-        LocalizedLabel(frame, text="配置预览 (内存中):", bg=COLOR_BG, fg=COLOR_TEXT,
-               font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(8, 4))
-
-        self.config_preview = scrolledtext.ScrolledText(frame, height=10,
-                                                         font=("Consolas", 9),
-                                                         bg="#1e1e1e", fg="#d4d4d4")
-        self.config_preview.pack(fill=tk.BOTH, expand=True)
-
-        # 同步已有值
-        self._sync_config_vars()
-
-    def _sync_config_vars(self):
-        """从之前的步骤同步配置值"""
-        if hasattr(self, 'config_entry_vars'):
-            self.config_entry_vars['model_name'].set(self.model_name_var.get())
-            self.config_entry_vars['model_path'].set(self.model_path_var.get())
-            self.config_entry_vars['host_ip'].set(self.host_ip_var.get())
-            self.config_entry_vars['host_port'].set(self.host_port_var.get())
-            self.config_entry_vars['api_key'].set(self.api_key_var.get())
-            self.config_entry_vars['dataset_path'].set(self.dataset_path_var.get())
-            self._update_config_path_label()
-            self._update_config_preview()
-
-    def _update_config_preview(self):
-        """更新配置预览"""
-        if not hasattr(self, 'config_entry_vars'):
-            return
-        config = {k: v.get() for k, v in self.config_entry_vars.items()}
-        if self.config_mgr:
-            content = self.config_mgr.generate_config_content(config)
-            self.config_preview.delete(1.0, tk.END)
-            self.config_preview.insert(1.0, content)
-
-    def _update_config_path_label(self):
-        """更新config.py路径显示"""
-        if not hasattr(self, 'config_path_lbl'):
-            return
-        if self.docker and self.docker.container_name:
-            container_path = f"{self.docker.code_mount_path}/config.py"
-            text = f"config.py 位置(容器内): {container_path}"
-            self.config_path_lbl.config(text=text, fg=COLOR_TEXT)
-        else:
-            self.config_path_lbl.config(text="config.py 位置: 尚未部署（请先完成Docker部署）",
-                                        fg=COLOR_TEXT_MUTED)
+        return True
 
     @staticmethod
     def _parse_config_content(content: str) -> dict:
@@ -2091,136 +2195,90 @@ class WizardApp:
             values['POD_INFO'] = pod_match.group(1).strip()
         return values
 
-    def _save_config(self):
-        """保存配置到容器，并回读验证"""
+    def _build_config_dict(self) -> dict:
+        """汇总任务资源配置(服务参数默认自动生成, 高级设置可覆盖)"""
+        host_ip = self.host_ip_var.get().strip()
+        if not host_ip and hasattr(self, "conn_vars"):
+            host_ip = self.conn_vars["host"].get().strip()
+        dataset_path = self.dataset_path_var.get().strip()
+        if not dataset_path and self.docker:
+            dataset_path = self.docker.code_mount_path
+        return {
+            'model_name': self.model_name_var.get().strip() or 'ds',
+            'model_path': self.model_path_var.get().strip(),
+            'host_ip': host_ip,
+            'host_port': self.host_port_var.get().strip() or '8000',
+            'api_key': self.api_key_var.get().strip(),
+            'dataset_path': dataset_path,
+            'work_path': '/benchmark',
+            'default_perf': 'default_perf',
+            'output_dir': './outputs/default',
+            'pod_info': self.pod_info_var.get().strip(),
+        }
+
+    def _write_config_automatically(self) -> bool:
+        """执行测试前自动生成config.py写入容器并回读验证(后台线程调用)
+
+        原"配置文件"步骤合并进创建任务流程: 模型路径来自任务资源,
+        服务参数默认自动生成, 无需用户手工填写与保存。
+        """
         if not self.config_mgr:
-            showwarning("提示", "请先完成Docker部署")
-            return
+            self._log_exec(tr("  ✗ 容器未部署, 无法写入config.py\n"))
+            return False
 
-        config = {k: v.get() for k, v in self.config_entry_vars.items()}
-
-        # 验证
+        config = self._build_config_dict()
         errors = self.config_mgr.validate_config(config)
         if errors:
-            showwarning("配置验证失败", "\n".join(errors))
-            return
+            self._log_exec(tr("  ✗ 配置校验失败:\n")
+                           + "".join(f"    {e}\n" for e in errors))
+            return False
 
-        # 写入
+        self._log_exec(tr("[配置] 自动写入config.py到容器...\n"))
         ok = self.config_mgr.write_config_to_container(config)
         if not ok:
-            self.config_status_lbl.config(text="✗ 保存失败", fg=COLOR_ERROR)
-            showerror("失败", "写入config.py失败")
-            return
+            self._log_exec(tr("  ✗ config.py写入失败\n"))
+            return False
 
-        self._update_config_path_label()
-        self._update_config_preview()
-
-        # 回读验证
         read_back = self.config_mgr.read_config_from_container()
         if read_back is None:
-            self.config_status_lbl.config(text="✓ 已写入 (回读失败，请手动验证)", fg=COLOR_WARNING)
-            showwarning("警告", "config.py 已写入，但回读失败，请点击\"验证配置\"手动检查")
-            return
+            self._log_exec(tr("  ⚠ config.py已写入, 但回读验证失败(不影响继续执行)\n"))
+            return True
 
-        # 比较关键值
         saved_values = self._parse_config_content(read_back)
-        gui_values = {k.upper(): v.get() for k, v in self.config_entry_vars.items()}
         key_fields = ['MODEL_PATH', 'MODEL_NAME', 'HOST_IP', 'HOST_PORT', 'DATASET_PATH']
         mismatches = []
         for field in key_fields:
-            gui_val = gui_values.get(field, '')
+            gui_val = str(config.get(field.lower(), ''))
             saved_val = saved_values.get(field, '')
             if gui_val and saved_val and gui_val != saved_val:
-                mismatches.append(trf("  {field}: 界面={gui}  容器={container}",
-                                      field=field, gui=gui_val, container=saved_val))
+                mismatches.append(
+                    trf("    {field}: 界面={gui}  容器={container}\n",
+                        field=field, gui=gui_val, container=saved_val))
 
         if mismatches:
-            self.config_status_lbl.config(text="⚠ 已写入但存在不一致!", fg=COLOR_ERROR)
-            showwarning("配置不一致",
-                                   tr("config.py 已写入，但回读发现以下不一致:\n\n") + "\n".join(mismatches))
-        else:
-            self.config_status_lbl.config(text="✓ 配置已保存并验证一致", fg=COLOR_SUCCESS)
-            container_path = f"{self.docker.code_mount_path}/config.py"
-            showinfo("成功",
-                               trf("config.py 已写入并回读验证一致!\n\n"
-                                   "容器内路径: {path}\n\n"
-                                   "关键配置:\n"
-                                   "  MODEL_PATH = {model_path}\n"
-                                   "  MODEL_NAME = {model_name}\n"
-                                   "  HOST_IP    = {host_ip}\n"
-                                   "  HOST_PORT  = {host_port}",
-                                   path=container_path,
-                                   model_path=saved_values.get('MODEL_PATH', '?'),
-                                   model_name=saved_values.get('MODEL_NAME', '?'),
-                                   host_ip=saved_values.get('HOST_IP', '?'),
-                                   host_port=saved_values.get('HOST_PORT', '?')))
+            self._log_exec(tr("  ✗ config.py写入后回读不一致:\n") + "".join(mismatches))
+            return False
 
-    def _verify_config(self):
-        """从容器读取config.py并显示，与界面值对比"""
-        if not self.config_mgr:
-            showwarning("提示", "请先完成Docker部署")
-            return
-
-        self._update_config_path_label()
-
-        read_back = self.config_mgr.read_config_from_container()
-        if read_back is None:
-            self.config_status_lbl.config(text="✗ 无法读取容器内config.py", fg=COLOR_ERROR)
-            showerror("失败",
-                                 "无法从容器读取config.py\n"
-                                 "可能原因: 1)未点击\"保存配置到容器\" 2)路径错误 3)SSH连接断开")
-            return
-
-        # 在预览区显示容器内实际内容
-        header = ("=" * 50 + "\n" + tr("容器内实际 config.py 内容:") + "\n"
-                  + "=" * 50 + "\n\n")
-        self.config_preview.delete(1.0, tk.END)
-        self.config_preview.insert(1.0, header + read_back)
-
-        # 对比关键值
-        saved_values = self._parse_config_content(read_back)
-        gui_values = {k.upper(): v.get() for k, v in self.config_entry_vars.items()}
-        key_fields = ['MODEL_PATH', 'MODEL_NAME', 'HOST_IP', 'HOST_PORT', 'DATASET_PATH']
-
-        all_match = True
-        report_lines = []
-        for field in key_fields:
-            gui_val = gui_values.get(field, '')
-            saved_val = saved_values.get(field, '')
-            if not saved_val:
-                report_lines.append(trf("  {field}: 容器中未找到", field=field))
-                all_match = False
-            elif gui_val and gui_val != saved_val:
-                report_lines.append(trf("  ⚠ {field}: 界面=[{gui}]  容器=[{container}]",
-                                        field=field, gui=gui_val, container=saved_val))
-                all_match = False
-            else:
-                report_lines.append(trf("  ✓ {field}: {value}", field=field, value=saved_val))
-
-        if all_match:
-            self.config_status_lbl.config(text="✓ 验证通过，界面与容器配置一致", fg=COLOR_SUCCESS)
-            showinfo("验证通过",
-                               trf("容器内config.py与界面配置一致!\n\n"
-                                   "{report}\n\n"
-                                   "MODEL_PATH = {model_path}",
-                                   report=''.join(report_lines),
-                                   model_path=saved_values.get('MODEL_PATH', '?')))
-        else:
-            self.config_status_lbl.config(text="⚠ 界面与容器配置不一致", fg=COLOR_ERROR)
-            showwarning("配置不一致",
-                                   tr("界面与容器内config.py存在差异:\n\n")
-                                   + "\n".join(report_lines)
-                                   + tr("\n\n请点击\"保存配置到容器\"重新写入"))
+        container_path = f"{self.docker.code_mount_path}/config.py"
+        self._log_exec(trf("  ✓ config.py已写入并验证一致: {path}\n", path=container_path))
+        self._log_exec(trf("    MODEL_PATH={model_path}  MODEL_NAME={model_name}  "
+                           "HOST={host_ip}:{host_port}\n",
+                           model_path=config['model_path'],
+                           model_name=config['model_name'],
+                           host_ip=config['host_ip'],
+                           host_port=config['host_port']))
+        return True
 
     # ============================================================
-    #  Step 4: 测试用例设计
+    #  创建任务 - 分区2: 测试参数与用例设计
     # ============================================================
 
-    def _build_step4_testcases(self):
-        frame = self.step_frames[3]
+    def _build_task_testcases_section(self):
+        frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 4: 设计测试用例",
-                               "根据KV cache信息生成测试参数")
+        self.testcases_section_header = self._build_section_header(
+            frame, 2, "测试参数与用例设计",
+            "填写KV cache信息并生成测试用例; 可从vLLM日志一键筛选获取参数")
 
         # 计算公式说明
         formula_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -2266,13 +2324,14 @@ class WizardApp:
                font=("Segoe UI", 8)).grid(row=hint_row, column=0, sticky=tk.NW,
                                           padx=16, pady=(6, 0))
         hint_frame = tk.Frame(kv_frame, bg="#f0f5ff")
-        hint_frame.grid(row=hint_row, column=1, padx=16, pady=(6, 8), sticky=tk.W)
+        hint_frame.grid(row=hint_row, column=1, padx=16, pady=(6, 8), sticky=tk.EW)
 
         cmd_row = tk.Frame(hint_frame, bg="#f0f5ff")
         cmd_row.pack(fill=tk.X)
+        # width=1 + fill=X: 随窗口伸缩, 长命令在输入框内滚动, 不把按钮顶出窗口
         cmd_entry = tk.Entry(cmd_row, textvariable=self.kv_grep_cmd_var,
                              state="readonly", readonlybackground="#f0f5ff",
-                             fg=COLOR_PRIMARY, font=("Consolas", 8), width=56)
+                             fg=COLOR_PRIMARY, font=("Consolas", 8), width=1)
         cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         cmd_entry.bind("<Control-a>",
                        lambda e: (cmd_entry.select_range(0, tk.END), "break")[1])
@@ -2290,10 +2349,19 @@ class WizardApp:
                  bg="#f0f5ff", fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=8)
 
-        LocalizedLabel(hint_frame,
-                 text="KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
-                 bg="#f0f5ff", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
-                 anchor=tk.W).pack(fill=tk.X)
+        self.kv_hint_lbl = LocalizedLabel(
+            hint_frame,
+            text="KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
+            bg="#f0f5ff", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
+            anchor=tk.W, justify=tk.LEFT, wraplength=420)
+        self.kv_hint_lbl.pack(fill=tk.X)
+
+        # 长提示按容器实际宽度自动换行, 避免单行文本把按钮顶出窗口
+        def _wrap_kv_hint(event):
+            self.kv_hint_lbl.config(wraplength=max(240, event.width - 8))
+        hint_frame.bind("<Configure>", _wrap_kv_hint)
+
+        kv_frame.columnconfigure(1, weight=1)
 
         # 输入长度选择
         in_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -2770,14 +2838,21 @@ class WizardApp:
             self._refresh_test_tree()
 
     # ============================================================
-    #  Step 5: 执行测试
+    #  创建任务 - 分区3续: 任务执行与结果(可复用已部署容器重复执行)
     # ============================================================
 
-    def _build_step5_execute(self):
-        frame = self.step_frames[4]
+    def _build_task_execute_section(self):
+        frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 5: 执行测试",
-                               "生成.sh脚本 → 容器内执行 → 下载日志 → 解析结果CSV")
+        self.execute_section_header = tk.Frame(frame, bg=COLOR_BG)
+        self.execute_section_header.pack(fill=tk.X, pady=(14, 2))
+        LocalizedLabel(self.execute_section_header, text="任务执行与结果",
+                       bg=COLOR_BG, fg=COLOR_TEXT,
+                       font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
+        LocalizedLabel(self.execute_section_header,
+                       text="容器就绪后可单独重复执行测试; config.py会在每次执行前自动写入容器",
+                       bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9)
+                       ).pack(anchor=tk.W)
 
         # 摘要
         self.summary_text = LocalizedLabel(frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT,
@@ -2954,7 +3029,7 @@ class WizardApp:
                      count=len(results), csv_path=csv_path, log_dir=log_dir))
 
     def _execute_tests(self):
-        """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
+        """复用已部署容器执行测试: 自动写入config.py → 生成.sh → 运行 → 下载日志 → 解析CSV"""
         if not self.docker or not self.docker.container_is_running():
             showwarning("提示", tr("容器未运行，请先完成部署"))
             return
@@ -2979,6 +3054,8 @@ class WizardApp:
         self.exec_log.delete(1.0, tk.END)
         self._exec_log_handler.reset()
         self._clear_results_table()
+        self.create_task_btn.config(state=tk.DISABLED)
+        self.deploy_btn.config(state=tk.DISABLED)
         self.exec_test_btn.config(state=tk.DISABLED, text="执行中...")
 
         # 启动定时刷新执行日志
@@ -2987,8 +3064,10 @@ class WizardApp:
         self._exec_flush_timer_id = self.root.after(200, self._flush_exec_log_buffer)
 
         def _do_execute():
-            self._run_test_sequence(local_dir)
+            self._prepare_and_run_tests(local_dir)
             def _restore():
+                self.create_task_btn.config(state=tk.NORMAL)
+                self.deploy_btn.config(state=tk.NORMAL, text="重新部署")
                 self.exec_test_btn.config(state=tk.NORMAL, text="执行测试 → 生成CSV")
                 # 启用清理按钮
                 if self.docker and self.docker.container_name:
@@ -3222,7 +3301,7 @@ class WizardApp:
             "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
             '(否: 稍后可点击"清理环境"按钮手动清理)\n'
             "\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n"
-            "需要从步骤2 Docker部署重新开始。",
+            "需要重新创建任务（重新部署容器）。",
             container=self.docker.container_name,
             state=state_label,
             work_dir_line=work_dir_line)
@@ -3255,7 +3334,7 @@ class WizardApp:
                 "{work_dir_line}"
                 "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
                 "本地下载的测试结果不受影响。\n"
-                "清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始。\n",
+                "清理后如需再次执行测试用例, 请重新创建任务（重新部署容器）。\n",
                 container_line=container_line,
                 state_line=state_line,
                 work_dir_line=work_dir_line)
@@ -3290,7 +3369,7 @@ class WizardApp:
                 else:
                     self._log_exec("  (临时部署目录无残留)\n")
 
-            # 3. 提示是否仍有历史容器残留(可在步骤2清理)
+            # 3. 提示是否仍有历史容器残留(可在创建任务页清理)
             try:
                 leftovers = [
                     c for c in self.docker.list_managed_containers(
@@ -3305,7 +3384,7 @@ class WizardApp:
                     self._log_exec(
                         trf("  ⚠ 仍有 {count} 个历史容器残留: {listing}\n",
                             count=len(leftovers), listing=listing))
-                    self._log_exec("    → 可在步骤2点击\"清理残留容器\"进行清理\n")
+                    self._log_exec("    → 可点击\"清理残留容器\"进行清理\n")
             except Exception:
                 pass
 
@@ -3313,7 +3392,7 @@ class WizardApp:
             local_dir = self.local_output_var.get().strip()
             self._log_exec(f"  本地测试结果保留在: {local_dir}\n")
             self._log_exec(tr(
-                "  如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
+                "  如需再次执行测试用例, 请重新创建任务（重新部署容器）。\n"))
 
             def _restore_cleanup():
                 self.cleanup_btn.config(state=tk.DISABLED, text="清理环境")
@@ -3323,7 +3402,7 @@ class WizardApp:
                 else:
                     showinfo("清理完成",
                         "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n"
-                        "如需再次执行测试用例, 请从步骤2 Docker部署重新开始。")
+                        "如需再次执行测试用例, 请重新创建任务（重新部署容器）。")
 
             self.root.after(0, _restore_cleanup)
 
@@ -3373,9 +3452,8 @@ class WizardApp:
         # 步骤特定的刷新
         if step == 1 and self.ssh.connected and not self.remote_images:
             self._refresh_remote_images()
-        if step == 2:
-            self._sync_config_vars()
-        if step == 4:
+            self._update_service_summary()
+        if step == 1:
             self._refresh_commands()
             if hasattr(self, 'cleanup_btn') and self.docker and self.docker.container_name:
                 self.cleanup_btn.config(state=tk.NORMAL)
@@ -3385,22 +3463,6 @@ class WizardApp:
         if self.current_step == 0 and not self.ssh.connected:
             showwarning("提示", "请先连接到远程主机")
             return
-        if self.current_step == 1:
-            image_mode = self.image_source_var.get()
-            image_ready = (image_mode == "existing" and self.remote_image_var.get().strip()) or \
-                          (image_mode == "upload" and self.tar_path.get().strip())
-            if not image_ready or not self.model_path_var.get():
-                showwarning("提示", "请完成镜像和模型路径选择")
-                return
-            if self.code_source_var.get() == "zip" and not self.zip_path.get().strip():
-                showwarning("提示", "请选择本地代码zip包 (或改用程序内置)")
-                return
-            if not self.docker or not self.docker.container_is_running():
-                if not askyesno("提示", "Docker容器尚未部署，是否继续?"):
-                    return
-        if self.current_step == 3 and not self.designer.test_cases:
-            if not askyesno("提示", "尚未生成测试用例，是否继续?"):
-                return
 
         self._show_step(self.current_step + 1)
 
@@ -3424,8 +3486,8 @@ class WizardApp:
                 "{work_dir_line}"
                 "\n退出前是否清理远程环境?\n"
                 "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
-                '(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n'
-                "\n注意: 清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始;\n"
+                '(未清理的容器下次连接时可在"创建任务"页通过"清理残留容器"删除)\n'
+                "\n注意: 清理后如需再次执行测试用例, 需重新创建任务（重新部署容器）;\n"
                 "若测试任务正在执行中, 直接退出将导致测试异常终止。",
                 container=self.docker.container_name,
                 state=state_label,

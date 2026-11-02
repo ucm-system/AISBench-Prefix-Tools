@@ -592,6 +592,325 @@ TRANSLATIONS = {
             'The Docker container is still running!\n\n  Container: {container}\n  Test task state: {state}\n{work_dir_line}Clean up the remote environment before exiting?\n(Yes: clean up and exit  No: exit and keep the container  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" on the "Create Task" page on the next connection)\n\nNote: to run test cases again after cleanup, create the task again (redeploy the container);\nif a test task is still running, exiting directly will terminate it abnormally.',
         '  ⚠ 仍有 {count} 个历史容器残留: {listing}\n':
             '  ⚠ {count} historical container(s) remain: {listing}\n',
+        # ---- task-list workflow strings (added in 1.9.0) ----
+        '            执行测试 → 下载并解析结果。': '            Run tests → download and parse results.',
+        '            支持复制新建、取消、清理与删除任务数据。':
+            '            with copy-to-new, cancel, cleanup and data deletion.',
+        '            点击"创建任务"一键完成 部署容器 → 写入config.py →':
+            '            then click "Create Task" to run deploy container → write config.py →',
+        '  临时目录: {dir}\n': '  Temp directory: {dir}\n',
+        '  也可点击"预览任务信息"随时查看当前表单汇总(未创建亦可预览)。':
+            '  "Preview task info" shows the current form summary at any time (before creation).',
+        '  任务列表: 查看每个任务的运行状态、执行日志与结果,':
+            "  Task list: view each task's status, execution log and results,",
+        '  全屏日志: 将执行日志放大到独立窗口查看。': '  Fullscreen log: open the execution log in a standalone window.',
+        '  删除数据: 删除任务记录及其本地日志/结果文件, 释放磁盘空间。':
+            '  Delete data: remove the task record plus local log/result files to free disk space.',
+        '  勾选输入/输出长度后生成测试用例, 用例表格支持双击编辑。':
+            '  check input/output lengths to generate cases; the table supports double-click editing.',
+        '  发布版附带SHA256校验值可供验证。': '  release archives ship SHA256 checksums for verification.',
+        '  取消任务: 终止运行中的任务(执行阶段会停止容器以中断测试)。':
+            '  Cancel task: stop a running task (the container is stopped during execution).',
+        '  可点击"从日志自动获取"打开远程日志工具一键筛选填入;':
+            '  "Auto-fill from logs" opens the remote log tool to filter values in one click;',
+        '  可选临时部署目录(默认 /tmp/AISBench_Prefix_Tools,':
+            '  optionally set the deploy directory (default /tmp/AISBench_Prefix_Tools;',
+        '  复制新建: 将已有任务的配置预填到创建任务表单。':
+            '  Copy to new: prefill the Create Task form from an existing task.',
+        '  容器: {name}\n': '  Container: {name}\n',
+        '  按Input/Output/请求数等维度生成差异对比表, 支持导出CSV与图片,':
+            '  build a diff table by Input/Output/requests dimensions and export CSV or images;',
+        '  数据标签可自定义(默认取文件名)。': '  data labels are customizable (default: file name).',
+        '  步骤 1  SSH连接: 填写执行机IP/端口/账号并测试连接。':
+            '  Step 1  SSH connection: enter the host IP/port/user and test the connection.',
+        '  步骤 2  创建任务: 选择镜像、代码与模型路径, 设计测试用例,':
+            '  Step 2  Create Task: select the image, code and model path, design test cases,',
+        '  每个任务会在其下自动创建独立子目录, 部署后自动删除)。':
+            '  each task creates its own sub-directory there which is removed after deployment).',
+        '  清理资源: 删除任务的容器与远程暂存目录(需已连接执行机)。':
+            "  Cleanup resources: remove the task's container and remote staging directory (SSH required).",
+        '  直接从宿主机文件/容器日志/容器stdout筛选并一键填入。':
+            '  filter from host files, container logs or container stdout and fill in one click.',
+        '  端口8000), 特殊场景可修改; POD_INFO用于多DP场景。':
+            '  port 8000) and editable when needed; POD_INFO is for multi-DP setups.',
+        '  结果对比分析: 无需连接服务器, 对比多次测试的CSV结果。':
+            'Result compare: compare CSV results of multiple runs without a server connection.',
+        '  选择测试代码来源(程序内置或本地zip包), 指定模型权重路径,':
+            '  choose the test code source (built-in or a local zip) and set the model weight path;',
+        '(任务完成后显示结果)': '(results shown after the task finishes)',
+        '(未设置)': '(not set)',
+        '(选择任务后显示日志)': '(select a task to view its log)',
+        '3. 任务列表': '3. Task List',
+        'A: vLLM启动日志中 grep \'KV cache size\', 可用"从日志自动获取"工具':
+            'A: grep \'KV cache size\' in the vLLM startup log, or use the "Auto-fill from logs" tool',
+        'A: 修改用例后在创建任务页重新创建任务, 或在任务列表复制新建。':
+            'A: edit the cases and create a new task, or use "Copy to new" in the task list.',
+        'A: 未签名EXE的SmartScreen提示, 点击"更多信息"→"仍要运行"即可;':
+            'A: this is SmartScreen for unsigned EXEs; click "More info" → "Run anyway";',
+        'A: 返回创建任务页重新"查看已有镜像", 或改用上传tar包模式。':
+            'A: refresh "View existing images" on the Create Task page, or switch to uploading a tar.',
+        'AISBench镜像': 'AISBench image',
+        'API Key': 'API Key',
+        'DP组数': 'DP groups',
+        'DP组数必须为数字': 'DP groups must be a number',
+        'HBM命中%': 'HBM hit %',
+        'Input': 'Input',
+        'Output': 'Output',
+        'POD_INFO': 'POD_INFO',
+        'Q: KV cache信息从哪里获取?': 'Q: Where do I get KV cache information?',
+        'Q: Windows提示"已阻止启动无法识别的应用"?':
+            'Q: Windows says "Prevented an unrecognized app from starting"?',
+        'Q: 测试完成后如何再次执行?': 'Q: How do I run the tests again after completion?',
+        'Q: 部署日志提示镜像不存在?': 'Q: The deploy log reports the image does not exist?',
+        '{base} (任务将创建独立子目录, 部署后自动删除)':
+            '{base} (tasks create their own sub-directory, removed after deployment)',
+        '{name} - {status}': '{name} - {status}',
+        '{name} · {status} · 创建于 {time}': '{name} · {status} · created {time}',
+        '{rate} (0=Burst)': '{rate} (0=Burst)',
+        '① 任务资源': '① Task resources',
+        '② 服务配置': '② Service config',
+        '③ 测试参数': '③ Test parameters',
+        '④ 执行与输出': '④ Execution & output',
+        '临时目录: {dirs}\n': 'Temp directories: {dirs}\n',
+        '临时部署目录': 'Deploy directory',
+        '仍有 {count} 个任务正在执行:\n  {names}\n\n退出将导致任务异常终止。确定退出吗?':
+            '{count} task(s) are still running:\n  {names}\n\nExiting will terminate them abnormally. Exit anyway?',
+        '代码zip包不存在: {path}': 'Code zip does not exist: {path}',
+        '以下问题需处理后才能执行:': 'Fix the following issues before running:',
+        '任务 {name} 已创建并开始执行': 'Task {name} created and started',
+        '任务名称': 'Task name',
+        '任务名称: {name}': 'Task name: {name}',
+        '任务名称: 留空时自动使用 服务名_时间(如 ds_20261102_153000)。':
+            'Task name: empty auto-uses service name_time (e.g. ds_20261102_153000).',
+        '任务启动失败': 'Failed to start task',
+        '任务在此目录下自动创建独立子目录, 部署完成后自动删除; 默认 /tmp/AISBench_Prefix_Tools':
+            'Each task creates its own sub-directory here, removed after deployment; default /tmp/AISBench_Prefix_Tools',
+        '任务引擎: 每任务独立SSH连接与容器, 本地日志与元数据持久化':
+            'Task engine: independent SSH connection and container per task; local logs and metadata are persisted',
+        '任务执行中': 'Task running',
+        '任务执行中, 完成后显示结果': 'Task running; results shown after completion',
+        '任务数据已删除': 'Task data deleted',
+        '任务日志 - {name}': 'Task log - {name}',
+        '任务记录已删除': 'Task record deleted',
+        '任务资源: 选择AISBench镜像(优先复用执行机已有镜像, 支持关键字筛选),':
+            'Task resources: pick an AISBench image (prefer reusing images on the host; keyword filter supported),',
+        '使用说明': 'User Guide',
+        '使用说明 - AISBench PrefixTools': 'User Guide - AISBench PrefixTools',
+        '共 {count} 条结果  CSV: {csv}': '{count} results in total  CSV: {csv}',
+        '关于 AISBench PrefixTools': 'About AISBench PrefixTools',
+        '内置代码随程序打包, 部署时自动上传': 'Built-in code ships with the app and is uploaded at deploy time',
+        '创建任务: 点击"创建任务"前会弹出全量信息确认对话框;':
+            'Create Task: a full-summary confirmation dialog appears before creating a task;',
+        '创建任务后自动跳转到任务列表, 实时查看运行状态与全量日志。':
+            'After creation the app switches to the task list to watch status and the full log in real time.',
+        '创建任务并执行': 'Create and run task',
+        '删除任务 {name}?\n\n是 - 删除任务记录并删除其 {files}\n否 - 仅删除任务记录(保留本地文件)\n取消 - 不删除':
+            'Delete task {name}?\n\nYes - delete the record and its {files}\nNo - delete the record only (keep local files)\nCancel - do not delete',
+        '删除任务数据': 'Delete task data',
+        '删除失败': 'Delete failed',
+        '前缀命中率': 'Prefix hit rate',
+        '前缀命中率必须为数字': 'Prefix hit rate must be a number',
+        '前缀命中率需在(0,1]区间': 'Prefix hit rate must be in (0,1]',
+        '前缀数量': 'Prefix count',
+        '单个DP组KV cache': 'KV cache per DP group',
+        '单个DP组KV cache未填写或非数字': 'KV cache per DP group is empty or not a number',
+        '取消失败': 'Cancel failed',
+        '填写执行机IP、SSH端口、用户名, 以及密码或密钥。': 'Enter the host IP, SSH port and user, plus a password or key.',
+        '外部命中%': 'External hit %',
+        '容器': 'Container',
+        '已发送取消请求': 'Cancel request sent',
+        '已复制任务 {name} 的配置到创建任务页': 'Copied task {name} settings into the Create Task page',
+        '帮助': 'Help',
+        '常见问题': 'FAQ',
+        '并发': 'Concurrency',
+        '当前任务配置预览': 'Current task configuration preview',
+        '快速开始': 'Quick Start',
+        '执行日志': 'Execution log',
+        '执行流程': 'Workflow',
+        '无法打开目录: {error}': 'Cannot open directory: {error}',
+        '无法读取任务配置': 'Cannot read task configuration',
+        '日志已复制到剪贴板': 'Log copied to clipboard',
+        '最大并发': 'Max concurrency',
+        '有任务正在执行, 跳过临时目录清理\n': 'A task is running; skipping temp directory cleanup\n',
+        '服务地址': 'Service address',
+        '服务端口必须为数字': 'Service port must be a number',
+        '服务配置: vLLM服务连接参数, 默认自动生成(模型名ds、IP=执行机IP、':
+            'Service config: vLLM connection parameters, generated by default (model ds, host IP = host machine IP,',
+        '未填写临时部署目录': 'Deploy directory is empty',
+        '未填写模型权重路径': 'Model weight path is empty',
+        '未找到内置测试代码, 请改用本地zip包': 'Built-in test code not found; use a local zip instead',
+        '未清理的 aisbench-test-* 容器并提醒清理。':
+            '  left over from the last session are scanned and you are prompted to clean them.',
+        '未生成测试用例': 'No test cases generated',
+        '未连接执行机': 'Not connected to the host',
+        '未选择代码zip包': 'No code zip selected',
+        '未选择执行机镜像': 'No host image selected',
+        '未选择本地结果保存目录': 'No local result directory selected',
+        '未选择镜像tar包': 'No image tar selected',
+        '本地日志': 'Local log',
+        '本地结果目录': 'Local result directory',
+        '本工具将AISBench测试流程简化为两步操作:': 'This tool simplifies AISBench testing into two steps:',
+        '检测到 {count} 个任务的远程容器未清理:\n  {names}\n{work_dir_line}\n退出前是否清理?\n(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n(未清理的容器下次连接时可通过"清理残留容器"删除)':
+            'Detected {count} task(s) with remote containers not cleaned:\n  {names}\n{work_dir_line}\nClean up before exiting?\n(Yes: clean up and exit  No: exit and keep containers  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" on the next connection)',
+        '模型名称': 'Model name',
+        '模型最大上下文': 'Model max context',
+        '模型最大上下文未填写或非数字': 'Model max context is empty or not a number',
+        '模型权重路径': 'Model weight path',
+        '模型路径': 'Model path',
+        '每个任务的日志同时写入本地文件(工具数据目录 logs/ 下, 每任务一个)。':
+            "Each task's log is also written to a local file (logs/ under the app data directory, one per task).",
+        '测试代码': 'Test code',
+        '测试参数: 填写单个DP组KV cache、DP数、模型最大上下文等;':
+            'Test parameters: fill in per-DP-group KV cache, DP groups, model max context, etc.;',
+        '测试完成但未提取到有效结果': 'Tests finished but no valid results were extracted',
+        '测试用例:': 'Test cases:',
+        '测试用例数': 'Test cases',
+        '浏览远程目录 - 选择临时部署目录': 'Browse remote directory - choose deploy directory',
+        '浏览远程目录 - 选择模型路径': 'Browse remote directory - choose model path',
+        '点击"测试连接"验证。连接成功后会自动扫描上次退出':
+            'Click "Test connection" to verify. After a successful connection, containers',
+        '版本: {version}': 'Version: {version}',
+        '独立工具, 无需连接服务器。选择两个 results_*.csv 文件,':
+            'A standalone tool, no server connection needed. Select two results_*.csv files,',
+        '界面未初始化': 'UI not initialized',
+        '留空自动: 服务名_时间': 'Empty = service name_time',
+        '确定取消任务 {name}?\n\n执行阶段会停止容器以中断测试; 已产生的本地结果不受影响。':
+            'Cancel task {name}?\n\nDuring execution, stopping the container interrupts the test; results already produced locally are kept.',
+        '确认任务信息': 'Confirm task info',
+        '确认取消': 'Cancel task',
+        '确认清理任务 {name} 的以下远程资源?\n\n{container}{workdir}\n清理后如需再次执行, 请重新创建任务。':
+            'Clean the following remote resources of task {name}?\n\n{container}{workdir}To run again after cleanup, create the task again.',
+        '清理任务资源': 'Clean task resources',
+        '结束时间': 'End time',
+        '结果': 'Result',
+        '结果分析: CSV差异对比与图表导出': 'Result analysis: CSV diff comparison and chart export',
+        '结果摘要': 'Result summary',
+        '结果目录/CSV': 'Result dir/CSV',
+        '结果目录不存在: {path}': 'Result directory does not exist: {path}',
+        '请先在步骤1连接执行机, 再清理任务资源': 'Connect to the host in step 1 before cleaning task resources',
+        '请先完成以下配置:\n': 'Please complete the following configuration first:\n',
+        '请先选择任务': 'Select a task first',
+        '请求发送速率': 'Request rate',
+        '请求发送速率必须为数字(0=Burst)': 'Request rate must be a number (0=Burst)',
+        '请求发送速率输入无效, 请输入数字\n(支持小数如 0.3; 0表示Burst模式)':
+            'Invalid request rate; enter a number\n(decimals like 0.3 are supported; 0 means Burst)',
+        '请求数': 'Requests',
+        '输入长度': 'Input length',
+        '输出长度': 'Output length',
+        '运行环境: Python {py} / Tk {tk}': 'Runtime: Python {py} / Tk {tk}',
+        '远程AISBench测试任务创建与结果分析工具': 'Remote AISBench test task creation and result analysis tool',
+        '远程AISBench测试任务创建与结果分析工具\n\n':
+            'Remote AISBench test task creation and result analysis tool.\n\n',
+        '部署容器 → 写入config.py → 执行测试 → 下载并解析结果':
+            'Deploy container → write config.py → run tests → download and parse results',
+        '预览任务信息': 'Preview task info',
+        # ---- task engine and compare strings (added in 1.9.0) ----
+        '\n  ⚠ 部分测试失败 (exit_code={code}), 继续下载日志排查\n':
+            '\n  ⚠ Some tests failed (exit_code={code}); continuing to download logs for inspection\n',
+        '\n  ✓ 测试脚本执行完成\n': '\n  ✓ Test script finished\n',
+        '\n===== 任务失败: {error} =====\n': '\n===== Task failed: {error} =====\n',
+        '\n===== 任务已取消 =====\n': '\n===== Task cancelled =====\n',
+        '\n===== 任务执行完成 =====\n': '\n===== Task finished =====\n',
+        '\n[取消] 收到取消请求, 正在终止任务...\n': '\n[Cancel] cancel request received, terminating the task...\n',
+        '  CSV文件: {path}\n': '  CSV file: {path}\n',
+        '  ✓ config.py已写入并验证一致\n    MODEL_PATH={model_path}  MODEL_NAME={model_name}  HOST={host_ip}:{host_port}\n':
+            '  ✓ config.py written and verified\n    MODEL_PATH={model_path}  MODEL_NAME={model_name}  HOST={host_ip}:{host_port}\n',
+        '  ✓ {message}\n': '  ✓ {message}\n',
+        '  ✓ {msg}\n': '  ✓ {msg}\n',
+        '  ✓ 容器 {container} 已启动\n': '  ✓ Container {container} started\n',
+        '  ✓ 已下载 {count} 个日志文件到 {dir}\n': '  ✓ Downloaded {count} log files to {dir}\n',
+        '  ✓ 已下载附加文件: {names}\n': '  ✓ Downloaded additional files: {names}\n',
+        '  ✓ 镜像已存在, 跳过上传: {image}\n': '  ✓ Image already exists, skipping upload: {image}\n',
+        '  ✗ 未能从日志中提取到有效结果\n': '  ✗ Failed to extract valid results from the logs\n',
+        '  停止并删除容器: {name}\n': '  Stop and remove container: {name}\n',
+        '  容器内日志目录: {dir}\n': '  Log directory inside the container: {dir}\n',
+        '  无法从tar包预读镜像名, 将上传后由docker load识别\n':
+            '  Cannot pre-read the image name from the tar; docker load will identify it after upload\n',
+        '  日志目录: {dir}\n': '  Log directory: {dir}\n',
+        '  日志目录名: {name}\n': '  Log directory name: {name}\n',
+        '  暂存内置测试代码...\n': '  Staging built-in test code...\n',
+        '  暂存并解压代码zip包...\n': '  Staging and extracting the code zip...\n',
+        '  清理临时部署目录: {dir}\n': '  Cleaning temporary deploy directory: {dir}\n',
+        '  镜像 {image} 不存在, 需要上传并加载\n': '  Image {image} not found; it must be uploaded and loaded\n',
+        '  预检查错误信息:\n{content}\n': '  Pre-check error output:\n{content}\n',
+        '===== 创建任务 {name} ({time}) =====\n': '===== Create task {name} ({time}) =====\n',
+        'SSH未连接, 无法清理远程资源': 'SSH not connected; cannot clean remote resources',
+        'SSH连接失败: {msg}': 'SSH connection failed: {msg}',
+        '[3/5] 创建并启动容器...\n': '[3/5] Creating and starting the container...\n',
+        '[4/5] 导入测试代码到容器...\n': '[4/5] Importing test code into the container...\n',
+        '[5/5] 清理宿主机临时目录...\n': '[5/5] Cleaning the host temporary directory...\n',
+        '[取消] 停止容器 {name} 以中断测试...\n': '[Cancel] stopping container {name} to interrupt the test...\n',
+        '[测试] 下载测试日志到本地...\n': '[Test] Downloading test logs to the local machine...\n',
+        '[测试] 写入测试脚本到容器并执行 (可能耗时较长)...\n':
+            '[Test] Writing the test script into the container and running it (may take a while)...\n',
+        '[测试] 生成测试脚本...\n': '[Test] Generating the test script...\n',
+        '[测试] 解析日志生成CSV结果...\n': '[Test] Parsing logs into CSV results...\n',
+        '[测试] 预检查: 验证容器内MODEL_PATH...\n':
+            '[Test] Pre-check: verifying MODEL_PATH inside the container...\n',
+        '[连接] 建立任务独立SSH连接...\n': "[Connect] Opening the task's dedicated SSH connection...\n",
+        '[部署] 使用临时部署目录: {dir}\n': '[Deploy] Using temporary deploy directory: {dir}\n',
+        'config.py写入后回读不一致: {field} 界面={gui} 容器={container}':
+            'config.py mismatch after write-back: {field} UI={gui} container={container}',
+        'config.py写入失败': 'Failed to write config.py',
+        '✓ 测试完成! 共 {count} 条结果\n': '✓ Tests complete! {count} results in total\n',
+        '代码包上传失败': 'Code package upload failed',
+        '代码包解压失败': 'Code package extraction failed',
+        '任务不存在': 'Task not found',
+        '任务仍在执行, 请先取消': 'Task is still running; cancel it first',
+        '任务资源已清理': 'Task resources cleaned',
+        '无法写入测试脚本到容器': 'Cannot write the test script into the container',
+        '无法写入预检查脚本到容器': 'Cannot write the pre-check script into the container',
+        '未下载到任何日志文件': 'No log files were downloaded',
+        '未找到内置测试代码目录: {path}': 'Built-in test code directory not found: {path}',
+        '未知错误': 'Unknown error',
+        '用户取消': 'Cancelled by user',
+        '配置校验失败:\n': 'Configuration validation failed:\n',
+        '镜像上传失败': 'Image upload failed',
+        '镜像不存在: {image}': 'Image not found: {image}',
+        '镜像加载失败: {image}': 'Image load failed: {image}',
+        '格式校验失败': 'Format validation failed',
+        '输入': 'Input',
+        # ---- task status labels ----
+        '排队中': 'Queued',
+        '部署中': 'Deploying',
+        '配置中': 'Configuring',
+        '执行中': 'Running',
+        '已完成': 'Completed',
+        '失败': 'Failed',
+        '已取消': 'Cancelled',
+        '已中断': 'Interrupted',
+        'IP:': 'IP:',
+        # ---- task page widget texts ----
+        '任务列表': 'Task List',
+        '步骤 3: 任务列表': 'Step 3: Task List',
+        '查看任务运行状态与全量日志, 管理任务数据; 日志同时写入本地文件':
+            'View task status and full logs, manage task data; logs are also written to local files',
+        '配置任务资源与测试用例; 创建后自动执行, 状态与日志在"任务列表"查看':
+            'Configure task resources and test cases; tasks run after creation, with status and logs in "Task List"',
+        '任务资源': 'Task resources',
+        '服务配置': 'Service config',
+        '测试参数与用例': 'Test parameters and cases',
+        'AISBench镜像 · 测试代码 · 模型权重路径 · 临时部署目录':
+            'AISBench image · test code · model weights · deploy directory',
+        'vLLM服务连接参数, 留空自动生成: 模型名ds · IP=执行机IP · 端口8000':
+            'vLLM connection parameters; empty auto-generates: model ds · host machine IP · port 8000',
+        '任务名称:': 'Task name:',
+        '程序内置 (推荐)': 'Built-in (recommended)',
+        '本地 zip 包': 'Local zip',
+        'KV cache信息可用"从日志自动获取"一键筛选; 勾选长度后生成用例':
+            'KV cache values can be filtered in one click via "Auto-fill from logs"; check lengths to generate cases',
+        'KV cache查询命令:': 'KV cache grep command:',
+        '请求发送速率(0=Burst):': 'Request rate (0=Burst):',
+        '确认全量信息后一键执行: 部署容器 → 写入config.py → 执行测试 → 下载结果':
+            'Confirm the full summary and run in one click: deploy container → write config.py → run tests → download results',
+        '🚀 确认创建并执行': '🚀 Create and run',
+        '刷新': 'Refresh',
+        '复制新建': 'Copy to new',
+        '取消任务': 'Cancel task',
+        '清理资源': 'Clean resources',
+        '删除数据': 'Delete data',
+        '全屏显示': 'Fullscreen',
+        '打开结果目录': 'Open result directory',
     }
 }
 

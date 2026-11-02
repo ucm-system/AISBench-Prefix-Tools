@@ -28,8 +28,8 @@ TRANSLATIONS = {
         "AISBench 镜像来源:": "AISBench image source:",
         "API Key (鉴权, 可选):": "API Key (auth, optional):",
         "Docker 部署": "Docker Deployment",
-        "GPU KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)":
-            "GPU KV cache size → KV cache per DP group (tokens); Maximum concurrency → model max context (tokens)",
+        "KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)":
+            "KV cache size → KV cache per DP group (tokens); Maximum concurrency → model max context (tokens)",
         "config.py 位置: 尚未部署": "config.py location: not deployed yet",
         "config.py 位置: 尚未部署（请先完成Docker部署）":
             "config.py location: not deployed yet (finish Docker deployment first)",

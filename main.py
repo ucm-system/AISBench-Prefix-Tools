@@ -2291,7 +2291,7 @@ class WizardApp:
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=8)
 
         LocalizedLabel(hint_frame,
-                 text="GPU KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
+                 text="KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)",
                  bg="#f0f5ff", fg=COLOR_TEXT_MUTED, font=("Segoe UI", 7),
                  anchor=tk.W).pack(fill=tk.X)
 

@@ -325,7 +325,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>8.2 关键行为</h3>
   <ul>
     <li>自动生成实际执行的 grep 命令，用户可复制或直接执行。</li>
-    <li>解析“GPU KV cache size”和“Maximum concurrency”等关键行。</li>
+    <li>解析“KV cache size”和“Maximum concurrency”等关键行（兼容 GPU / NPU 等不同前缀的日志输出）。</li>
     <li>支持一键填入测试参数，减少手工抄写错误。</li>
     <li>文件日志取尾部 2MB，容器 stdout 取尾部 5000 行，避免一次性拉取过大日志。</li>
   </ul>

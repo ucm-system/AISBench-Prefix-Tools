@@ -120,6 +120,10 @@ TRANSLATIONS = {
         "正在刷新...": "Refreshing...",
         "正在扫描残留容器...": "Scanning residual containers...",
         "正在查询执行机镜像...": "Querying execution host images...",
+        "筛选:": "Filter:",
+        "未找到匹配当前关键字的镜像，请调整关键字或清空筛选。":
+            "No images match the current keyword; adjust it or clear the filter.",
+        "筛选: {shown}/{total} 个镜像": "Filtered: {shown}/{total} image(s)",
         "正在连接...": "Connecting...",
         "测试代码来源:": "Test code source:",
         "测试用例 (双击单元格可编辑 Input/Output/请求数/前缀数量/并发数):":
@@ -564,7 +568,8 @@ TRANSLATIONS = {
         'SSH连接错误: {error}': 'SSH connection error: {error}',
         '连接失败: {error}': 'Connection failed: {error}',
         '查询失败: {error}。可先上传tar包，部署时会检查Docker。': 'Query failed: {error}. You can upload a tar package first; Docker will be checked during deployment.',
-        '发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。': 'Found {count} image(s). Select an AISBench image; if none is suitable, switch to uploading a tar package.',
+        '共 {count} 个镜像（筛选后 {shown} 个），请选择AISBench镜像；如无合适镜像，请切换为上传tar包。':
+            '{count} image(s) in total ({shown} after filtering). Select an AISBench image; if none is suitable, switch to uploading a tar package.',
         'ID {id} · 创建于 {created} · 大小 {size}': 'ID {id} · created {created} · size {size}',
         '已选择 {selected} ({detail})': 'Selected {selected} ({detail})',
         '测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nLog: {log}\n{count} records in total',

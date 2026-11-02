@@ -252,6 +252,7 @@ class WizardApp:
         self.config_data = {}
         self.remote_tar_path = ""
         self.remote_images = []
+        self.remote_image_filter_var = tk.StringVar()
         self.deployed = False
         self.image_source_var = tk.StringVar(value="existing")
         self.remote_image_var = tk.StringVar()
@@ -418,6 +419,9 @@ class WizardApp:
         if hasattr(self, "remote_images") and self.remote_images:
             snapshot["remote_images"] = [
                 dict(item) for item in self.remote_images]
+        if hasattr(self, "remote_image_filter_var"):
+            snapshot["remote_image_filter"] = (
+                self.remote_image_filter_var.get())
         if hasattr(self, "image_list_status"):
             snapshot["image_status"] = (
                 self.image_list_status.cget("text"), self.image_list_status.cget("fg"))
@@ -506,8 +510,11 @@ class WizardApp:
         # ---- 恢复步骤2: 镜像/代码/模型/部署状态 ----
         if snapshot.get("remote_images"):
             self.remote_images = snapshot["remote_images"]
-            self.remote_image_combo.config(
-                values=[item["name"] for item in self.remote_images])
+            if "remote_image_filter" in snapshot:
+                self.remote_image_filter_var.set(
+                    snapshot["remote_image_filter"])
+            else:
+                self._apply_remote_image_filter(update_selection=False)
         self._on_image_source_change()
         self._on_code_source_change()
         if "tar_path" in snapshot:
@@ -850,6 +857,16 @@ class WizardApp:
         self.remote_image_frame.grid(row=0, column=0, sticky=tk.EW)
         remote_combo_row = tk.Frame(self.remote_image_frame, bg=COLOR_CARD)
         remote_combo_row.pack(fill=tk.X)
+        # 镜像关键字筛选: 镜像较多时按名称子串过滤, 不区分大小写
+        LocalizedLabel(remote_combo_row, text=tr("筛选:"),
+                       bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+                       font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 2))
+        self.remote_image_filter_entry = tk.Entry(
+            remote_combo_row, textvariable=self.remote_image_filter_var,
+            width=12, font=("Segoe UI", 8))
+        self.remote_image_filter_entry.pack(side=tk.LEFT, padx=(0, 6))
+        self.remote_image_filter_var.trace_add(
+            "write", lambda *_args: self._apply_remote_image_filter())
         # width=1: minimal requested width; fill=X expands it to the
         # available width so long image names scroll inside instead of
         # pushing the buttons out of the window.
@@ -878,6 +895,12 @@ class WizardApp:
                                           bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                                           font=("Segoe UI", 8), anchor=tk.W)
         self.image_list_status.grid(row=1, column=0, sticky=tk.EW, pady=(2, 0))
+
+        self.remote_image_filter_hint = LocalizedLabel(
+            image_choice_frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            font=("Segoe UI", 7), anchor=tk.W)
+        self.remote_image_filter_hint.grid(
+            row=2, column=0, sticky=tk.EW, pady=(0, 2))
 
         row += 1
 
@@ -971,9 +994,11 @@ class WizardApp:
         if self.image_source_var.get() == "existing":
             self.tar_upload_frame.grid_remove()
             self.remote_image_frame.grid()
+            self.remote_image_filter_hint.grid()
         else:
             self.remote_image_frame.grid_remove()
             self.tar_upload_frame.grid()
+            self.remote_image_filter_hint.grid_remove()
 
     def _refresh_remote_images(self):
         """查询并填充执行机上已有的Docker镜像"""
@@ -999,16 +1024,23 @@ class WizardApp:
             return
 
         self.remote_images = images
-        names = [item["name"] for item in images]
-        self.remote_image_combo.config(values=names)
+        self._apply_remote_image_filter(update_selection=False)
+        names = self.remote_image_combo.cget("values") or []
 
         if not names:
-            self.remote_image_var.set("")
-            self.image_source_var.set("upload")
-            self._on_image_source_change()
-            self.image_list_status.config(
-                text="未发现可用镜像，请上传本地AISBench镜像tar包。",
-                fg=COLOR_WARNING)
+            if not images:
+                self.remote_image_var.set("")
+                self.image_source_var.set("upload")
+                self._on_image_source_change()
+                self.image_list_status.config(
+                    text="未发现可用镜像，请上传本地AISBench镜像tar包。",
+                    fg=COLOR_WARNING)
+            else:
+                self.remote_image_var.set("")
+                self._update_remote_image_filter_hint()
+                self.image_list_status.config(
+                    text=trf("未找到匹配当前关键字的镜像，请调整关键字或清空筛选。"),
+                    fg=COLOR_WARNING)
             return
 
         selected = self.remote_image_var.get().strip()
@@ -1025,9 +1057,38 @@ class WizardApp:
             self._on_remote_image_selected()
         else:
             self.image_list_status.config(
-                text=trf("发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
-                    count=len(names)),
+                text=trf("共 {count} 个镜像（筛选后 {shown} 个），请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
+                    count=len(images), shown=len(names)),
                 fg=COLOR_WARNING)
+
+    def _apply_remote_image_filter(self, update_selection: bool = True):
+        """按关键字筛选已有镜像列表(子串匹配, 不区分大小写)"""
+        keyword = self.remote_image_filter_var.get().strip().lower()
+        if keyword:
+            filtered = [
+                item["name"] for item in self.remote_images
+                if keyword in item["name"].lower()]
+        else:
+            filtered = [item["name"] for item in self.remote_images]
+        self.remote_image_combo.config(values=filtered)
+
+        if update_selection:
+            selected = self.remote_image_var.get().strip()
+            if selected and selected not in filtered:
+                self.remote_image_var.set("")
+                self._on_remote_image_selected()
+            self._update_remote_image_filter_hint()
+
+    def _update_remote_image_filter_hint(self):
+        """显示筛选结果数量提示(未查询或未筛选时隐藏)"""
+        keyword = self.remote_image_filter_var.get().strip()
+        values = self.remote_image_combo.cget("values") or []
+        if not self.remote_images or not keyword:
+            self.remote_image_filter_hint.config(text="")
+            return
+        self.remote_image_filter_hint.config(
+            text=trf("筛选: {shown}/{total} 个镜像",
+                     shown=len(values), total=len(self.remote_images)))
 
     def _on_remote_image_selected(self, event=None):
         """更新已选镜像的详情提示"""

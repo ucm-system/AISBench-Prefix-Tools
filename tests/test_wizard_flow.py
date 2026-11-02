@@ -5,8 +5,26 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
+import i18n
 import main
 from docker_manager import DockerManager
+
+
+class LanguageResetMixin:
+    def _settings_patcher(self):
+        import settings_manager
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "settings.json"
+        return mock.patch.object(settings_manager, "settings_path",
+                                  return_value=path)
+
+    def setUp(self):
+        super().setUp()
+        i18n.set_language("zh")
+
+    def tearDown(self):
+        i18n.set_language("zh")
 
 
 class WizardFlowTests(unittest.TestCase):
@@ -130,6 +148,109 @@ class DeploySequenceTests(unittest.TestCase):
                 c for c in ssh.commands if ".aisbench_test_state" in c)
             self.assertIn("docker exec", state_cmd)
             self.assertIn("initialized", state_cmd)
+        finally:
+            app.root.destroy()
+
+
+class RemoteImageFilterTests(LanguageResetMixin, unittest.TestCase):
+    """执行机已有镜像支持关键字筛选, 便于在大量镜像中定位目标"""
+
+    IMAGES = [
+        {"name": "aisbench:v3.1", "id": "img1", "created": "1 day ago", "size": "12GB"},
+        {"name": "registry.example.com/team/aisbench-runtime:vllm",
+         "id": "img2", "created": "2 days ago", "size": "11GB"},
+        {"name": "ubuntu:24.04", "id": "img3", "created": "3 days ago", "size": "100MB"},
+    ]
+
+    def _app_with_images(self):
+        with self._settings_patcher():
+            app = main.WizardApp()
+        app.remote_images = [dict(item) for item in self.IMAGES]
+        app._apply_remote_image_filter(update_selection=False)
+        return app
+
+    def test_filter_is_case_insensitive_substring_match(self):
+        app = self._app_with_images()
+        try:
+            self.assertEqual(
+                list(app.remote_image_combo.cget("values")),
+                [item["name"] for item in self.IMAGES])
+
+            app.remote_image_filter_var.set("AIS")
+
+            self.assertEqual(
+                list(app.remote_image_combo.cget("values")),
+                ["aisbench:v3.1",
+                 "registry.example.com/team/aisbench-runtime:vllm"])
+            self.assertEqual(
+                app.remote_image_filter_hint.cget("text"),
+                "筛选: 2/3 个镜像")
+        finally:
+            app.root.destroy()
+
+    def test_clearing_filter_restores_all_images(self):
+        app = self._app_with_images()
+        try:
+            app.remote_image_filter_var.set("ubuntu")
+            app.remote_image_filter_var.set("")
+
+            self.assertEqual(
+                list(app.remote_image_combo.cget("values")),
+                [item["name"] for item in self.IMAGES])
+            self.assertEqual(app.remote_image_filter_hint.cget("text"), "")
+        finally:
+            app.root.destroy()
+
+    def test_filter_out_of_scope_selection(self):
+        app = self._app_with_images()
+        try:
+            app.remote_image_var.set("ubuntu:24.04")
+
+            app.remote_image_filter_var.set("aisbench")
+
+            self.assertEqual(app.remote_image_var.get(), "")
+        finally:
+            app.root.destroy()
+
+    def test_refresh_with_filter_reports_no_match_without_switching_to_upload(self):
+        with self._settings_patcher():
+            app = main.WizardApp()
+        try:
+            ssh = FakeDeploySSH()
+            app.ssh = ssh
+            app.docker = DockerManager(ssh)
+            app.docker.list_images = lambda: [dict(item) for item in self.IMAGES]
+            app.remote_image_filter_var.set("does-not-exist")
+
+            app._refresh_remote_images()
+
+            self.assertEqual(app.image_source_var.get(), "existing")
+            self.assertEqual(app.remote_image_var.get(), "")
+            self.assertEqual(
+                list(app.remote_image_combo.cget("values")), [])
+            self.assertIn("未找到匹配当前关键字的镜像",
+                          app.image_list_status.cget("text"))
+        finally:
+            app.root.destroy()
+
+    def test_language_switch_preserves_filter_keyword(self):
+        app = self._app_with_images()
+        try:
+            app.remote_image_filter_var.set("aisbench")
+            app.remote_image_var.set("aisbench:v3.1")
+
+            app.language_var.set("English")
+            app._on_language_change()
+
+            self.assertEqual(app.remote_image_filter_var.get(), "aisbench")
+            self.assertEqual(app.remote_image_var.get(), "aisbench:v3.1")
+            self.assertEqual(
+                list(app.remote_image_combo.cget("values")),
+                ["aisbench:v3.1",
+                 "registry.example.com/team/aisbench-runtime:vllm"])
+            self.assertEqual(
+                app.remote_image_filter_hint.cget("text"),
+                "Filtered: 2/3 image(s)")
         finally:
             app.root.destroy()
 

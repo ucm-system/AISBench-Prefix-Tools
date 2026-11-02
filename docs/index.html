@@ -303,7 +303,7 @@ build_exe.bat</code></pre>
 <section id="step2">
   <h2>步骤 2：Docker 部署与模型配置</h2>
   <span class="step-badge">STEP 2 / 5</span>
-  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像；未发现可用镜像时自动切换为上传 tar 包。模型、vLLM 服务、代码来源、临时部署目录、残留容器清理与部署日志都在同一页面完成。</p>
+  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像；镜像下拉框左侧提供“筛选”输入框，可按关键字（不区分大小写）实时过滤长镜像名。未发现可用镜像时自动切换为上传 tar 包。模型、vLLM 服务、代码来源、临时部署目录、残留容器清理与部署日志都在同一页面完成。</p>
   <figure class="figure">
     <img src="images/step2-docker-20261030.png?v=20261030" alt="步骤 2：Docker 部署与模型配置界面">
     <figcaption>部署完成示例：复用已有镜像启动容器，测试代码已导入容器，宿主机临时目录自动清理</figcaption>
@@ -311,7 +311,7 @@ build_exe.bat</code></pre>
   <table>
     <thead><tr><th>字段</th><th>说明</th></tr></thead>
     <tbody>
-      <tr><td>AISBench 镜像来源</td><td>点击“查看已有镜像”读取执行机镜像列表并选择；未发现镜像时自动切换到上传模式。</td></tr>
+      <tr><td>AISBench 镜像来源</td><td>点击“查看已有镜像”读取执行机镜像列表并选择；支持关键字筛选（显示“筛选: N/M 个镜像”），未发现镜像时自动切换到上传模式。</td></tr>
       <tr><td>镜像 tar 包</td><td>上传模式专用，选择本地 AISBench Docker 镜像文件；可点击“镜像下载链接”直达 Releases。</td></tr>
       <tr><td>临时部署目录</td><td>默认 <code>/tmp/AISBench_Prefix_Tools</code>；仅部署期间暂存镜像 tar 和代码，导入容器后自动删除。</td></tr>
       <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器（含测试任务状态列），可同时清理旧版遗留的临时目录。</td></tr>
@@ -539,6 +539,8 @@ build_exe.bat</code></pre>
   <h2>常见问题</h2>
   <h3>执行机已有镜像，还需要上传 tar 包吗？</h3>
   <p>不需要。在步骤 2 点击“查看已有镜像”并选择镜像，部署时会校验该镜像仍存在，然后跳过上传与 docker load。未发现可用镜像时才切换到上传模式。</p>
+  <h3>执行机镜像太多，找不到目标镜像怎么办？</h3>
+  <p>查看已有镜像后，在下拉框左侧的“筛选”输入框输入关键字（如 <code>aisbench</code>、镜像 tag、仓库名片段），列表会按子串实时过滤且不区分大小写，并显示“筛选: N/M 个镜像”；清空关键字即可恢复完整列表。若当前关键字无匹配，会提示调整关键字而不是自动切换到上传模式。</p>
   <h3>上传镜像后无法自动识别镜像名？</h3>
   <p>工具优先读取 tar 包内 manifest.json 获取镜像名；读取失败时再解析 docker load 输出。可在步骤 2 部署日志中查看结果。</p>
   <h3>如何切换中文 / English 界面？</h3>

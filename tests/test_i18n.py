@@ -183,9 +183,10 @@ class DynamicMessageI18nTests(unittest.TestCase):
             i18n.trf("已清理: {work_dir}", work_dir="/tmp/aisbench"),
             "Cleaned: /tmp/aisbench")
         self.assertEqual(
-            i18n.trf("发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。", count=3),
-            "Found 3 image(s). Select an AISBench image; if none is suitable, "
-            "switch to uploading a tar package.")
+            i18n.trf("共 {count} 个镜像（筛选后 {shown} 个），请选择AISBench镜像；如无合适镜像，请切换为上传tar包。",
+                     count=3, shown=2),
+            "3 image(s) in total (2 after filtering). Select an AISBench image; "
+            "if none is suitable, switch to uploading a tar package.")
         self.assertEqual(
             i18n.trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
                      csv="a.csv", log="logs", count=2),

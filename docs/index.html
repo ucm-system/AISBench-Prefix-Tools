@@ -268,7 +268,7 @@ build_exe.bat</code></pre>
   <p>界面控件、弹窗提示（如“下一步”校验、部署与清理确认、结果摘要）、远程日志工具（服务器/日志来源/筛选结果与查看日志窗口）以及状态栏动态消息均随所选语言显示；弹窗按钮（确定/取消/是/否）也由程序自绘并跟随所选语言，不受操作系统语言影响。</p>
   <p>切换语言只改变界面呈现：当前步骤、SSH 登录信息、镜像/模型/配置输入与执行结果都会完整保留，不会跳回第一步。</p>
   <figure class="figure">
-    <img src="images/step2-docker-en-20261030.png?v=20261030" alt="English interface example">
+    <img src="images/step2-docker-en-20261106.png?v=20261106" alt="English interface example">
     <figcaption>English 界面示例：步骤 2 的 Docker 部署与模型配置页面</figcaption>
   </figure>
 </section>
@@ -282,7 +282,7 @@ build_exe.bat</code></pre>
     连接成功后工具会自动扫描本工具创建的容器；如发现上次退出未清理的 <code>aisbench-test-*</code> 容器，会提示打开清理窗口勾选删除。
   </div>
   <figure class="figure">
-    <img src="images/step1-connection-20261030.png?v=20261030" alt="步骤 1：SSH 连接执行机界面">
+    <img src="images/step1-connection-20261106.png?v=20261106" alt="步骤 1：SSH 连接执行机界面">
     <figcaption>连接成功状态示例：192.168.1.30:22，用户 root，密码认证</figcaption>
   </figure>
   <table>
@@ -305,7 +305,7 @@ build_exe.bat</code></pre>
   <span class="step-badge">STEP 2 / 5</span>
   <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像；未发现可用镜像时自动切换为上传 tar 包。模型、vLLM 服务、代码来源、临时部署目录、残留容器清理与部署日志都在同一页面完成。</p>
   <figure class="figure">
-    <img src="images/step2-docker-20261030.png?v=20261030" alt="步骤 2：Docker 部署与模型配置界面">
+    <img src="images/step2-docker-20261106.png?v=20261106" alt="步骤 2：Docker 部署与模型配置界面">
     <figcaption>部署完成示例：复用已有镜像启动容器，测试代码已导入容器，宿主机临时目录自动清理</figcaption>
   </figure>
   <table>
@@ -352,7 +352,7 @@ build_exe.bat</code></pre>
   <span class="step-badge">STEP 3 / 5</span>
   <p>模型与服务字段会从步骤 2 自动带入。确认或修改配置后点击“保存配置到容器”，配置会直接写入容器内部工作区；再用“验证配置”回读容器内文件并与界面值逐项比对。</p>
   <figure class="figure">
-    <img src="images/step3-config-20261030.png?v=20261030" alt="步骤 3：config.py 配置界面">
+    <img src="images/step3-config-20261106.png?v=20261106" alt="步骤 3：config.py 配置界面">
     <figcaption>配置示例：ds 模型、远程模型路径、vLLM 服务 192.168.1.30:8000</figcaption>
   </figure>
   <table>
@@ -373,7 +373,7 @@ build_exe.bat</code></pre>
   <span class="step-badge">STEP 4 / 5</span>
   <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、前缀数量、最小请求数、并发数和 KV 使用率。</p>
   <figure class="figure">
-    <img src="images/step4-testcases-20261101.png?v=20261101" alt="步骤 4：测试用例设计界面">
+    <img src="images/step4-testcases-20261106.png?v=20261106" alt="步骤 4：测试用例设计界面">
     <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024；前缀数量默认等于请求数</figcaption>
   </figure>
   <table>
@@ -407,7 +407,7 @@ build_exe.bat</code></pre>
   <span class="step-badge">STEP 5 / 5</span>
   <p>确认本地结果保存目录后，点击“执行测试 → 生成CSV”。工具会将测试脚本写入容器内部、先检查模型路径、逐用例执行、从容器下载日志并在本地解析 CSV。</p>
   <figure class="figure">
-    <img src="images/step5-execute-20261030.png?v=20261030" alt="步骤 5：测试执行与结果摘要界面">
+    <img src="images/step5-execute-20261106.png?v=20261106" alt="步骤 5：测试执行与结果摘要界面">
     <figcaption>执行完成示例：4 个用例的吞吐、延迟与命中率摘要，容器日志已下载到本地</figcaption>
   </figure>
   <div class="flow">

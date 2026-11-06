@@ -181,6 +181,7 @@ def populate_step4(app):
         var.set(length in (512, 1024))
 
     app._refresh_test_tree()
+    app._show_calc_details()
 
 
 def populate_step5(app):
@@ -234,28 +235,28 @@ def main():
 
     populate_step1(app)
     app._show_step(0)
-    capture(app, "step1-connection-20261030.png")
+    capture(app, "step1-connection-20261106.png")
 
     populate_step2(app)
-    capture(app, "step2-docker-20261030.png")
+    capture(app, "step2-docker-20261106.png")
 
     set_language("en")
     app._rebuild_ui_for_language()
     populate_step2(app)
-    capture(app, "step2-docker-en-20261030.png")
+    capture(app, "step2-docker-en-20261106.png")
 
     set_language("zh")
     app._rebuild_ui_for_language()
     populate_step2(app)
 
     populate_step3(app)
-    capture(app, "step3-config-20261030.png")
+    capture(app, "step3-config-20261106.png")
 
     populate_step4(app)
-    capture(app, "step4-testcases-20261030.png")
+    capture(app, "step4-testcases-20261106.png")
 
     populate_step5(app)
-    capture(app, "step5-execute-20261030.png")
+    capture(app, "step5-execute-20261106.png")
 
     app.root.destroy()
 

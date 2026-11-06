@@ -126,11 +126,12 @@ python scripts/generate_docs_screenshots.py
 
 | 文件 | 对应步骤 |
 |------|----------|
-| `step1-connection-20261028.png` | SSH 连接 |
-| `step2-docker-20261028.png` | Docker 部署与模型配置 |
-| `step3-config-20261028.png` | 配置 `config.py` |
-| `step4-testcases-20261028.png` | 设计测试用例 |
-| `step5-execute-20261028.png` | 执行测试并生成 CSV |
+| `step1-connection-20261106.png` | SSH 连接 |
+| `step2-docker-20261106.png` | Docker 部署与模型配置 |
+| `step2-docker-en-20261106.png` | Docker 部署与模型配置（英文界面） |
+| `step3-config-20261106.png` | 配置 `config.py` |
+| `step4-testcases-20261106.png` | 设计测试用例 |
+| `step5-execute-20261106.png` | 执行测试并生成 CSV |
 
 脚本只填充示例数据，不会连接远程主机或启动容器。
 

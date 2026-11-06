@@ -137,6 +137,28 @@ python scripts/generate_docs_screenshots.py
 
 ---
 
+## generate_result_compare_screenshot.py — 结果对比截图生成器
+
+### 用途
+
+生成两个工具格式（`CSV_FIELDS` 完全一致）的示例结果 CSV，驱动真实的结果对比对话框完成「加载数据 → 匹配用例 → 开始对比」，并截取窗口输出到 `docs/images/`，用于刷新在线使用文档中的结果对比截图。
+
+### 运行方式
+
+```bash
+python scripts/generate_result_compare_screenshot.py
+```
+
+### 输出
+
+| 文件 | 内容 |
+|------|------|
+| `result-compare-20261106.png` | 结果对比分析：基线 vs 优化后的差异表格与柱状图 |
+
+示例数据为 4 个用例（输入 16K/32K × 输出 512/1024），A=基线v1，B=优化后v2；导出的图表含 TTFT/TPOT/吞吐/QPS/命中率等默认指标。脚本不连接远程主机。
+
+---
+
 ## 典型使用流程
 
 ```bash

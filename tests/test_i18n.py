@@ -37,6 +37,21 @@ class I18nTests(unittest.TestCase):
         i18n.set_language("fr")
         self.assertEqual(i18n.get_language(), "zh")
 
+    def test_task_info_dialog_texts_are_english(self):
+        i18n.set_language("en")
+        self.assertEqual(i18n.tr("任务信息"), "Task info")
+        self.assertEqual(i18n.tr("任务信息 (创建时快照)"),
+                         "Task info (creation snapshot)")
+        self.assertEqual(i18n.tr("任务执行信息"), "Task execution info")
+        self.assertEqual(i18n.tr("容器名称"), "Container name")
+        self.assertEqual(i18n.tr("失败原因"), "Failure reason")
+        self.assertEqual(
+            i18n.trf("状态: {status}", status="Done"),
+            "Status: Done")
+        self.assertEqual(
+            i18n.trf("测试用例 (创建任务时快照, 共{count}条):", count=3),
+            "Test cases (creation snapshot, 3 total):")
+
 
 class LanguageSwitchTests(unittest.TestCase):
     def test_language_switch_rebuilds_ui_and_persists_choice(self):

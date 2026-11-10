@@ -6,6 +6,7 @@ import tkinter as tk
 import unittest
 from datetime import datetime
 from pathlib import Path
+from tkinter import ttk, scrolledtext
 from unittest import mock
 
 import i18n
@@ -219,9 +220,11 @@ class TaskListPageTests(AppMixin, unittest.TestCase):
         self.assertTrue(hasattr(app, "task_tree"))
         self.assertTrue(hasattr(app, "task_log_text"))
         self.assertTrue(hasattr(app, "task_result_tree"))
+        self.assertEqual(app.task_info_btn.cget("text"), "任务信息")
         self.assertEqual(app.task_cancel_btn.cget("text"), "取消任务")
         self.assertEqual(app.task_cleanup_btn.cget("text"), "清理资源")
         self.assertEqual(app.task_delete_btn.cget("text"), "删除数据")
+        self.assertEqual(str(app.task_info_btn.cget("state")), "disabled")
 
     def test_select_task_shows_log_title_and_updates_actions(self):
         app = self._app()
@@ -286,6 +289,99 @@ class TaskListPageTests(AppMixin, unittest.TestCase):
         app.task_manager.delete_task.assert_called_once_with(
             "t1", delete_files=True)
         self.assertIsNone(app.selected_task_id)
+
+    def _snapshot_inputs(self):
+        return TaskInputs(
+            name="snap", image_mode="existing",
+            selected_image="aisbench:v3.1", model_path="/mnt/m",
+            kv_cache="1000000", dp="2", max_req_len="32768",
+            repeat_rate="0.9", request_rate="0",
+            input_lengths=[8192], output_lengths=[512],
+            cases=[
+                {"input_len": 8192, "output_len": 512,
+                 "data_num_recommended": 10, "data_num_min": 5,
+                 "concurrency_recommended": 4, "concurrency_max": 8,
+                 "prefix_num": 10, "repeat_rate": 0.9, "dp": 2,
+                 "is_custom": False},
+                {"input_len": 16384, "output_len": 256,
+                 "data_num_recommended": 6, "data_num_min": 3,
+                 "concurrency_recommended": 2, "concurrency_max": 4,
+                 "prefix_num": 6, "repeat_rate": 0.9, "dp": 2,
+                 "is_custom": True},
+            ])
+
+    def test_task_info_shows_creation_snapshot(self):
+        app = self._app()
+        task = self._task()
+        task.inputs = self._snapshot_inputs()
+        task.error = ""
+        app.task_manager.get.return_value = task
+        app.selected_task_id = "t1"
+
+        app._show_selected_task_info()
+
+        dialogs = [w for w in app.root.winfo_children()
+                   if isinstance(w, tk.Toplevel)]
+        self.assertEqual(len(dialogs), 1)
+        dlg = dialogs[0]
+        self.addCleanup(dlg.destroy)
+        self.assertEqual(dlg.title(), "任务信息")
+
+        def _walk(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from _walk(child)
+
+        texts = [w for w in _walk(dlg)
+                 if isinstance(w, scrolledtext.ScrolledText)]
+        trees = [w for w in _walk(dlg) if isinstance(w, ttk.Treeview)]
+        self.assertEqual(len(trees), 1)
+        # 全量测试用例(2条)全部显示
+        self.assertEqual(len(trees[0].get_children()), 2)
+        values = trees[0].item(trees[0].get_children()[0], "values")
+        self.assertIn("8192", values)
+        self.assertIn("512", values)
+        self.assertIn("10", values)
+        # 配置快照与执行信息分区存在
+        content = texts[0].get("1.0", "end-1c")
+        self.assertIn("任务执行信息", content)
+        self.assertIn("单个DP组KV cache", content)
+        self.assertIn("1000000 tokens", content)
+        self.assertIn("测试用例数: 2", content)
+
+    def test_task_info_without_selection_warns(self):
+        app = self._app()
+        app.selected_task_id = None
+        with mock.patch("main.showwarning") as warn:
+            app._show_selected_task_info()
+        warn.assert_called_once()
+
+    def test_task_tree_double_click_opens_info(self):
+        app = self._app()
+        task = self._task()
+        task.inputs = self._snapshot_inputs()
+        task.error = ""
+        app.task_manager.get.return_value = task
+        app.task_manager.all_tasks.return_value = [task]
+        app._refresh_task_table()
+        app._select_task("t1")
+
+        app._on_task_tree_double_click()
+
+        dialogs = [w for w in app.root.winfo_children()
+                   if isinstance(w, tk.Toplevel)]
+        self.assertEqual(len(dialogs), 1)
+        dialogs[0].destroy()
+
+    def test_task_tree_double_click_ignores_empty_area(self):
+        app = self._app()
+        event = mock.Mock()
+        with mock.patch.object(app.task_tree, "identify_row",
+                               return_value=""):
+            app._on_task_tree_double_click(event)
+        dialogs = [w for w in app.root.winfo_children()
+                   if isinstance(w, tk.Toplevel)]
+        self.assertEqual(dialogs, [])
 
     def test_poll_tasks_updates_table_and_selected_log(self):
         app = self._app()

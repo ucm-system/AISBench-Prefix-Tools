@@ -883,8 +883,24 @@ TRANSLATIONS = {
         # ---- task page widget texts ----
         '任务列表': 'Task List',
         '步骤 3: 任务列表': 'Step 3: Task List',
-        '查看任务运行状态与全量日志, 管理任务数据; 日志同时写入本地文件':
-            'View task status and full logs, manage task data; logs are also written to local files',
+        '查看任务运行状态与全量日志, 双击任务查看创建时的全量用例信息; 日志同时写入本地文件':
+            'View task status and full logs; double-click a task to see its '
+            'full case info captured at creation; logs are also written to local files',
+        '任务信息': 'Task info',
+        '任务信息 (创建时快照)': 'Task info (creation snapshot)',
+        '任务信息: 双击任务或点击按钮查看创建时的全量配置与测试用例。':
+            'Task info: double-click a task or use the button to view the full '
+            'configuration and test cases captured at creation.',
+        '状态: {status}': 'Status: {status}',
+        '任务执行信息': 'Task execution info',
+        '容器名称': 'Container name',
+        '实际镜像': 'Image used',
+        '部署目录': 'Deploy directory',
+        '结果目录': 'Result directory',
+        'CSV文件': 'CSV file',
+        '失败原因': 'Failure reason',
+        '测试用例 (创建任务时快照, 共{count}条):':
+            'Test cases (creation snapshot, {count} total):',
         '配置任务资源与测试用例; 创建后自动执行, 状态与日志在"任务列表"查看':
             'Configure task resources and test cases; tasks run after creation, with status and logs in "Task List"',
         '任务资源': 'Task resources',

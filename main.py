@@ -214,6 +214,7 @@ class WizardApp:
         ]
         tasklist = [
             tr("创建任务后自动跳转到任务列表, 实时查看运行状态与全量日志。"),
+            tr("  任务信息: 双击任务或点击按钮查看创建时的全量配置与测试用例。"),
             tr("  复制新建: 将已有任务的配置预填到创建任务表单。"),
             tr("  取消任务: 终止运行中的任务(执行阶段会停止容器以中断测试)。"),
             tr("  清理资源: 删除任务的容器与远程暂存目录(需已连接执行机)。"),
@@ -1452,33 +1453,30 @@ class WizardApp:
         if inputs is None:
             return
 
-        dlg = tk.Toplevel(self.root)
-        dlg.title(tr("确认任务信息") if execute else tr("预览任务信息"))
-        dlg.geometry("820x680")
-        dlg.transient(self.root)
-        dlg.grab_set()
+        def _confirm(dialog):
+            self._confirm_create_task(dialog, inputs, bool(issues))
 
-        body = tk.Frame(dlg, bg="white")
-        body.pack(fill=tk.BOTH, expand=True)
+        self._render_task_info_dialog(
+            inputs, issues=issues,
+            confirm_command=_confirm if execute else None)
 
-        # 标题
-        header = tk.Frame(body, bg="white")
-        header.pack(fill=tk.X, padx=20, pady=(16, 8))
-        title = tr("创建任务并执行") if execute else tr("当前任务配置预览")
-        LocalizedLabel(header, text=title, bg="white", fg=COLOR_PRIMARY,
-                       font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
-        task_name = inputs.resolved_name()
-        LocalizedLabel(header, text=trf("任务名称: {name}", name=task_name),
-                       bg="white", fg=COLOR_TEXT, font=("Segoe UI", 10)
-                       ).pack(anchor=tk.W, pady=(2, 0))
+    def _show_selected_task_info(self):
+        """任务列表: 查看选中任务创建时的全量配置与测试用例快照"""
+        task = (self.task_manager.get(self.selected_task_id)
+                if self.selected_task_id else None)
+        if not task:
+            showwarning("提示", tr("请先选择任务"))
+            return
+        self._render_task_info_dialog(task.inputs, task=task)
 
-        scroll = scrolledtext.ScrolledText(
-            body, wrap=tk.WORD, font=("Segoe UI", 9),
-            bg="white", fg=COLOR_TEXT, relief=tk.FLAT,
-            padx=20, pady=8, height=10)
-        scroll.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 4))
+    def _on_task_tree_double_click(self, event=None):
+        """双击任务列表行: 查看该任务创建时的全量信息"""
+        if event is not None and not self.task_tree.identify_row(event.y):
+            return
+        self._show_selected_task_info()
 
-        # ---- 分区信息 ----
+    def _task_info_sections(self, inputs: TaskInputs) -> list:
+        """任务全量信息分区数据(创建确认/预览与任务列表查看共用)"""
         image_desc = (inputs.selected_image
                       if inputs.image_mode == "existing"
                       else inputs.tar_path)
@@ -1488,7 +1486,7 @@ class WizardApp:
             "{base} (任务将创建独立子目录, 部署后自动删除)",
             base=inputs.work_dir_base)
 
-        sections = [
+        return [
             (tr("① 任务资源"), [
                 (tr("AISBench镜像"), image_desc),
                 (tr("测试代码"), code_desc),
@@ -1522,6 +1520,77 @@ class WizardApp:
             ]),
         ]
 
+    def _render_task_info_dialog(self, inputs: TaskInputs, *,
+                                 task=None, issues=None,
+                                 confirm_command=None):
+        """渲染任务全量信息对话框(共用)
+
+        - 创建任务页: 传入当前表单快照inputs, confirm_command非空时显示执行按钮
+        - 任务列表: 传入task, 额外显示任务执行信息与全量测试用例
+        """
+        issues = list(issues or [])
+        dlg = tk.Toplevel(self.root)
+        if task is not None:
+            dlg.title(tr("任务信息"))
+        else:
+            dlg.title(tr("确认任务信息") if confirm_command
+                      else tr("预览任务信息"))
+        dlg.geometry("860x700")
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        body = tk.Frame(dlg, bg="white")
+        body.pack(fill=tk.BOTH, expand=True)
+
+        # 标题
+        header = tk.Frame(body, bg="white")
+        header.pack(fill=tk.X, padx=20, pady=(16, 8))
+        if task is not None:
+            title = tr("任务信息 (创建时快照)")
+        else:
+            title = (tr("创建任务并执行") if confirm_command
+                     else tr("当前任务配置预览"))
+        LocalizedLabel(header, text=title, bg="white", fg=COLOR_PRIMARY,
+                       font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
+        task_name = task.display_name if task is not None \
+            else inputs.resolved_name()
+        LocalizedLabel(header, text=trf("任务名称: {name}", name=task_name),
+                       bg="white", fg=COLOR_TEXT, font=("Segoe UI", 10)
+                       ).pack(anchor=tk.W, pady=(2, 0))
+        if task is not None:
+            LocalizedLabel(
+                header,
+                text=trf("状态: {status}", status=task.status_label()),
+                bg="white", fg=COLOR_TEXT, font=("Segoe UI", 10)
+            ).pack(anchor=tk.W, pady=(2, 0))
+
+        scroll = scrolledtext.ScrolledText(
+            body, wrap=tk.WORD, font=("Segoe UI", 9),
+            bg="white", fg=COLOR_TEXT, relief=tk.FLAT,
+            padx=20, pady=8, height=10)
+        scroll.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 4))
+
+        # ---- 分区信息(任务列表视图额外带执行信息) ----
+        sections = self._task_info_sections(inputs)
+        if task is not None:
+            finished = (task.finished_at.strftime("%Y-%m-%d %H:%M:%S")
+                        if task.finished_at else "-")
+            runtime_rows = [
+                (tr("状态"), task.status_label()),
+                (tr("创建时间"),
+                 task.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                (tr("结束时间"), finished),
+                (tr("容器名称"), task.container_name or "-"),
+                (tr("实际镜像"), task.image_name or "-"),
+                (tr("部署目录"), task.deploy_work_dir or "-"),
+                (tr("本地日志"), str(task.log_buffer.log_path)),
+                (tr("结果目录"), task.result_dir or "-"),
+                (tr("CSV文件"), task.csv_path or "-"),
+            ]
+            if task.error:
+                runtime_rows.append((tr("失败原因"), task.error))
+            sections.insert(0, (tr("任务执行信息"), runtime_rows))
+
         scroll.tag_configure("h", font=("Segoe UI", 10, "bold"),
                              foreground=COLOR_PRIMARY)
         scroll.tag_configure("k", foreground=COLOR_TEXT_MUTED)
@@ -1532,26 +1601,39 @@ class WizardApp:
                 scroll.insert(tk.END, f"{value}\n")
             scroll.insert(tk.END, "\n")
 
-        # ---- 测试用例表格 ----
+        # ---- 测试用例表格(任务列表视图显示全量快照) ----
         cases_frame = tk.Frame(body, bg="white")
-        cases_frame.pack(fill=tk.BOTH, expand=False, padx=12, pady=(0, 4))
-        LocalizedLabel(cases_frame, text=tr("测试用例:"), bg="white",
+        cases_frame.pack(fill=tk.BOTH, expand=task is not None,
+                         padx=12, pady=(0, 4))
+        cases_title = (
+            trf("测试用例 (创建任务时快照, 共{count}条):",
+                count=len(inputs.cases))
+            if task is not None else tr("测试用例:"))
+        LocalizedLabel(cases_frame, text=cases_title, bg="white",
                        fg=COLOR_TEXT, font=("Segoe UI", 9, "bold")
                        ).pack(anchor=tk.W, padx=8)
-        columns = ("input", "output", "req", "prefix", "cc")
+        columns = ("num", "input", "output", "req", "prefix",
+                   "req_min", "cc")
         tree = ttk.Treeview(cases_frame, columns=columns, show="headings",
-                            height=min(5, max(1, len(inputs.cases))))
-        headings = [("Input", 80), ("Output", 80), (tr("请求数"), 90),
-                    (tr("前缀数量"), 100), (tr("并发数"), 80)]
+                            height=min(8, max(1, len(inputs.cases))))
+        headings = [("#", 36), ("Input", 70), ("Output", 70),
+                    (tr("请求数(推荐)"), 95), (tr("前缀数量"), 90),
+                    (tr("请求数(最小)"), 95), (tr("并发数"), 70)]
         for col, (title_text, width) in zip(columns, headings):
             tree.heading(col, text=title_text)
             tree.column(col, width=width, anchor=tk.CENTER)
-        tree.pack(fill=tk.X, padx=8, pady=(2, 8))
-        for case in inputs.cases:
+        cases_scroll = tk.Scrollbar(cases_frame, orient=tk.VERTICAL,
+                                    command=tree.yview)
+        tree.config(yscrollcommand=cases_scroll.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH,
+                  expand=task is not None, padx=(8, 0), pady=(2, 8))
+        cases_scroll.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 8), pady=(2, 8))
+        for i, case in enumerate(inputs.cases, 1):
             tree.insert("", tk.END, values=(
-                case.get("input_len", ""), case.get("output_len", ""),
+                i, case.get("input_len", ""), case.get("output_len", ""),
                 case.get("data_num_recommended", ""),
                 case.get("prefix_num", ""),
+                case.get("data_num_min", ""),
                 case.get("concurrency_recommended", ""),
             ))
 
@@ -1570,12 +1652,12 @@ class WizardApp:
         btn_frame = tk.Frame(body, bg="white")
         btn_frame.pack(fill=tk.X, padx=20, pady=(4, 16))
 
-        if execute:
+        if confirm_command is not None:
             run_btn = LocalizedButton(
                 btn_frame, text="🚀 确认创建并执行", bg=COLOR_PRIMARY,
                 fg="white", font=("Segoe UI", 10, "bold"),
                 relief=tk.FLAT, padx=20, pady=6,
-                command=lambda: self._confirm_create_task(dlg, inputs, bool(issues)))
+                command=lambda: confirm_command(dlg))
             run_btn.pack(side=tk.RIGHT)
             if issues:
                 run_btn.config(state=tk.DISABLED)
@@ -2501,12 +2583,14 @@ class WizardApp:
         if not hasattr(self, "task_cancel_btn"):
             return
         if not task:
+            self.task_info_btn.config(state=tk.DISABLED)
             self.task_cancel_btn.config(state=tk.DISABLED)
             self.task_cleanup_btn.config(state=tk.DISABLED)
             self.task_delete_btn.config(state=tk.DISABLED)
             self.task_open_result_btn.config(state=tk.DISABLED)
             return
         active = task.status in TaskStatus.ACTIVE
+        self.task_info_btn.config(state=tk.NORMAL)
         self.task_cancel_btn.config(
             state=tk.NORMAL if active else tk.DISABLED)
         has_resources = bool(task.container_name or task.deploy_work_dir) \
@@ -2669,7 +2753,8 @@ class WizardApp:
 
         self._build_step_header(
             frame, "步骤 3: 任务列表",
-            "查看任务运行状态与全量日志, 管理任务数据; 日志同时写入本地文件")
+            "查看任务运行状态与全量日志, 双击任务查看创建时的全量用例信息; "
+            "日志同时写入本地文件")
 
         # ---- 操作栏 ----
         actions = tk.Frame(frame, bg=COLOR_BG)
@@ -2678,6 +2763,10 @@ class WizardApp:
         LocalizedButton(actions, text="刷新", font=("Segoe UI", 8),
                         command=lambda: self._refresh_task_table(select=self.selected_task_id)
                         ).pack(side=tk.LEFT)
+        self.task_info_btn = LocalizedButton(
+            actions, text="任务信息", font=("Segoe UI", 8),
+            command=self._show_selected_task_info)
+        self.task_info_btn.pack(side=tk.LEFT, padx=4)
         LocalizedButton(actions, text="复制新建", font=("Segoe UI", 8),
                         command=self._copy_selected_task
                         ).pack(side=tk.LEFT, padx=4)
@@ -2731,6 +2820,7 @@ class WizardApp:
         task_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.task_tree.config(yscrollcommand=task_scrollbar.set)
         self.task_tree.bind("<<TreeviewSelect>>", self._on_task_selected)
+        self.task_tree.bind("<Double-1>", self._on_task_tree_double_click)
 
         # Pane 2: 日志 + 结果 (Notebook)
         detail_pane = tk.Frame(self.task_paned, bg=COLOR_BG)

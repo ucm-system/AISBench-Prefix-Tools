@@ -136,7 +136,7 @@ build_exe.bat
 | WORK_PATH | `/benchmark` | aisbench 工作路径 |
 | DEFAULT_PERFORMANCE_TEST | `default_perf` | 稳态测试填 `stable_stage` |
 | OUTPUT_DIR | `./outputs/default` | 日志输出路径 |
-| POD_INFO | `[]` | 各节点信息，格式 `ip:port,ip:port`；字段旁的 `?` 悬停可查看详细说明 |
+| POD_INFO * | `[]` | **PD 分离场景必填**。各节点信息，格式 `ip:port,ip:port`；字段旁的 `?` 悬停可查看详细说明 |
 
 > 标注 `*` 的字段为必填项（界面中在其左侧以红色 `*` 标记）。
 

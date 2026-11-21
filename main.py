@@ -1986,7 +1986,7 @@ class WizardApp:
             ("WORK_PATH (工作路径)", "work_path", False),
             ("DEFAULT_PERFORMANCE_TEST", "default_perf", False),
             ("OUTPUT_DIR (输出路径)", "output_dir", False),
-            ("POD_INFO (各节点信息)", "pod_info", False),
+            ("POD_INFO (PD分离场景必填)", "pod_info", True),
         ]
 
         self.config_entry_vars = {}

@@ -16,7 +16,11 @@ from ssh_manager import SSHManager
 
 
 # KV cache 查询命令 (与界面展示保持一致)
-KV_GREP_COMMAND = "cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'"
+# GPU/NPU 前缀均兼容: 昇腾部分镜像版本后日志关键词为 "NPU KV cache size"
+KV_GREP_COMMAND = (
+    "cat vllm_serve.log | "
+    "grep -e 'GPU KV cache size' -e 'NPU KV cache size' -e 'Maximum concurrency'"
+)
 
 # 样式常量 (与 main.py 保持一致)
 COLOR_BG = "#f8fafc"
@@ -579,7 +583,8 @@ class RemoteLogBrowser:
 
     def _grep_command(self) -> Optional[str]:
         mode = self._source_mode()
-        grep = "grep -e 'GPU KV cache size' -e 'Maximum concurrency'"
+        grep = ("grep -e 'GPU KV cache size' -e 'NPU KV cache size' "
+                "-e 'Maximum concurrency'")
         if mode == "docker_logs":
             container = self.container_var.get()
             if not container:
@@ -704,7 +709,9 @@ class RemoteLogBrowser:
         kv = None
         max_len = None
 
-        match = re.search(r"GPU KV cache size:?\s*([\d,]+)\s*tokens", text)
+        # 兼容 GPU/NPU 两种关键词: 昇腾部分镜像版本后改为 NPU KV cache size
+        match = re.search(
+            r"(?:GPU|NPU) KV cache size:?\s*([\d,]+)\s*tokens", text)
         if match:
             try:
                 kv = int(match.group(1).replace(",", ""))

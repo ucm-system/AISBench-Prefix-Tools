@@ -117,8 +117,8 @@ class InteractiveTestCaseDesigner:
         """步骤1：输入KV cache size"""
         self.print_header("步骤 1/5: 输入GPU KV Cache信息")
         
-        self.print_info("请从vLLM日志中找到 'GPU KV cache size' 信息")
-        self.print_info("示例: 'GPU KV cache size: 198,469 tokens'")
+        self.print_info("请从vLLM日志中找到 'GPU KV cache size' 或 'NPU KV cache size' 信息")
+        self.print_info("示例: 'GPU KV cache size: 198,469 tokens' / 'NPU KV cache size: 198,469 tokens'")
         self.print_info("")
         self.print_info("注意: 多DP部署时，每个DP组的KV cache size是相同的")
         self.print_info("      只需要输入单个DP组的值，程序会自动乘以DP数")

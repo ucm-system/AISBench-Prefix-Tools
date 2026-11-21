@@ -33,8 +33,6 @@ TRANSLATIONS = {
         "config.py 位置: 尚未部署": "config.py location: not deployed yet",
         "config.py 位置: 尚未部署（请先完成Docker部署）":
             "config.py location: not deployed yet (finish Docker deployment first)",
-        "vLLM服务 IP:": "vLLM service IP:",
-        "vLLM服务端口:": "vLLM service port:",
         "● 已连接": "● Connected",
         "● 未连接": "● Not connected",
         "⚠ 已写入但存在不一致!": "⚠ Written but inconsistent!",
@@ -168,12 +166,13 @@ TRANSLATIONS = {
         "语言 / Language:": "Language / Language:",
         "步骤 1: SSH连接到执行机": "Step 1: Connect to execution host via SSH",
         "输入远程执行机的SSH连接信息": "Enter SSH connection information for the remote execution host",
-        "执行机 IP *": "Execution host IP *",
+        "执行机 IP": "Execution host IP",
         "SSH 端口": "SSH port",
-        "用户名 *": "Username *",
+        "用户名": "Username",
         "步骤 2: Docker部署与模型配置": "Step 2: Docker deployment and model configuration",
-        "选择执行机已有AISBench镜像或上传tar包, 配置模型/vLLM服务后一键部署容器":
-            "Select an existing AISBench image on the execution host or upload a tar package; configure model/vLLM service and deploy the container in one click",
+        "选择AISBench镜像来源(支持关键词筛选), 填写模型路径后一键部署容器":
+            "Select the AISBench image source (keyword filtering supported), "
+            "fill in the model path, and deploy the container in one click",
         "aisbench_auto_tools_prefix (程序内置, 部署时自动上传)":
             "aisbench_auto_tools_prefix (built-in, uploaded automatically during deployment)",
         "镜像:": "Image:",
@@ -183,16 +182,18 @@ TRANSLATIONS = {
         "镜像名称:": "Image name:",
         "步骤 3: 配置 config.py": "Step 3: Configure config.py",
         "配置aisbench_auto_tools_prefix的测试参数": "Configure aisbench_auto_tools_prefix test parameters",
-        "* MODEL_NAME (模型名称)": "* MODEL_NAME (model name)",
-        "* MODEL_PATH (模型路径)": "* MODEL_PATH (model path)",
-        "* HOST_IP (vLLM服务IP)": "* HOST_IP (vLLM service IP)",
-        "* HOST_PORT (vLLM服务端口)": "* HOST_PORT (vLLM service port)",
-        "  API_KEY (鉴权, 可空)": "  API_KEY (auth, optional)",
-        "  DATASET_PATH (自动设置)": "  DATASET_PATH (set automatically)",
-        "  WORK_PATH (工作路径)": "  WORK_PATH (working path)",
-        "  OUTPUT_DIR (输出路径)": "  OUTPUT_DIR (output path)",
-        "  POD_INFO (多DP必填, 格式: ip:port,ip:port)":
-            "  POD_INFO (required for multi-DP, format: ip:port,ip:port)",
+        "MODEL_NAME (模型名称)": "MODEL_NAME (model name)",
+        "MODEL_PATH (模型路径)": "MODEL_PATH (model path)",
+        "HOST_IP (vLLM服务IP)": "HOST_IP (vLLM service IP)",
+        "HOST_PORT (vLLM服务端口)": "HOST_PORT (vLLM service port)",
+        "API_KEY (鉴权, 可空)": "API_KEY (auth, optional)",
+        "DATASET_PATH (自动设置)": "DATASET_PATH (set automatically)",
+        "WORK_PATH (工作路径)": "WORK_PATH (working path)",
+        "OUTPUT_DIR (输出路径)": "OUTPUT_DIR (output path)",
+        "POD_INFO (PD分离下多DP场景必填)":
+            "POD_INFO (required for multi-DP under PD disaggregation)",
+        "关键词筛选:": "Keyword filter:",
+        "清除": "Clear",
         "步骤 4: 设计测试用例": "Step 4: Design test cases",
         "根据KV cache信息生成测试参数": "Generate test parameters from KV cache information",
         "  并发数 = floor( total_kv_cache / (input_len + output_len) )":
@@ -565,6 +566,17 @@ TRANSLATIONS = {
         '连接失败: {error}': 'Connection failed: {error}',
         '查询失败: {error}。可先上传tar包，部署时会检查Docker。': 'Query failed: {error}. You can upload a tar package first; Docker will be checked during deployment.',
         '发现 {count} 个镜像，请选择AISBench镜像；如无合适镜像，请切换为上传tar包。': 'Found {count} image(s). Select an AISBench image; if none is suitable, switch to uploading a tar package.',
+        '关键词"{keyword}"匹配 {matched}/{total} 个镜像': 'Keyword "{keyword}" matched {matched} of {total} image(s)',
+        '各节点信息，格式为 ["{ip}:{port}"]\n'
+        '用于查询vllm metrics计算各个dp域的prefix cache命中率，不配置默认为HOST_IP:HOST_PORT\n'
+        'PD分离场景请填写各个P节点的IP和对应dp域的port\n'
+        'POD_INFO = ["141.xx.xx.11:8000","141.xx.xx.12:8000"]':
+            'Per-node information, format: ["{ip}:{port}"]\n'
+            'Used to query vLLM metrics and compute the prefix cache hit rate '
+            'of each DP domain; defaults to HOST_IP:HOST_PORT when unset\n'
+            'For PD disaggregation, fill in the IP of each P node and the port '
+            'of its corresponding DP domain\n'
+            'POD_INFO = ["141.xx.xx.11:8000","141.xx.xx.12:8000"]',
         'ID {id} · 创建于 {created} · 大小 {size}': 'ID {id} · created {created} · size {size}',
         '已选择 {selected} ({detail})': 'Selected {selected} ({detail})',
         '测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nLog: {log}\n{count} records in total',

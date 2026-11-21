@@ -5,8 +5,8 @@ AISBenchPrefixTools - Windows GUI应用程序
 
 功能流程:
   1. 连接远程执行机 (SSH)
-  2. 选择执行机已有镜像或上传镜像tar包, 配置模型并部署容器
-  3. 配置config.py (直接写入容器内部)
+  2. 选择执行机已有镜像或上传镜像tar包, 填写模型路径并部署容器
+  3. 配置config.py (模型名称/服务地址等参数直接写入容器内部)
   4. 设计测试用例
   5. 执行测试并收集结果 (测试代码/日志均在容器内, 宿主机临时目录部署后自动删除)
 """
@@ -60,6 +60,50 @@ COLOR_TEXT_MUTED = "#64748b"
 COLOR_SUCCESS = "#16a34a"
 COLOR_ERROR = "#dc2626"
 COLOR_WARNING = "#d97706"
+
+
+# POD_INFO字段问号提示: 与生成config.py中的注释保持一致
+POD_INFO_HELP_TEXT = (
+    "各节点信息，格式为 [\"{ip}:{port}\"]\n"
+    "用于查询vllm metrics计算各个dp域的prefix cache命中率，"
+    "不配置默认为HOST_IP:HOST_PORT\n"
+    "PD分离场景请填写各个P节点的IP和对应dp域的port\n"
+    "POD_INFO = [\"141.xx.xx.11:8000\",\"141.xx.xx.12:8000\"]"
+)
+
+
+class Tooltip:
+    """鼠标悬停提示: 移入控件显示文字, 移出后自动隐藏"""
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+        widget.bind("<ButtonPress>", self._hide)
+
+    def _show(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        self.tip_window = tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        try:
+            tip.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        LocalizedLabel(tip, text=self.text, bg=COLOR_TEXT, fg="#f8fafc",
+                       justify=tk.LEFT, anchor=tk.W, padx=10, pady=6,
+                       wraplength=460, font=("Segoe UI", 8)).pack()
+
+    def _hide(self, event=None):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+
 
 
 class LiveLogHandler:
@@ -255,16 +299,14 @@ class WizardApp:
         self.deployed = False
         self.image_source_var = tk.StringVar(value="existing")
         self.remote_image_var = tk.StringVar()
+        # 已有镜像列表关键词筛选(镜像较多时快速定位)
+        self.image_filter_var = tk.StringVar()
 
         # 日志处理器 + 取消标志（解决后台线程阻塞UI）
         self._cancel_flag = threading.Event()
         self._flush_timer_id = None
         self._exec_flush_timer_id = None
         self.model_path_var = tk.StringVar()
-        self.host_ip_var = tk.StringVar()
-        self.host_port_var = tk.StringVar(value="8000")
-        self.model_name_var = tk.StringVar(value="ds")
-        self.api_key_var = tk.StringVar()
         self.pod_info_var = tk.StringVar()
         self.dataset_path_var = tk.StringVar()
 
@@ -506,8 +548,8 @@ class WizardApp:
         # ---- 恢复步骤2: 镜像/代码/模型/部署状态 ----
         if snapshot.get("remote_images"):
             self.remote_images = snapshot["remote_images"]
-            self.remote_image_combo.config(
-                values=[item["name"] for item in self.remote_images])
+            # 恢复时保留关键词筛选状态
+            self._apply_image_filter()
         self._on_image_source_change()
         self._on_code_source_change()
         if "tar_path" in snapshot:
@@ -706,15 +748,13 @@ class WizardApp:
         form.pack(fill=tk.X, pady=8)
 
         fields = [
-            ("执行机 IP *", "host", ""),
-            ("SSH 端口", "port", "22"),
-            ("用户名 *", "user", "root"),
+            ("执行机 IP", "host", "", True),
+            ("SSH 端口", "port", "22", False),
+            ("用户名", "user", "root", True),
         ]
         self.conn_vars = {}
-        for i, (label, key, default) in enumerate(fields):
-            LocalizedLabel(form, text=label, bg=COLOR_CARD, fg=COLOR_TEXT,
-                   font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W,
-                                               padx=16, pady=8)
+        for i, (label, key, default, required) in enumerate(fields):
+            self._grid_field_label(form, label, row=i, required=required)
             var = tk.StringVar(value=default)
             self.conn_vars[key] = var
             entry = tk.Entry(form, textvariable=var, width=30, font=("Segoe UI", 9))
@@ -802,7 +842,6 @@ class WizardApp:
         if ok:
             self.conn_status_lbl.config(text=msg, fg=COLOR_SUCCESS)
             self.status_lbl.config(text="● 已连接", fg=COLOR_SUCCESS)
-            self.host_ip_var.set(self.conn_vars["host"].get().strip())
             showinfo("成功", msg)
             # 连接成功后自动扫描上次退出可能遗留的容器
             self._start_residual_scan(prompt_if_found=True)
@@ -814,11 +853,23 @@ class WizardApp:
     #  Step 1: Docker部署与模型配置
     # ============================================================
 
+    def _grid_field_label(self, parent, text, row, column=0, required=False,
+                          bg=COLOR_CARD, padx=16, pady=8, sticky=tk.W):
+        """创建表单字段标签; required=True时文本左侧显示红色*星号"""
+        frame = tk.Frame(parent, bg=bg)
+        frame.grid(row=row, column=column, sticky=sticky, padx=padx, pady=pady)
+        if required:
+            tk.Label(frame, text="*", bg=bg, fg=COLOR_ERROR,
+                     font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
+        LocalizedLabel(frame, text=text, bg=bg, fg=COLOR_TEXT,
+                       font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        return frame
+
     def _build_step1_files(self):
         frame = self.step_frames[1]
 
         self._build_step_header(frame, "步骤 2: Docker部署与模型配置",
-                                "选择执行机已有AISBench镜像或上传tar包, 配置模型/vLLM服务后一键部署容器")
+                                "选择AISBench镜像来源(支持关键词筛选), 填写模型路径后一键部署容器")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         form.pack(fill=tk.X, pady=8)
@@ -826,8 +877,7 @@ class WizardApp:
         row = 0
 
         # AISBench镜像来源: 优先复用执行机已有镜像; 没有可用镜像时再上传tar包
-        LocalizedLabel(form, text="AISBench 镜像来源:", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
+        self._grid_field_label(form, "AISBench 镜像来源:", row=row, required=True)
         source_frame = tk.Frame(form, bg=COLOR_CARD)
         source_frame.grid(row=row, column=1, columnspan=2,
                           padx=16, pady=(8, 2), sticky=tk.W)
@@ -850,6 +900,17 @@ class WizardApp:
         self.remote_image_frame.grid(row=0, column=0, sticky=tk.EW)
         remote_combo_row = tk.Frame(self.remote_image_frame, bg=COLOR_CARD)
         remote_combo_row.pack(fill=tk.X)
+        # 关键词筛选: 镜像较多时按名称关键词过滤下拉列表
+        filter_frame = tk.Frame(self.remote_image_frame, bg=COLOR_CARD)
+        filter_frame.pack(fill=tk.X, pady=(2, 0))
+        LocalizedLabel(filter_frame, text="关键词筛选:", bg=COLOR_CARD,
+                       fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        self.image_filter_entry = tk.Entry(filter_frame, textvariable=self.image_filter_var,
+                                          width=24, font=("Segoe UI", 8))
+        self.image_filter_entry.pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
+        self.image_filter_entry.bind("<KeyRelease>", self._on_image_filter_changed)
+        LocalizedButton(filter_frame, text="清除", font=("Segoe UI", 8),
+                        command=self._clear_image_filter).pack(side=tk.LEFT, padx=(4, 0))
         # width=1: minimal requested width; fill=X expands it to the
         # available width so long image names scroll inside instead of
         # pushing the buttons out of the window.
@@ -924,8 +985,7 @@ class WizardApp:
         row += 1
 
         # 模型路径（下拉框 + 浏览）
-        LocalizedLabel(form, text="模型权重路径 (远程主机):", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
+        self._grid_field_label(form, "模型权重路径 (远程主机):", row=row, required=True)
         model_frame = tk.Frame(form, bg=COLOR_CARD)
         model_frame.grid(row=row, column=1, columnspan=2, padx=16, pady=8, sticky=tk.EW)
         self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_path_var,
@@ -933,36 +993,6 @@ class WizardApp:
         self.model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         LocalizedButton(model_frame, text="浏览远程目录", command=self._browse_remote_model,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
-
-        row += 1
-
-        # 模型名称
-        LocalizedLabel(form, text="模型名称 (--served-model-name):", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.model_name_var, width=30,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
-
-        row += 1
-
-        # 服务IP和端口
-        LocalizedLabel(form, text="vLLM服务 IP:", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.host_ip_var, width=20,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
-
-        row += 1
-
-        LocalizedLabel(form, text="vLLM服务端口:", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.host_port_var, width=20,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
-
-        row += 1
-
-        LocalizedLabel(form, text="API Key (鉴权, 可选):", bg=COLOR_CARD, fg=COLOR_TEXT,
-               font=("Segoe UI", 9)).grid(row=row, column=0, sticky=tk.W, padx=16, pady=8)
-        tk.Entry(form, textvariable=self.api_key_var, width=30,
-               font=("Segoe UI", 9)).grid(row=row, column=1, padx=16, pady=8, sticky=tk.W)
 
         form.columnconfigure(1, weight=1)
 
@@ -974,6 +1004,39 @@ class WizardApp:
         else:
             self.remote_image_frame.grid_remove()
             self.tar_upload_frame.grid()
+
+    def _filtered_remote_images(self):
+        """按关键词筛选执行机已有镜像列表(大小写不敏感, 子串匹配)"""
+        keyword = self.image_filter_var.get().strip().lower()
+        if not keyword:
+            return list(self.remote_images)
+        return [item for item in self.remote_images
+                if keyword in item["name"].lower()]
+
+    def _apply_image_filter(self):
+        """把关键词筛选结果写入已有镜像下拉框"""
+        filtered = self._filtered_remote_images()
+        self.remote_image_combo.config(values=[item["name"] for item in filtered])
+        return filtered
+
+    def _on_image_filter_changed(self, event=None):
+        """关键词变化时实时筛选镜像列表"""
+        keyword = self.image_filter_var.get().strip()
+        if not self.remote_images:
+            return
+        filtered = self._apply_image_filter()
+        if keyword:
+            self.image_list_status.config(
+                text=trf("关键词\"{keyword}\"匹配 {matched}/{total} 个镜像",
+                         keyword=keyword, matched=len(filtered),
+                         total=len(self.remote_images)),
+                fg=COLOR_TEXT_MUTED if filtered else COLOR_WARNING)
+
+    def _clear_image_filter(self):
+        """清空关键词并恢复完整镜像列表"""
+        self.image_filter_var.set("")
+        if self.remote_images:
+            self._apply_image_filter()
 
     def _refresh_remote_images(self):
         """查询并填充执行机上已有的Docker镜像"""
@@ -999,8 +1062,7 @@ class WizardApp:
             return
 
         self.remote_images = images
-        names = [item["name"] for item in images]
-        self.remote_image_combo.config(values=names)
+        names = [item["name"] for item in self._apply_image_filter()]
 
         if not names:
             self.remote_image_var.set("")
@@ -1924,7 +1986,8 @@ class WizardApp:
             ("WORK_PATH (工作路径)", "work_path", False),
             ("DEFAULT_PERFORMANCE_TEST", "default_perf", False),
             ("OUTPUT_DIR (输出路径)", "output_dir", False),
-            ("POD_INFO (多DP必填, 格式: ip:port,ip:port)", "pod_info", False),
+            # PD分离且多DP的场景必填, 但不作为通用必填项(红色*星号)标记
+            ("POD_INFO (PD分离下多DP场景必填)", "pod_info", False),
         ]
 
         self.config_entry_vars = {}
@@ -1935,10 +1998,21 @@ class WizardApp:
         }
 
         for i, (label, key, required) in enumerate(config_fields):
-            prefix = "* " if required else "  "
-            color = COLOR_ERROR if required else COLOR_TEXT_MUTED
-            LocalizedLabel(form, text=f"{prefix}{label}", bg=COLOR_CARD, fg=color,
-                   font=("Segoe UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=16, pady=6)
+            label_frame = tk.Frame(form, bg=COLOR_CARD)
+            label_frame.grid(row=i, column=0, sticky=tk.W, padx=16, pady=6)
+            if required:
+                # 必填项: 左侧红色*星号标记
+                tk.Label(label_frame, text="*", bg=COLOR_CARD, fg=COLOR_ERROR,
+                         font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
+            LocalizedLabel(label_frame, text=label, bg=COLOR_CARD,
+                           fg=COLOR_TEXT, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+            if key == "pod_info":
+                # 问号提示: 鼠标悬停显示POD_INFO注释说明
+                help_lbl = LocalizedLabel(label_frame, text="?", bg=COLOR_CARD,
+                                          fg=COLOR_PRIMARY, cursor="question_arrow",
+                                          font=("Segoe UI", 9, "bold"))
+                help_lbl.pack(side=tk.LEFT, padx=(4, 0))
+                self.pod_info_tooltip = Tooltip(help_lbl, tr(POD_INFO_HELP_TEXT))
 
             var = tk.StringVar(value=defaults.get(key, ""))
             self.config_entry_vars[key] = var
@@ -1987,11 +2061,7 @@ class WizardApp:
     def _sync_config_vars(self):
         """从之前的步骤同步配置值"""
         if hasattr(self, 'config_entry_vars'):
-            self.config_entry_vars['model_name'].set(self.model_name_var.get())
             self.config_entry_vars['model_path'].set(self.model_path_var.get())
-            self.config_entry_vars['host_ip'].set(self.host_ip_var.get())
-            self.config_entry_vars['host_port'].set(self.host_port_var.get())
-            self.config_entry_vars['api_key'].set(self.api_key_var.get())
             self.config_entry_vars['dataset_path'].set(self.dataset_path_var.get())
             self._update_config_path_label()
             self._update_config_preview()

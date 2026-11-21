@@ -39,7 +39,7 @@ OUTPUT_DIR = "{output_dir}"
 
 # 各节点信息，格式为 ["{{ip}}:{{port}}"]
 # 用于查询vllm metrics计算各个dp域的prefix cache命中率，不配置默认为HOST_IP:HOST_PORT
-# PD分离场景请填写各个节点的IP和对应dp域的port
+# PD分离场景请填写各个P节点的IP和对应dp域的port
 # POD_INFO = ["141.xx.xx.11:8000","141.xx.xx.12:8000"]
 POD_INFO = {pod_info}
 """
@@ -47,10 +47,10 @@ POD_INFO = {pod_info}
     DEFAULT_CONFIG = {
         'dataset_path': '',
         'work_path': '/benchmark',
-        'model_name': 'ds',
+        'model_name': '',
         'model_path': '/path/to/model',
-        'host_ip': '127.0.0.1',
-        'host_port': '8000',
+        'host_ip': '',
+        'host_port': '',
         'api_key': '',
         'default_perf': 'default_perf',
         'output_dir': './outputs/default',

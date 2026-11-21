@@ -23,7 +23,8 @@ class FakeSSHManager:
     def mkdir_p(self, path):
         self.commands.append(f"mkdir -p {path}")
 
-    def execute_with_callback(self, command, callback=None, timeout=300):
+    def execute_with_callback(self, command, callback=None, timeout=300,
+                              stop_event=None):
         self.commands.append(command)
         if callback:
             callback(self.output)
@@ -87,6 +88,18 @@ class DockerManagerContainerTests(unittest.TestCase):
         self.assertIn("-v /mnt/models/ds:/mnt/models/ds", run_cmd)
         self.assertNotIn("aisbench_auto_tools_prefix-main", run_cmd)
         self.assertEqual(self.manager.code_host_path, "")
+
+    def test_stop_script_kills_children_and_target_process(self):
+        self.manager.container_name = "aisbench-test-unit"
+        self.manager.code_mount_path = "/benchmark/ais_bench/code"
+
+        ok = self.manager.stop_script("run_tests.sh")
+
+        self.assertTrue(ok)
+        stop_cmd = self.ssh.commands[-1]
+        self.assertIn("pgrep -f", stop_cmd)
+        self.assertIn("pkill -TERM -P", stop_cmd)
+        self.assertIn("kill -TERM", stop_cmd)
 
     def test_list_managed_containers_filters_by_name_prefix_and_label(self):
         payload = "\n".join([

@@ -123,9 +123,17 @@ class LiveLogHandler:
         r'|\d{1,3}%\s*\|'
         r')'
     )
+    ERROR_RE = re.compile(
+        r'(?i)\b(?:error|err|exception|traceback|failed|failure)\b'
+        r'|[✗]|错误|失败|异常'
+    )
+    WARNING_RE = re.compile(
+        r'(?i)\b(?:warn|warning)\b|[⚠]|警告'
+    )
 
-    def __init__(self, widget):
+    def __init__(self, widget, abnormal_callback=None):
         self.widget = widget
+        self.abnormal_callback = abnormal_callback
         self.raw = ""
         self.has_pending = False
         self._pending_held = False
@@ -152,6 +160,27 @@ class LiveLogHandler:
     @classmethod
     def _is_status(cls, s: str) -> bool:
         return bool(s) and bool(cls.STATUS_RE.match(s))
+
+    @classmethod
+    def classify_line(cls, s: str) -> Optional[str]:
+        """返回warning/error; 正常行返回None, 用于主日志着色和异常列表跳转"""
+        if cls.ERROR_RE.search(s):
+            return "error"
+        if cls.WARNING_RE.search(s):
+            return "warning"
+        return None
+
+    def _insert_complete_line(self, line: str):
+        kind = self.classify_line(line)
+        tags = (f"log_{kind}",) if kind else ()
+        start = self.widget.index('end-1c')
+        self.widget.insert('end-1c', line + '\n', tags)
+        if kind and self.abnormal_callback:
+            try:
+                self.abnormal_callback(kind, int(start.split('.')[0]), line)
+            except Exception:
+                # 异常列表只是辅助功能, 不影响日志主流程
+                pass
 
     def _delete_pending(self):
         if self.has_pending:
@@ -212,7 +241,7 @@ class LiveLogHandler:
                         self._show_pending(cleaned, held=True)
                 else:
                     self._commit_pending()
-                    self.widget.insert('end-1c', cleaned + '\n')
+                    self._insert_complete_line(cleaned)
 
             tail_cleaned = self._clean(tail)
             if tail:
@@ -232,7 +261,7 @@ class LiveLogHandler:
                 line = self._clean(self.raw)
                 if line:
                     self._delete_pending()
-                    self.widget.insert('end-1c', line + '\n')
+                    self._insert_complete_line(line)
                 self.raw = ""
             if self.has_pending:
                 self._commit_pending()
@@ -306,6 +335,10 @@ class WizardApp:
         self._cancel_flag = threading.Event()
         self._flush_timer_id = None
         self._exec_flush_timer_id = None
+        self._test_cancel_event = threading.Event()
+        self._test_running = False
+        self._test_stop_requested = False
+        self._exec_abnormal_entries = []
         self.model_path_var = tk.StringVar()
         self.pod_info_var = tk.StringVar()
         self.dataset_path_var = tk.StringVar()
@@ -325,7 +358,8 @@ class WizardApp:
 
         # 日志处理器 (部署日志/执行日志, 处理\r进度条单行刷新)
         self._docker_log_handler = LiveLogHandler(self.docker_log)
-        self._exec_log_handler = LiveLogHandler(self.exec_log)
+        self._exec_log_handler = LiveLogHandler(
+            self.exec_log, abnormal_callback=self._add_exec_abnormal_entry)
 
     # ============================================================
     #  UI构建
@@ -524,13 +558,20 @@ class WizardApp:
 
         self._build_ui()
         self._docker_log_handler = LiveLogHandler(self.docker_log)
-        self._exec_log_handler = LiveLogHandler(self.exec_log)
+        self._exec_log_handler = LiveLogHandler(
+            self.exec_log, abnormal_callback=self._add_exec_abnormal_entry)
+        self._clear_exec_abnormal_entries()
 
         # ---- 恢复日志 ----
         if snapshot.get("docker_log"):
             self.docker_log.insert("1.0", snapshot["docker_log"])
         if snapshot.get("exec_log"):
-            self.exec_log.insert("1.0", snapshot["exec_log"])
+            self._restore_exec_log_snapshot(snapshot["exec_log"])
+        if self._test_running:
+            self.exec_test_btn.config(state=tk.DISABLED, text=tr("执行中..."))
+            self.stop_test_btn.config(
+                state=tk.NORMAL if not self._test_stop_requested else tk.DISABLED,
+                text=tr("终止中...") if self._test_stop_requested else tr("终止测试"))
 
         # ---- 恢复步骤1: SSH连接信息 ----
         if snapshot.get("conn_values"):
@@ -1683,6 +1724,55 @@ class WizardApp:
         self._exec_log_handler.flush()
         self._exec_flush_timer_id = self.root.after(200, self._flush_exec_log_buffer)
 
+    def _clear_exec_abnormal_entries(self):
+        """清空执行日志的异常提示列表"""
+        if not hasattr(self, "exec_abnormal_tree"):
+            return
+        for item in self.exec_abnormal_tree.get_children():
+            self.exec_abnormal_tree.delete(item)
+        self._exec_abnormal_entries = []
+        self.exec_abnormal_count_lbl.config(text=trf("共 {count} 条", count=0))
+
+    def _add_exec_abnormal_entry(self, kind: str, line_no: int, message: str):
+        """由LiveLogHandler在主线程调用: 记录WARN/ERROR行并提供跳转入口"""
+        self._exec_abnormal_entries.append(
+            {"kind": kind, "line": line_no, "message": message})
+        level = tr("错误") if kind == "error" else tr("警告")
+        self.exec_abnormal_tree.insert(
+            "", tk.END, iid=str(len(self._exec_abnormal_entries) - 1),
+            values=(level, line_no, message))
+        self.exec_abnormal_count_lbl.config(
+            text=trf("共 {count} 条", count=len(self._exec_abnormal_entries)))
+
+    def _jump_to_exec_abnormal_log(self, event=None):
+        """点击异常提示行时, 高亮并滚动到总执行日志的对应位置"""
+        selection = self.exec_abnormal_tree.selection()
+        if not selection:
+            return
+        try:
+            entry = self._exec_abnormal_entries[int(selection[0])]
+        except (ValueError, IndexError):
+            return
+
+        self.exec_log.tag_remove("log_highlight", "1.0", "end")
+        start = f"{entry['line']}.0"
+        end = f"{entry['line']}.end"
+        self.exec_log.tag_add("log_highlight", start, end)
+        self.exec_log.mark_set("insert", start)
+        self.exec_log.see(start)
+        self.exec_log.focus_set()
+
+    def _restore_exec_log_snapshot(self, content: str):
+        """语言切换后恢复执行日志, 并重建异常提示的跳转索引"""
+        self.exec_log.insert("1.0", content)
+        for line_no, line in enumerate(content.splitlines(), start=1):
+            kind = LiveLogHandler.classify_line(line)
+            if not kind:
+                continue
+            self.exec_log.tag_add(
+                f"log_{kind}", f"{line_no}.0", f"{line_no}.end")
+            self._add_exec_abnormal_entry(kind, line_no, line)
+
     def _cancel_deploy(self):
         """取消部署"""
         self._cancel_flag.set()
@@ -2805,6 +2895,11 @@ class WizardApp:
                  command=self._execute_tests)
         self.exec_test_btn.pack(side=tk.LEFT, padx=8)
 
+        self.stop_test_btn = LocalizedButton(btn_frame, text="终止测试", bg=COLOR_ERROR,
+                 fg="white", font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
+                 command=self._request_stop_tests, state=tk.DISABLED)
+        self.stop_test_btn.pack(side=tk.LEFT, padx=8)
+
         self.cleanup_btn = LocalizedButton(btn_frame, text="清理环境", bg=COLOR_ERROR, fg="white",
                  font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
                  command=self._cleanup_environment, state=tk.DISABLED)
@@ -2843,12 +2938,40 @@ class WizardApp:
         # Pane 2: 执行日志
         log_pane = tk.Frame(self.exec_paned, bg=COLOR_BG)
         self.exec_paned.add(log_pane, minsize=120, stretch="always")
+
+        abnormal_header = tk.Frame(log_pane, bg=COLOR_BG)
+        abnormal_header.pack(fill=tk.X, pady=(4, 0))
+        LocalizedLabel(abnormal_header, text="异常提示 (点击行跳转到日志):", bg=COLOR_BG,
+                fg=COLOR_TEXT, font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
+        self.exec_abnormal_count_lbl = LocalizedLabel(abnormal_header, text="共 0 条",
+                bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
+        self.exec_abnormal_count_lbl.pack(side=tk.LEFT, padx=8)
+
+        abnormal_columns = ("level", "line", "message")
+        self.exec_abnormal_tree = ttk.Treeview(log_pane, columns=abnormal_columns,
+                show="headings", height=4, selectmode="browse")
+        self.exec_abnormal_tree.heading("level", text=tr("级别"))
+        self.exec_abnormal_tree.heading("line", text=tr("行号"))
+        self.exec_abnormal_tree.heading("message", text=tr("内容"))
+        self.exec_abnormal_tree.column("level", width=64, anchor=tk.CENTER,
+                stretch=False)
+        self.exec_abnormal_tree.column("line", width=56, anchor=tk.CENTER,
+                stretch=False)
+        self.exec_abnormal_tree.column("message", width=640, anchor=tk.W,
+                stretch=True)
+        self.exec_abnormal_tree.pack(fill=tk.X, pady=(2, 0))
+        self.exec_abnormal_tree.bind(
+            "<<TreeviewSelect>>", self._jump_to_exec_abnormal_log)
+
         LocalizedLabel(log_pane, text="执行日志:", bg=COLOR_BG, fg=COLOR_TEXT,
-               font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(4, 0))
+                font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(4, 0))
         self.exec_log = scrolledtext.ScrolledText(log_pane, height=4,
                                                   font=("Consolas", 9),
                                                   bg="#1e1e1e", fg="#d4d4d4")
         self.exec_log.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        self.exec_log.tag_configure("log_warning", foreground="#fbbf24")
+        self.exec_log.tag_configure("log_error", foreground="#f87171")
+        self.exec_log.tag_configure("log_highlight", background="#7f1d1d")
 
         # Pane 3: 结果摘要表 (测试完成后展示, 不仅仅打印到日志)
         res_pane = tk.Frame(self.exec_paned, bg=COLOR_BG)
@@ -2987,8 +3110,13 @@ class WizardApp:
 
         self.exec_log.delete(1.0, tk.END)
         self._exec_log_handler.reset()
+        self._clear_exec_abnormal_entries()
         self._clear_results_table()
         self.exec_test_btn.config(state=tk.DISABLED, text="执行中...")
+        self._test_cancel_event.clear()
+        self._test_running = True
+        self._test_stop_requested = False
+        self.stop_test_btn.config(state=tk.NORMAL, text=tr("终止测试"))
 
         # 启动定时刷新执行日志
         if self._exec_flush_timer_id:
@@ -2999,6 +3127,8 @@ class WizardApp:
             self._run_test_sequence(local_dir)
             def _restore():
                 self.exec_test_btn.config(state=tk.NORMAL, text="执行测试 → 生成CSV")
+                self._test_running = False
+                self.stop_test_btn.config(state=tk.DISABLED, text=tr("终止测试"))
                 # 启用清理按钮
                 if self.docker and self.docker.container_name:
                     self.cleanup_btn.config(state=tk.NORMAL)
@@ -3008,10 +3138,31 @@ class WizardApp:
                     self.root.after_cancel(self._exec_flush_timer_id)
                     self._exec_flush_timer_id = None
                 # 测试完成后提醒清理
-                self.root.after(200, self._show_cleanup_reminder)
+                if not self._test_cancel_event.is_set():
+                    self.root.after(200, self._show_cleanup_reminder)
             self.root.after(0, _restore)
 
         threading.Thread(target=_do_execute, daemon=True).start()
+
+    def _request_stop_tests(self):
+        """用户主动终止当前测试执行"""
+        if not self._test_running or self._test_stop_requested:
+            return
+        self._test_stop_requested = True
+        self._test_cancel_event.set()
+        self.stop_test_btn.config(state=tk.DISABLED, text=tr("终止中..."))
+        self._log_exec(tr("\n⚠ 用户已请求终止测试执行...\n"))
+
+        def _stop_remote_script():
+            if not self.docker or not self.docker.container_name:
+                return
+            try:
+                self.docker.stop_script("run_tests.sh")
+                self._log_exec(tr("  ⚠ 已向容器内测试脚本发送终止信号\n"))
+            except Exception as e:
+                self._log_exec(trf("  ⚠ 终止远程脚本失败: {error}\n", error=e))
+
+        threading.Thread(target=_stop_remote_script, daemon=True).start()
 
     def _check_model_path_in_container(self) -> Tuple[bool, str]:
         """在容器内检查MODEL_PATH是否有效（路径存在且含config.json）"""
@@ -3048,17 +3199,26 @@ class WizardApp:
         """执行测试的4阶段流水线（在后台线程中运行）"""
         # ===== 阶段0: 预检查模型路径 =====
         self._log_exec("[0/4] 预检查: 验证容器内MODEL_PATH...\n")
+        if self._test_cancel_event.is_set():
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
+            return
         model_ok, model_msg = self._check_model_path_in_container()
         if not model_ok:
             self._log_exec(f"  ✗ {model_msg}\n")
             self._log_exec("  请修正MODEL_PATH后重新保存config.py到容器，再重试\n")
             return
         self._log_exec(f"  ✓ {model_msg}\n\n")
+        if self._test_cancel_event.is_set():
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
+            return
 
         # ===== 阶段1: 生成.sh脚本 =====
         self._log_exec("[1/4] 生成测试脚本...\n")
         script_content, log_dir_name = self.designer.generate_shell_script()
         self._log_exec(f"  日志目录名: {log_dir_name}\n")
+        if self._test_cancel_event.is_set():
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
+            return
 
         # ===== 阶段2: 写入并运行脚本(容器内部) =====
         self._log_exec("\n[2/4] 写入测试脚本到容器并执行...\n")
@@ -3068,6 +3228,12 @@ class WizardApp:
             self.docker.set_test_state(
                 self.docker.TEST_STATE_ABNORMAL,
                 callback=lambda t: self._log_exec(t))
+            return
+        if self._test_cancel_event.is_set():
+            self.docker.set_test_state(
+                self.docker.TEST_STATE_ABNORMAL,
+                callback=lambda t: self._log_exec(t))
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
             return
         self._log_exec(f"  脚本路径(容器内): {container_script}\n")
         self._log_exec("  开始执行测试 (这可能需要较长时间)...\n\n")
@@ -3080,9 +3246,16 @@ class WizardApp:
         exit_code = self.docker.run_script(
             "run_tests.sh",
             callback=lambda t: self._log_exec(t),  # 直接写缓冲区
-            timeout=7200
+            timeout=7200,
+            stop_event=self._test_cancel_event
         )
 
+        if self._test_cancel_event.is_set():
+            self.docker.set_test_state(
+                self.docker.TEST_STATE_ABNORMAL,
+                callback=lambda t: self._log_exec(t))
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
+            return
         if exit_code != 0:
             self.docker.set_test_state(
                 self.docker.TEST_STATE_ABNORMAL,
@@ -3096,6 +3269,9 @@ class WizardApp:
 
         # ===== 阶段3: 下载日志 =====
         self._log_exec("\n[3/4] 下载测试日志到本地...\n")
+        if self._test_cancel_event.is_set():
+            self._log_exec("  ⚠ 测试执行已被用户终止\n")
+            return
 
         container_log_dir = self.docker.find_latest_log_dir()
         if not container_log_dir:

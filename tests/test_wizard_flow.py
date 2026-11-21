@@ -29,6 +29,169 @@ class WizardFlowTests(unittest.TestCase):
                       main.DockerManager.MANAGED_LABEL)
 
 
+class DockerDeployFormTests(unittest.TestCase):
+    """步骤2只填写镜像来源和模型路径; 其余服务参数在步骤3填写"""
+
+    @classmethod
+    def setUpClass(cls):
+        # 共用一个App实例, 减少Tk root创建/销毁次数(Windows下频繁重建易抖动)
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls._patcher = mock.patch(
+            "settings_manager.settings_path",
+            return_value=Path(cls._tmp.name) / "settings.json")
+        cls._patcher.start()
+        cls.app = main.WizardApp()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.root.destroy()
+        cls._patcher.stop()
+        cls._tmp.cleanup()
+
+    def _collect_labels(self, widget):
+        out = []
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Label):
+                out.append(child)
+            out.extend(self._collect_labels(child))
+        return out
+
+    def _collect_labels(self, widget):
+        out = []
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Label):
+                out.append(child)
+            out.extend(self._collect_labels(child))
+        return out
+
+    def test_model_service_fields_moved_to_config_step(self):
+        app = self.app
+
+        # 步骤2不再持有模型名称/vLLM IP/端口输入
+        for attr in ("model_name_var", "host_ip_var", "host_port_var",
+                     "api_key_var"):
+            self.assertFalse(hasattr(app, attr), attr)
+
+        step2_texts = [lbl.cget("text") for lbl in
+                       self._collect_labels(app.step_frames[1])]
+        for text in ("模型名称 (--served-model-name):", "vLLM服务 IP:",
+                     "vLLM服务端口:"):
+            self.assertNotIn(text, step2_texts)
+
+        # 步骤3填写且默认留空, 作为必填项
+        for key in ("model_name", "host_ip", "host_port"):
+            self.assertIn(key, app.config_entry_vars)
+            self.assertEqual(app.config_entry_vars[key].get(), "")
+
+    def test_required_fields_are_marked_with_red_star(self):
+        app = self.app
+
+        def _star_labels(frame):
+            return [lbl for lbl in self._collect_labels(frame)
+                    if str(lbl.cget("text")) == "*"
+                    and str(lbl.cget("fg")) == main.COLOR_ERROR]
+
+        # 步骤2: 镜像来源 + 模型路径
+        self.assertEqual(len(_star_labels(app.step_frames[1])), 2)
+        # 步骤1: 执行机IP + 用户名
+        self.assertEqual(len(_star_labels(app.step_frames[0])), 2)
+        # 步骤3: MODEL_NAME/MODEL_PATH/HOST_IP/HOST_PORT
+        self.assertEqual(len(_star_labels(app.step_frames[2])), 4)
+
+    def test_remote_images_support_keyword_filter(self):
+        app = self.app
+        app.image_filter_var.set("")
+        app.remote_images = [
+            {"name": "aisbench:v3.1", "id": "aaa", "created": "1d",
+             "size": "10GB"},
+            {"name": "registry.example.com/benchmark-runtime:20261013",
+             "id": "bbb", "created": "2d", "size": "12GB"},
+            {"name": "nginx:latest", "id": "ccc", "created": "3d",
+             "size": "100MB"},
+        ]
+        app._apply_image_filter()
+        self.assertEqual(
+            list(app.remote_image_combo.cget("values")),
+            ["aisbench:v3.1",
+             "registry.example.com/benchmark-runtime:20261013",
+             "nginx:latest"])
+
+        app.image_filter_var.set("benchmark")
+        app._on_image_filter_changed()
+        self.assertEqual(
+            list(app.remote_image_combo.cget("values")),
+            ["registry.example.com/benchmark-runtime:20261013"])
+        self.assertIn("3", app.image_list_status.cget("text"))
+
+        app.image_filter_var.set("AISBENCH")
+        app._on_image_filter_changed()
+        self.assertEqual(list(app.remote_image_combo.cget("values")),
+                         ["aisbench:v3.1"])
+
+        app._clear_image_filter()
+        self.assertEqual(len(app.remote_image_combo.cget("values")), 3)
+
+    def test_pod_info_help_tooltip_matches_config_comment(self):
+        app = self.app
+
+        self.assertTrue(hasattr(app, "pod_info_tooltip"))
+        self.assertIn("PD分离场景请填写各个P节点的IP和对应dp域的port",
+                      app.pod_info_tooltip.text)
+
+        from config_manager import ConfigManager
+        manager = ConfigManager(docker=None)
+        content = manager.generate_config_content({
+            "model_name": "ds", "model_path": "/mnt/models/ds",
+            "host_ip": "10.0.0.1", "host_port": "8000",
+            "dataset_path": "/benchmark/ais_bench/"
+                            "aisbench_auto_tools_prefix-main",
+        })
+        self.assertIn("# 各节点信息，格式为 [\"{ip}:{port}\"]", content)
+        self.assertIn("# 用于查询vllm metrics计算各个dp域的prefix cache命中率，"
+                      "不配置默认为HOST_IP:HOST_PORT", content)
+        self.assertIn("# PD分离场景请填写各个P节点的IP和对应dp域的port", content)
+        self.assertIn(
+            "# POD_INFO = [\"141.xx.xx.11:8000\",\"141.xx.xx.12:8000\"]",
+            content)
+
+    def test_language_rebuild_keeps_keyword_filter_and_translates_labels(self):
+        import i18n
+        app = self.app
+        app.remote_images = [
+            {"name": "aisbench:v3.1", "id": "aaa", "created": "1d",
+             "size": "10GB"},
+            {"name": "registry.example.com/benchmark-runtime:20261013",
+             "id": "bbb", "created": "2d", "size": "12GB"},
+        ]
+        app.image_filter_var.set("benchmark")
+        app._apply_image_filter()
+
+        app.language_var.set("English")
+        app._on_language_change()
+        self.addCleanup(i18n.set_language, "zh")
+
+        # 重建后保留筛选结果与关键词
+        self.assertEqual(app.image_filter_var.get(), "benchmark")
+        self.assertEqual(
+            list(app.remote_image_combo.cget("values")),
+            ["registry.example.com/benchmark-runtime:20261013"])
+
+        step2_texts = [lbl.cget("text") for lbl in
+                       self._collect_labels(app.step_frames[1])]
+        self.assertIn("Keyword filter:", step2_texts)
+        step3_texts = [lbl.cget("text") for lbl in
+                       self._collect_labels(app.step_frames[2])]
+        for text in ("MODEL_NAME (model name)",
+                     "HOST_IP (vLLM service IP)",
+                     "HOST_PORT (vLLM service port)",
+                     "POD_INFO (per-node info)"):
+            self.assertIn(text, step3_texts)
+
+        # 切回中文, 避免影响类内其他断言
+        app.language_var.set("中文")
+        app._on_language_change()
+
+
 class FakeDeploySSH:
     """模拟执行机: 记录命令并模拟docker/文件系统行为"""
 

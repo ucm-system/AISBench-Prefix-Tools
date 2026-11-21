@@ -80,19 +80,14 @@ def populate_step2(app):
             "size": "78.1MB",
         },
     ]
-    app.remote_image_combo.config(
-        values=[image["name"] for image in app.remote_images]
-    )
+    app.image_filter_var.set("")
+    app._apply_image_filter()
     app.remote_image_var.set(app.remote_images[0]["name"])
     app.image_source_var.set("existing")
     app._on_image_source_change()
     app._on_remote_image_selected()
 
     app.model_path_var.set("/mnt/models/DeepSeek-V4-Flash-w8a8-mtp")
-    app.model_name_var.set("ds")
-    app.host_ip_var.set("192.168.1.30")
-    app.host_port_var.set("8000")
-    app.api_key_var.set("")
     app.work_dir_var.set("/tmp/AISBench_Prefix_Tools")
     app.work_dir_status.config(text="部署后已自动清理", fg=COLOR_SUCCESS)
     app.residual_status_lbl.config(text="无残留容器", fg=COLOR_SUCCESS)

@@ -5,6 +5,7 @@ SSH管理器 - 处理与远程执行机的SSH连接、命令执行、文件传�
 import os
 import stat
 import time
+import threading
 import paramiko
 from i18n import tr, trf
 from typing import Optional, Tuple, List, Callable
@@ -94,7 +95,8 @@ class SSHManager:
 
     def execute_with_callback(self, command: str,
                               callback: Callable[[str], None] = None,
-                              timeout: int = 600) -> int:
+                              timeout: int = 600,
+                              stop_event: Optional[threading.Event] = None) -> int:
         """
         执行命令并实时输出（通过回调函数）
         返回 exit_code
@@ -103,6 +105,8 @@ class SSHManager:
             return -1
 
         try:
+            if stop_event is not None and stop_event.is_set():
+                return -1
             transport = self.client.get_transport()
             channel = transport.open_session()
             channel.set_combine_stderr(True)
@@ -110,6 +114,9 @@ class SSHManager:
             channel.exec_command(command)
 
             while True:
+                if stop_event is not None and stop_event.is_set():
+                    channel.close()
+                    return -1
                 if channel.recv_ready():
                     data = channel.recv(4096).decode('utf-8', errors='replace')
                     if data and callback:

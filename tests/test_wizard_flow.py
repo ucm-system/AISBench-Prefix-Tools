@@ -1,5 +1,6 @@
 import tkinter as tk
 import json
+from tkinter import scrolledtext
 import os
 import tempfile
 from pathlib import Path
@@ -242,7 +243,8 @@ class FakeDeploySSH:
             return 0, "", ""
         return 0, "", ""
 
-    def execute_with_callback(self, command, callback=None, timeout=300):
+    def execute_with_callback(self, command, callback=None, timeout=300,
+                              stop_event=None):
         self.commands.append(command)
         if callback:
             callback("ok\n")
@@ -257,6 +259,33 @@ class FakeDeploySSH:
 
     def upload_file(self, local_path, remote_path, progress=None):
         return True
+
+
+class LiveLogAbnormalTests(unittest.TestCase):
+    """执行日志的WARN/ERROR行需要单独提示并可跳转回总日志"""
+
+    def test_abnormal_lines_are_collected_and_tagged(self):
+        root = tk.Tk()
+        text = scrolledtext.ScrolledText(root)
+        entries = []
+        try:
+            handler = main.LiveLogHandler(
+                text,
+                abnormal_callback=lambda kind, line, msg: entries.append(
+                    (kind, line, msg)))
+            handler.append("normal line\nWARNING: model warming up\n")
+            handler.append("ERROR: request failed\n")
+            handler.flush()
+            handler.finalize()
+
+            self.assertEqual(
+                entries,
+                [("warning", 2, "WARNING: model warming up"),
+                 ("error", 3, "ERROR: request failed")])
+            self.assertIn("log_warning", text.tag_names("2.0"))
+            self.assertIn("log_error", text.tag_names("3.0"))
+        finally:
+            root.destroy()
 
 
 class DeploySequenceTests(unittest.TestCase):
@@ -370,6 +399,32 @@ class TestExecutionStateTests(unittest.TestCase):
             docker.write_script.side_effect = lambda *a, **k: ""
             self._run(app, tmp)
             self.assertEqual(calls, ["abnormal"])
+
+    def test_run_sequence_stops_and_marks_abnormal_after_user_cancel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, calls = self._build_app(tmp)
+
+            def cancel_during_script(*args, **kwargs):
+                app._test_cancel_event.set()
+                return -1
+
+            docker.run_script.side_effect = cancel_during_script
+            self._run(app, tmp)
+
+            self.assertEqual(calls, ["running", "abnormal"])
+            docker.download_logs.assert_not_called()
+
+    def test_abnormal_panel_click_jumps_to_log_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _, _ = self._build_app(tmp)
+            app.exec_log.insert("1.0", "first\nERROR: request failed\n")
+            app._add_exec_abnormal_entry("error", 2, "ERROR: request failed")
+            app.exec_abnormal_tree.selection_set("0")
+            app._jump_to_exec_abnormal_log()
+
+            ranges = app.exec_log.tag_ranges("log_highlight")
+            self.assertEqual((str(ranges[0]), str(ranges[1])),
+                             ("2.0", str(app.exec_log.index("2.end"))))
 
     def test_run_sequence_prefixes_result_dir_with_task_name_and_saves_info(self):
         with tempfile.TemporaryDirectory() as tmp:

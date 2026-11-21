@@ -68,6 +68,7 @@ TRANSLATIONS = {
         "同时删除临时部署目录残留文件": "Also delete temporary deploy directory leftovers",
         "复制": "Copy",
         "复制用例": "Copy case",
+        "共 {count} 条": "{count} entries",
         "完成": "Finish",
         "密码": "Password",
         "尚未查询": "Not queried yet",
@@ -76,12 +77,14 @@ TRANSLATIONS = {
         "已有镜像直接复用；代码先暂存宿主机，容器创建后导入容器并自动删除暂存目录":
             "Reuse existing images; code is staged on the host, imported into the container, and the staging directory is removed",
         "已清理": "Cleaned",
+        "级别": "Level",
         "开始部署": "Start deployment",
         "或密钥文件路径": "or key file path",
         "执行中...": "Running...",
         "执行日志:": "Execution log:",
         "执行机已有镜像": "Use image on execution host",
         "执行测试 → 生成CSV": "Run tests → generate CSV",
+        "异常提示 (点击行跳转到日志):": "Abnormal logs (click a row to jump):",
         "扫描失败(可稍后重试)": "Scan failed (retry later)",
         "无残留容器": "No residual containers",
         "无需连接服务器": "No server connection required",
@@ -149,6 +152,20 @@ TRANSLATIONS = {
         "结果对比分析": "Result comparison",
         "结果摘要:": "Result summary:",
         "打开结果目录": "Open result folder",
+        "终止测试": "Stop tests",
+        "终止中...": "Stopping...",
+        "行号": "Line",
+        "内容": "Message",
+        "错误": "Error",
+        "警告": "Warning",
+        "\n⚠ 用户已请求终止测试执行...\n":
+            "\n⚠ Test execution stop requested by user...\n",
+        "  ⚠ 已向容器内测试脚本发送终止信号\n":
+            "  ⚠ Stop signal sent to the test script in the container\n",
+        "  ⚠ 测试执行已被用户终止\n":
+            "  ⚠ Test execution was stopped by the user\n",
+        "  ⚠ 终止远程脚本失败: {error}\n":
+            "  ⚠ Failed to stop the remote script: {error}\n",
         "计算公式:": "Formula:",
         "计算明细 (代入当前KV参数):": "Calculation details (current KV parameters):",
         "请选择执行机上的镜像": "Select an image on the execution host",

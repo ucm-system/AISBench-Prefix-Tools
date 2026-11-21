@@ -5,10 +5,11 @@ Docker管理器 - 通过SSH管理远程Docker容器
 import re
 import time
 import os
+import shlex
+import threading
 import json
 import tarfile
 import base64
-import shlex
 from datetime import datetime
 from typing import Optional, Tuple, List, Callable
 from ssh_manager import SSHManager
@@ -625,13 +626,42 @@ class DockerManager:
 
     def run_script(self, script_name: str = "run_tests.sh",
                    callback: Callable[[str], None] = None,
-                   timeout: int = 7200) -> int:
+                   timeout: int = 7200,
+                   stop_event: Optional[threading.Event] = None) -> int:
         """
         在容器内运行测试脚本（bash <script>）
         """
         container_script = f"{self.code_mount_path}/{script_name}"
         cmd = f"docker exec -w {self.code_mount_path} {self.container_name} bash {container_script}"
-        return self.ssh.execute_with_callback(cmd, callback, timeout=timeout)
+        return self.ssh.execute_with_callback(
+            cmd, callback, timeout=timeout, stop_event=stop_event)
+
+    def stop_script(self, script_name: str = "run_tests.sh") -> bool:
+        """
+        终止容器内正在运行的测试脚本。
+        通过独立的docker exec通道执行pkill, 避免依赖原SSH通道关闭后的进程状态。
+        """
+        if not self.container_name:
+            return False
+        container_script = f"{self.code_mount_path}/{script_name}"
+        # 使用字符类匹配完整路径, 避免pkill匹配到执行终止命令的shell自身。
+        pattern = f"[{container_script[0]}]{container_script[1:]}"
+        inner = (
+            f"pattern={shlex.quote(pattern)}\n"
+            'pids="$(pgrep -f "$pattern" || true)"\n'
+            'if [ -n "$pids" ]; then\n'
+            '  for pid in $pids; do\n'
+            '    pkill -TERM -P "$pid" 2>/dev/null || true\n'
+            '    kill -TERM "$pid" 2>/dev/null || true\n'
+            '  done\n'
+            'fi\n'
+            'exit 0\n'
+        )
+        cmd = (
+            f"docker exec {self.container_name} sh -c {shlex.quote(inner)}"
+        )
+        code, _, _ = self.ssh.execute(cmd, timeout=15)
+        return code == 0
 
     def find_latest_log_dir(self) -> Optional[str]:
         """

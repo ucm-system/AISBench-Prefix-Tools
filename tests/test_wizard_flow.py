@@ -95,8 +95,14 @@ class DockerDeployFormTests(unittest.TestCase):
         self.assertEqual(len(_star_labels(app.step_frames[1])), 2)
         # 步骤1: 执行机IP + 用户名
         self.assertEqual(len(_star_labels(app.step_frames[0])), 2)
-        # 步骤3: MODEL_NAME/MODEL_PATH/HOST_IP/HOST_PORT/POD_INFO(PD分离场景必填)
-        self.assertEqual(len(_star_labels(app.step_frames[2])), 5)
+        # 步骤3: MODEL_NAME/MODEL_PATH/HOST_IP/HOST_PORT
+        # POD_INFO为PD分离/多DP场景必填, 不用红色*星号标记
+        self.assertEqual(len(_star_labels(app.step_frames[2])), 4)
+        pod_labels = [lbl for lbl in
+                      self._collect_labels(app.step_frames[2])
+                      if "POD_INFO" in str(lbl.cget("text"))]
+        self.assertTrue(pod_labels)
+        self.assertIn("PD分离/多DP场景必填", pod_labels[0].cget("text"))
 
     def test_remote_images_support_keyword_filter(self):
         app = self.app
@@ -184,7 +190,7 @@ class DockerDeployFormTests(unittest.TestCase):
         for text in ("MODEL_NAME (model name)",
                      "HOST_IP (vLLM service IP)",
                      "HOST_PORT (vLLM service port)",
-                     "POD_INFO (required for PD disaggregation)"):
+                     "POD_INFO (required for PD disaggregation / multi-DP)"):
             self.assertIn(text, step3_texts)
 
         # 切回中文, 避免影响类内其他断言

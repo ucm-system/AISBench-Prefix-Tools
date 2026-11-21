@@ -190,7 +190,8 @@ TRANSLATIONS = {
         "DATASET_PATH (自动设置)": "DATASET_PATH (set automatically)",
         "WORK_PATH (工作路径)": "WORK_PATH (working path)",
         "OUTPUT_DIR (输出路径)": "OUTPUT_DIR (output path)",
-        "POD_INFO (PD分离场景必填)": "POD_INFO (required for PD disaggregation)",
+        "POD_INFO (PD分离/多DP场景必填)":
+            "POD_INFO (required for PD disaggregation / multi-DP)",
         "关键词筛选:": "Keyword filter:",
         "清除": "Clear",
         "步骤 4: 设计测试用例": "Step 4: Design test cases",

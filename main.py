@@ -1986,8 +1986,8 @@ class WizardApp:
             ("WORK_PATH (工作路径)", "work_path", False),
             ("DEFAULT_PERFORMANCE_TEST", "default_perf", False),
             ("OUTPUT_DIR (输出路径)", "output_dir", False),
-            # PD分离/多DP场景必填, 但不作为通用必填项(红色*星号)标记
-            ("POD_INFO (PD分离/多DP场景必填)", "pod_info", False),
+            # PD分离且多DP的场景必填, 但不作为通用必填项(红色*星号)标记
+            ("POD_INFO (PD分离下多DP场景必填)", "pod_info", False),
         ]
 
         self.config_entry_vars = {}

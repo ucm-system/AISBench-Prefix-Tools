@@ -12,7 +12,9 @@ AISBenchPrefixTools - Windows GUI应用程序
 """
 
 import os
+import json
 import re
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -46,6 +48,19 @@ from i18n import (
     trf,
 )
 from settings_manager import load_settings, save_settings
+
+
+# Windows/Linux路径中都不安全或易混淆的任务名字符, 统一替换为下划线
+INVALID_TASK_NAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def sanitize_task_name(name: str, max_length: int = 80) -> str:
+    """清洗任务名称, 使其可作为结果目录名的前缀"""
+    cleaned = INVALID_TASK_NAME_CHARS_RE.sub('_', name or '')
+    cleaned = cleaned.strip().strip('.').strip()
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip().rstrip('.').rstrip('_')
+    return cleaned
 
 
 # ============================================================
@@ -510,6 +525,12 @@ class WizardApp:
             snapshot["summary"] = self.summary_text.cget("text")
         if hasattr(self, "local_output_var"):
             snapshot["local_output"] = self.local_output_var.get()
+        if hasattr(self, "task_name_var"):
+            snapshot["task_name"] = self.task_name_var.get()
+        if hasattr(self, "open_result_btn"):
+            snapshot["open_result_state"] = self.open_result_btn.cget("state")
+        if hasattr(self, "current_result_dir"):
+            snapshot["current_result_dir"] = self.current_result_dir
         if hasattr(self, "deployed"):
             snapshot["deployed"] = self.deployed
         if hasattr(self, "_content_canvas"):
@@ -610,6 +631,12 @@ class WizardApp:
             self.results_info_lbl.config(text=snapshot["results_info"])
         if "local_output" in snapshot:
             self.local_output_var.set(snapshot["local_output"])
+        if "task_name" in snapshot and hasattr(self, "task_name_var"):
+            self.task_name_var.set(snapshot["task_name"])
+        if "current_result_dir" in snapshot:
+            self.current_result_dir = snapshot["current_result_dir"]
+        if snapshot.get("open_result_state") == tk.NORMAL:
+            self.open_result_btn.config(state=tk.NORMAL)
 
         # ---- 恢复侧边栏/残留容器状态 ----
         if self.ssh.connected:
@@ -2813,6 +2840,17 @@ class WizardApp:
         out_frame = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
         out_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=8)
 
+        task_frame = tk.Frame(out_frame, bg=COLOR_CARD)
+        task_frame.pack(fill=tk.X, padx=12, pady=(8, 0))
+        LocalizedLabel(task_frame, text="任务名称:", bg=COLOR_CARD, fg=COLOR_TEXT,
+                font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.task_name_var = tk.StringVar()
+        tk.Entry(task_frame, textvariable=self.task_name_var, width=1,
+                font=("Segoe UI", 9)).pack(side=tk.LEFT, fill=tk.X, expand=True,
+                padx=4)
+        LocalizedLabel(task_frame, text="结果目录名前缀", bg=COLOR_CARD,
+                fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=4)
+
         LocalizedLabel(out_frame, text="本地结果保存目录:", bg=COLOR_CARD, fg=COLOR_TEXT,
                font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=12, pady=8)
 
@@ -2861,6 +2899,11 @@ class WizardApp:
                                          bg=COLOR_BG, fg=COLOR_TEXT_MUTED,
                                          font=("Segoe UI", 8))
         self.results_info_lbl.pack(side=tk.LEFT, padx=8)
+        self.open_result_btn = LocalizedButton(res_header, text="打开结果目录",
+                font=("Segoe UI", 8), relief=tk.FLAT, bg=COLOR_PRIMARY,
+                fg="white", padx=10, command=self._open_result_directory,
+                state=tk.DISABLED)
+        self.open_result_btn.pack(side=tk.LEFT, padx=8)
         LocalizedButton(res_header, text="结果对比分析", font=("Segoe UI", 8),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
                   command=self._open_result_compare).pack(side=tk.RIGHT)
@@ -2961,6 +3004,31 @@ class WizardApp:
         self.results_info_lbl.config(
             text=trf("共 {count} 条记录  |  CSV: {csv_path}  |  日志: {log_dir}",
                      count=len(results), csv_path=csv_path, log_dir=log_dir))
+        self._set_result_directory(log_dir)
+
+    def _set_result_directory(self, path: str):
+        """记录本次结果目录并启用"打开结果目录"按钮 (主线程调用)"""
+        self.current_result_dir = path
+        if hasattr(self, "open_result_btn"):
+            self.open_result_btn.config(state=tk.NORMAL)
+
+    def _open_result_directory(self):
+        """在系统文件管理器中打开当前结果目录"""
+        path = getattr(self, "current_result_dir", "")
+        if not path:
+            return
+        if not os.path.isdir(path):
+            showwarning("提示", trf("结果目录不存在: {path}", path=path))
+            return
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as e:
+            showerror("打开失败", trf("无法打开结果目录: {error}", error=e))
 
     def _execute_tests(self):
         """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
@@ -2975,6 +3043,11 @@ class WizardApp:
         local_dir = self.local_output_var.get().strip()
         if not local_dir:
             showwarning("提示", tr("请选择本地结果保存目录"))
+            return
+
+        task_name = sanitize_task_name(self.task_name_var.get().strip())
+        if not task_name:
+            showwarning("提示", tr("请输入本次测试任务名称"))
             return
 
         # 执行前同步最新速率, 避免生成用例后又修改速率导致命令/脚本不一致
@@ -2996,7 +3069,7 @@ class WizardApp:
         self._exec_flush_timer_id = self.root.after(200, self._flush_exec_log_buffer)
 
         def _do_execute():
-            self._run_test_sequence(local_dir)
+            self._run_test_sequence(local_dir, task_name)
             def _restore():
                 self.exec_test_btn.config(state=tk.NORMAL, text="执行测试 → 生成CSV")
                 # 启用清理按钮
@@ -3044,7 +3117,7 @@ class WizardApp:
             return True, out
         return False, out if out else (err.strip() if err else "未知错误")
 
-    def _run_test_sequence(self, local_dir):
+    def _run_test_sequence(self, local_dir, task_name=""):
         """执行测试的4阶段流水线（在后台线程中运行）"""
         # ===== 阶段0: 预检查模型路径 =====
         self._log_exec("[0/4] 预检查: 验证容器内MODEL_PATH...\n")
@@ -3058,7 +3131,10 @@ class WizardApp:
         # ===== 阶段1: 生成.sh脚本 =====
         self._log_exec("[1/4] 生成测试脚本...\n")
         script_content, log_dir_name = self.designer.generate_shell_script()
-        self._log_exec(f"  日志目录名: {log_dir_name}\n")
+        local_result_dir_name = (
+            f"{task_name}_{log_dir_name}" if task_name else log_dir_name)
+        self._log_exec(f"  结果目录名: {local_result_dir_name}\n")
+        self._log_exec(f"  任务名称: {task_name or log_dir_name}\n")
 
         # ===== 阶段2: 写入并运行脚本(容器内部) =====
         self._log_exec("\n[2/4] 写入测试脚本到容器并执行...\n")
@@ -3103,8 +3179,18 @@ class WizardApp:
 
         self._log_exec(f"  容器内日志目录: {container_log_dir}\n")
 
-        local_log_dir = os.path.join(local_dir, log_dir_name)
+        local_log_dir = os.path.join(local_dir, local_result_dir_name)
         os.makedirs(local_log_dir, exist_ok=True)
+
+        task_info = {
+            "task_name": task_name,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "container_name": self.docker.container_name,
+            "result_dir_name": local_result_dir_name,
+            "test_case_count": len(self.designer.test_cases),
+        }
+        self._write_task_info(local_log_dir, task_info)
 
         local_log_files = self.docker.download_logs(
             container_log_dir, local_log_dir,
@@ -3128,7 +3214,8 @@ class WizardApp:
         # ===== 阶段4: 解析日志生成CSV =====
         self._log_exec("\n[4/4] 解析日志生成CSV结果...\n")
 
-        csv_path = os.path.join(local_log_dir, f"results_{log_dir_name}.csv")
+        csv_path = os.path.join(
+            local_log_dir, f"results_{local_result_dir_name}.csv")
 
         results = parse_log_directory(
             local_log_dir, csv_path,
@@ -3136,6 +3223,13 @@ class WizardApp:
         )
 
         if results:
+            task_info.update({
+                "status": "completed",
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+                "csv_path": csv_path,
+                "result_count": len(results),
+            })
+            self._write_task_info(local_log_dir, task_info)
             self._log_exec(f"\n{'='*60}\n")
             self._log_exec(f"✓ 测试完成! 结果已保存\n")
             self._log_exec(f"  CSV文件: {csv_path}\n")
@@ -3172,6 +3266,13 @@ class WizardApp:
                     csv=csv_path, log=local_log_dir, count=len(results))
             ))
         else:
+            task_info.update({
+                "status": "no_results",
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+                "csv_path": csv_path,
+                "result_count": 0,
+            })
+            self._write_task_info(local_log_dir, task_info)
             self._log_exec("  ✗ 未能从日志中提取到有效结果\n")
             self.root.after(0, lambda: self._clear_results_table(
                 "✗ 未提取到有效结果，请检查执行日志"))
@@ -3190,6 +3291,16 @@ class WizardApp:
                     self._log_exec(f"  请检查以下日志文件中的错误信息:\n  {', '.join(test_logs)}\n")
                     self._log_exec(f"  日志目录: {local_log_dir}\n")
             self.root.after(0, lambda: showwarning("提示", "测试已完成但未提取到有效结果，请检查执行日志"))
+            self.root.after(0, lambda: self._set_result_directory(local_log_dir))
+
+    def _write_task_info(self, result_dir: str, info: dict):
+        """将本次任务信息写入结果目录下的task_info.json"""
+        try:
+            with open(os.path.join(result_dir, "task_info.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump(info, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self._log_exec(trf("  ⚠ 任务信息写入失败: {error}\n", error=e))
 
     def _log_exec(self, text):
         """向执行日志缓冲区写入（线程安全，由主线程定时刷新）"""

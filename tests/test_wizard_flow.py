@@ -1,4 +1,5 @@
 import tkinter as tk
+import json
 from tkinter import scrolledtext
 import os
 import tempfile
@@ -424,6 +425,49 @@ class TestExecutionStateTests(unittest.TestCase):
             ranges = app.exec_log.tag_ranges("log_highlight")
             self.assertEqual((str(ranges[0]), str(ranges[1])),
                              ("2.0", str(app.exec_log.index("2.end"))))
+
+    def test_run_sequence_prefixes_result_dir_with_task_name_and_saves_info(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, _ = self._build_app(tmp)
+            docker.run_script.return_value = 0
+            results_root = os.path.join(tmp, "results")
+
+            with mock.patch.object(app, "_check_model_path_in_container",
+                                   return_value=(True, "OK")):
+                with mock.patch("main.parse_log_directory", return_value=[]):
+                    app._run_test_sequence(results_root, "夜间基线")
+
+            result_dirs = os.listdir(results_root)
+            self.assertEqual(len(result_dirs), 1)
+            self.assertRegex(result_dirs[0], r"^夜间基线_test_logs_\d{8}_\d{6}$")
+
+            with open(os.path.join(results_root, result_dirs[0], "task_info.json"),
+                      encoding="utf-8") as f:
+                info = json.load(f)
+            self.assertEqual(info["task_name"], "夜间基线")
+            self.assertEqual(info["status"], "no_results")
+            self.assertEqual(info["container_name"], "aisbench-test-unit")
+            self.assertEqual(info["result_dir_name"], result_dirs[0])
+
+    def test_sanitize_task_name_replaces_unsafe_characters(self):
+        self.assertEqual(
+            main.sanitize_task_name("my:task?/name"),
+            "my_task__name")
+        self.assertEqual(main.sanitize_task_name("  ..task..  "), "task")
+        self.assertEqual(main.sanitize_task_name(""), "")
+        self.assertEqual(len(main.sanitize_task_name("x" * 100)), 80)
+
+    def test_result_directory_open_button_is_enabled_and_opens_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _, _ = self._build_app(tmp)
+            self.assertEqual(str(app.open_result_btn.cget("state")), "disabled")
+
+            app._set_result_directory(tmp)
+            self.assertEqual(str(app.open_result_btn.cget("state")), "normal")
+
+            with mock.patch.object(main.os, "startfile", create=True) as startfile:
+                app._open_result_directory()
+                startfile.assert_called_once_with(tmp)
 
 
 class FormLayoutTests(unittest.TestCase):

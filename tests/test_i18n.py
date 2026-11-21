@@ -194,6 +194,12 @@ class DynamicMessageI18nTests(unittest.TestCase):
     def test_messagebox_literals_are_translated(self):
         i18n.set_language("en")
         self.assertEqual(i18n.tr("提示"), "Notice")
+        self.assertEqual(i18n.tr("任务名称:"), "Task name:")
+        self.assertEqual(i18n.tr("结果目录名前缀"),
+                         "Result directory name prefix")
+        self.assertEqual(i18n.tr("打开结果目录"), "Open result folder")
+        self.assertEqual(i18n.tr("请输入本次测试任务名称"),
+                         "Enter a task name for this test run")
         self.assertEqual(i18n.tr("请先连接到远程主机"), "Please connect to the remote host first")
         self.assertEqual(i18n.tr("Docker容器尚未部署，是否继续?"),
                          "Docker container is not deployed yet. Continue?")

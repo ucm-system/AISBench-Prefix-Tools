@@ -149,8 +149,10 @@ build_exe.bat
 填写 KV cache 信息（从 vLLM 启动日志获取）。界面内置查询命令，点击 **复制** 后可直接在服务器上执行：
 
 ```bash
-cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'Maximum concurrency'
+cat vllm_serve.log | grep -e 'GPU KV cache size' -e 'NPU KV cache size' -e 'Maximum concurrency'
 ```
+
+> GPU/NPU 均可：NPU 生态（昇腾部分镜像版本之后）日志关键词为 `NPU KV cache size`，工具会自动兼容两种格式。
 
 也可以点击 **从日志自动获取 / 查看日志** 打开远程日志工具：
 

@@ -611,7 +611,8 @@ TRANSLATIONS = {
             'POD_INFO = ["141.xx.xx.11:8000","141.xx.xx.12:8000"]',
         'ID {id} · 创建于 {created} · 大小 {size}': 'ID {id} · created {created} · size {size}',
         '已选择 {selected} ({detail})': 'Selected {selected} ({detail})',
-        '测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nLog: {log}\n{count} records in total',
+        '测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nReport: {report}\nLog: {log}\n{count} records in total',
+        '  ⚠ 测试报告生成失败: {error}\n': '  ⚠ Failed to generate the test report: {error}\n',
         '  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n': '  - Temporary deploy directory leftovers: {work_dir} (normally cleaned automatically)\n',
         '测试已完成! 建议清理远程环境:\n\n  - Docker容器: {container}\n  - 测试任务状态: {state}\n{work_dir_line}\n是否立即清理?\n(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n(否: 稍后可点击"清理环境"按钮手动清理)\n\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n需要从步骤2 AISBench容器部署重新开始。':
             'Tests complete! Cleaning up the remote environment is recommended:\n\n  - Docker container: {container}\n  - Test task state: {state}\n{work_dir_line}\nClean up now?\n(Yes: stop and remove the container + delete leftover staging files; local results are not affected)\n(No: you can click the "Clean environment" button later)\n\nNote: the container will be removed after cleanup. To run test cases again,\nstart over from step 2 (AISBench container deployment).',

@@ -217,7 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <div class="feature">
       <div class="icon">📊</div>
       <h4>结果对比分析</h4>
-      <p>选择两个结果 CSV，按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV / 单文件 HTML 报告导出。</p>
+      <p>单次执行自动生成自包含 HTML 测试报告（模型/配置/命令/结果/解读）；选择两个结果 CSV 可按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV / 单文件 HTML 报告导出。</p>
     </div>
   </div>
   <h3>整体流程</h3>
@@ -227,7 +227,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <span class="node">写入 config.py</span><span class="arrow">→</span>
     <span class="node">设计用例</span><span class="arrow">→</span>
     <span class="node">执行测试</span><span class="arrow">→</span>
-    <span class="node">生成 CSV</span><span class="arrow">→</span>
+    <span class="node">生成 CSV</span><span class="arrow">→</span><span class="node">生成 HTML 报告</span><span class="arrow">→</span>
     <span class="node">对比分析</span>
   </div>
   <div class="callout">
@@ -422,6 +422,8 @@ build_exe.bat</code></pre>
 结果文件：results_test_logs_&lt;时间戳&gt;.csv</code></pre>
   <h3>结果摘要字段</h3>
   <p>摘要表格包含 Input、Output、请求数、最大并发、并发、输入吞吐、输出吞吐、TTFT、TPOT、QPS、HBM 命中率和外部缓存命中率，并标注 CSV 与日志路径。</p>
+  <h3>HTML 测试报告</h3>
+  <p>每次执行完成后，工具会在结果目录中自动生成 <code>report_&lt;任务名&gt;_test_logs_&lt;时间戳&gt;.html</code>。报告为单文件自包含 HTML，汇总模型与服务、测试配置、执行环境、每个用例的执行命令、测试结果表格以及结果解读（吞吐水平、HBM/外部命中率建议、TTFT/TPOT 延迟说明），可直接归档与分享。</p>
   <div class="callout good">
     <b>测试命令示例</b>
     每次执行会随机生成 seed，保证数据集可复现且不同轮次不同；当请求发送速率大于 0 时，还会追加 request_rate 参数。

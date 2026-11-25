@@ -168,7 +168,9 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
       <li>远程 Docker 容器和测试脚本。</li>
       <li>每个用例独立日志文件。</li>
       <li>结构化结果 CSV。</li>
+<li>单次执行的自包含 HTML 测试报告（模型、配置、命令、结果与解读）。</li>
       <li>结果摘要表格、差异表格和柱状对比图。</li>
+<li>单次执行的 HTML 测试报告与对比 HTML 报告。</li>
       <li>远程日志筛选结果和日志查看窗口。</li>
     </ul>
   </div>
@@ -232,6 +234,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
       <tr><td><code>config_manager.py</code></td><td>生成 config.py 并直接写入容器内部</td><td>GUI、容器</td></tr>
       <tr><td><code>test_designer.py</code></td><td>计算 KV cache 相关参数，生成测试用例与脚本</td><td>GUI、日志工具</td></tr>
       <tr><td><code>log_parser.py</code></td><td>解析测试日志，生成结构化 CSV</td><td>执行流程</td></tr>
+<tr><td><code>test_report.py</code></td><td>单次执行生成自包含 HTML 测试报告</td><td>执行流程</td></tr>
       <tr><td><code>log_tools.py</code></td><td>远程日志选择、筛选、查看与一键填入</td><td>SSH 管理器、用例设计器</td></tr>
       <tr><td><code>result_compare.py</code></td><td>选择 CSV、匹配用例、输出差异表格与图表</td><td>用户、CSV 文件</td></tr>
       <tr><td><code>i18n.py</code></td><td>中文 / English 界面文案与语言切换</td><td>GUI、远程日志工具、结果对比</td></tr>
@@ -430,7 +433,7 @@ qpm</code></pre>
     <div class="item"><h4>多服务器编排</h4><p>将单执行机扩展为集群任务调度，支持多节点并行测试。</p></div>
     <div class="item"><h4>更多推理引擎</h4><p>抽象日志解析与参数适配层，支持非 vLLM 引擎。</p></div>
     <div class="item"><h4>结果趋势分析</h4><p>在两组对比之外增加多轮趋势、回归检测和阈值告警。</p></div>
-    <div class="item"><h4>报告导出</h4><p>把 CSV、图表和结论自动生成 HTML 或 PDF 报告。</p></div>
+    <div class="item"><h4>报告导出</h4><p>单次执行自动生成 HTML 测试报告（模型/配置/命令/结果/解读）；结果对比可导出差异表格与图表合一的 HTML 报告。</p></div>
   </div>
   <h3>12.2 评审建议关注点</h3>
   <ul>

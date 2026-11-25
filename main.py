@@ -21,7 +21,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from datetime import datetime
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple, List
 
 from ssh_manager import SSHManager
 from docker_manager import DockerManager, describe_test_state
@@ -29,6 +29,7 @@ from config_manager import ConfigManager
 from test_designer import TestDesigner
 from log_parser import parse_log_directory
 from log_tools import RemoteLogBrowser, KV_GREP_COMMAND
+from test_report import render_test_report
 from result_compare import ResultCompareDialog
 from i18n import (
     LocalizedButton,
@@ -3270,6 +3271,7 @@ class WizardApp:
 
     def _run_test_sequence(self, local_dir, task_name=""):
         """执行测试的4阶段流水线（在后台线程中运行）"""
+        self._test_started_at = datetime.now().isoformat(timespec="seconds")
         # ===== 阶段0: 预检查模型路径 =====
         self._log_exec("[0/4] 预检查: 验证容器内MODEL_PATH...\n")
         if self._test_cancel_event.is_set():
@@ -3287,6 +3289,7 @@ class WizardApp:
 
         # ===== 阶段1: 生成.sh脚本 =====
         self._log_exec("[1/4] 生成测试脚本...\n")
+        test_commands = self.designer.generate_commands()
         script_content, log_dir_name = self.designer.generate_shell_script()
         local_result_dir_name = (
             f"{task_name}_{log_dir_name}" if task_name else log_dir_name)
@@ -3413,6 +3416,13 @@ class WizardApp:
             self._log_exec(f"  共 {len(results)} 条记录\n")
             self._log_exec(f"{'='*60}\n\n")
 
+            # 生成单次测试执行HTML报告
+            report_path = self._generate_test_report(
+                local_log_dir, task_name, test_commands, results,
+                status="completed")
+            if report_path:
+                self._log_exec(f"  HTML报告: {report_path}\n")
+
             # 输出结果摘要表
             self._log_exec("结果摘要:\n")
             self._log_exec("-" * 125 + "\n")
@@ -3438,8 +3448,9 @@ class WizardApp:
 
             self.root.after(0, lambda: showinfo(
                 "完成",
-                trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
-                    csv=csv_path, log=local_log_dir, count=len(results))
+                trf("测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录",
+                    csv=csv_path, report=report_path or "-", log=local_log_dir,
+                    count=len(results))
             ))
         else:
             task_info.update({
@@ -3468,6 +3479,61 @@ class WizardApp:
                     self._log_exec(f"  日志目录: {local_log_dir}\n")
             self.root.after(0, lambda: showwarning("提示", "测试已完成但未提取到有效结果，请检查执行日志"))
             self.root.after(0, lambda: self._set_result_directory(local_log_dir))
+
+            report_path = self._generate_test_report(
+                local_log_dir, task_name, test_commands, [],
+                status="no_results")
+            if report_path:
+                self._log_exec(f"  HTML报告: {report_path}\n")
+
+    def _generate_test_report(self, result_dir: str, task_name: str,
+                              commands: List[str], results: List[dict],
+                              status: str = "completed"):
+        """为单次测试执行生成自包含HTML报告, 返回报告路径或None。"""
+        try:
+            config_values = {k: v.get() for k, v in
+                             getattr(self, "config_entry_vars", {}).items()}
+            model_info = {
+                "MODEL_NAME (模型名称)": config_values.get("model_name", ""),
+                "MODEL_PATH (模型路径)": config_values.get("model_path", ""),
+                "HOST_IP (vLLM服务IP)": config_values.get("host_ip", ""),
+                "HOST_PORT (vLLM服务端口)": config_values.get("host_port", ""),
+                "API_KEY": "已设置" if config_values.get("api_key", "") else "未设置",
+            }
+            designer = getattr(self, "designer", None)
+            repeat_rate = getattr(designer, "repeat_rate", 0) or 0
+            request_rate = getattr(designer, "request_rate", 0) or 0
+            rate_text = ("Burst (0)" if request_rate == 0
+                         else f"{request_rate} req/s")
+            test_config = {
+                "单个DP组KV cache (tokens)": f"{getattr(designer, 'single_kv_cache', 0):,}",
+                "DP组数": str(getattr(designer, "dp", "")),
+                "总KV cache (tokens)": f"{getattr(designer, 'total_kv_cache', 0):,}",
+                "模型最大上下文 (tokens)": f"{getattr(designer, 'max_request_len', 0):,}",
+                "前缀命中率 (repeat_rate)": f"{repeat_rate * 100:.0f}%",
+                "请求发送速率": rate_text,
+                "测试用例数": str(len(getattr(designer, "test_cases", []) or [])),
+            }
+            environment = {
+                "任务名称": task_name,
+                "容器名称": getattr(self.docker, "container_name", "") or "-",
+                "镜像名称": getattr(self.docker, "image_name", "") or "-",
+                "容器内代码路径": getattr(self.docker, "code_mount_path", "") or "-",
+                "结果目录": result_dir,
+                "开始时间": getattr(self, "_test_started_at", "") or "-",
+                "结束时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            report_path = os.path.join(
+                result_dir, f"report_{os.path.basename(result_dir)}.html")
+            written = render_test_report(
+                report_path, task_name=task_name or os.path.basename(result_dir),
+                model_info=model_info, test_config=test_config,
+                commands=commands or [], results=results or [],
+                environment=environment, status=status)
+            return written
+        except Exception as exc:
+            self._log_exec(trf("  ⚠ 测试报告生成失败: {error}\n", error=exc))
+            return None
 
     def _write_task_info(self, result_dir: str, info: dict):
         """将本次任务信息写入结果目录下的task_info.json"""

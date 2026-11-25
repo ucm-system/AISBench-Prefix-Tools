@@ -187,9 +187,9 @@ class DynamicMessageI18nTests(unittest.TestCase):
             "Found 3 image(s). Select an AISBench image; if none is suitable, "
             "switch to uploading a tar package.")
         self.assertEqual(
-            i18n.trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
-                     csv="a.csv", log="logs", count=2),
-            "Tests complete!\n\nCSV: a.csv\nLog: logs\n2 records in total")
+            i18n.trf("测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录",
+                     csv="a.csv", report="report.html", log="logs", count=2),
+            "Tests complete!\n\nCSV: a.csv\nReport: report.html\nLog: logs\n2 records in total")
 
     def test_messagebox_literals_are_translated(self):
         i18n.set_language("en")

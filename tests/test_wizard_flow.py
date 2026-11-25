@@ -449,6 +449,41 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertEqual(info["container_name"], "aisbench-test-unit")
             self.assertEqual(info["result_dir_name"], result_dirs[0])
 
+    def test_run_sequence_generates_html_report_in_result_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, _ = self._build_app(tmp)
+            docker.run_script.return_value = 0
+            results_root = os.path.join(tmp, "results")
+            sample = [{
+                "input_len": 4096, "output_len": 1024, "total_req": 1000,
+                "max_cc": 100, "cc": 80, "TTFT_avg": "120.5",
+                "TPOT_avg": "15.2", "output_throughput": "850.4",
+                "qps": "12.3", "hbm_hit_rate": 92.1,
+                "external_hit_rate": 5.4, "E2E_time": "81.2",
+            }]
+
+            with mock.patch.object(app, "_check_model_path_in_container",
+                                   return_value=(True, "OK")):
+                with mock.patch("main.parse_log_directory",
+                                return_value=sample) as parse:
+                    app._run_test_sequence(results_root, "报告任务")
+            parse.assert_called_once()
+
+            result_dirs = os.listdir(results_root)
+            self.assertEqual(len(result_dirs), 1)
+            report_path = os.path.join(
+                results_root, result_dirs[0],
+                f"report_{result_dirs[0]}.html")
+            self.assertTrue(os.path.isfile(report_path))
+            with open(report_path, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertIn("AISBench 测试报告", text)
+            self.assertIn("报告任务", text)
+            self.assertIn("执行命令", text)
+            self.assertIn("aisbench_test.py", text)
+            self.assertIn("测试结果", text)
+            self.assertIn("结果解读", text)
+
     def test_sanitize_task_name_replaces_unsafe_characters(self):
         self.assertEqual(
             main.sanitize_task_name("my:task?/name"),

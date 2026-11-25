@@ -168,9 +168,9 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
 <a class="nav-link" href="#language">界面语言</a>
     <div class="nav-group">使用流程</div>
     <a class="nav-link" href="#step1"><span class="num">1</span>SSH 连接</a>
-    <a class="nav-link" href="#step2"><span class="num">2</span>Docker 部署与模型</a>
+    <a class="nav-link" href="#step2"><span class="num">2</span>AISBench 容器部署</a>
     <a class="nav-link" href="#step3"><span class="num">3</span>配置 config.py</a>
-    <a class="nav-link" href="#step4"><span class="num">4</span>设计测试用例</a>
+    <a class="nav-link" href="#step4"><span class="num">4</span>测试用例准备</a>
     <a class="nav-link" href="#step5"><span class="num">5</span>执行测试</a>
     <div class="nav-group">分析工具</div>
     <a class="nav-link" href="#logtools">远程日志工具</a>
@@ -217,7 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <div class="feature">
       <div class="icon">📊</div>
       <h4>结果对比分析</h4>
-      <p>选择两个结果 CSV，按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV/PNG 导出。</p>
+      <p>选择两个结果 CSV，按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV / 单文件 HTML 报告导出。</p>
     </div>
   </div>
   <h3>整体流程</h3>
@@ -269,7 +269,7 @@ build_exe.bat</code></pre>
   <p>切换语言只改变界面呈现：当前步骤、SSH 登录信息、镜像/模型/配置输入与执行结果都会完整保留，不会跳回第一步。</p>
   <figure class="figure">
     <img src="images/step2-docker-en-20261106.png?v=20261121" alt="English interface example">
-    <figcaption>English 界面示例：步骤 2 的 Docker 部署与模型配置页面</figcaption>
+    <figcaption>English 界面示例：步骤 2 的 AISBench 容器部署页面</figcaption>
   </figure>
 </section>
 
@@ -301,11 +301,11 @@ build_exe.bat</code></pre>
 </section>
 
 <section id="step2">
-  <h2>步骤 2：Docker 部署与模型配置</h2>
+  <h2>步骤 2：AISBench 容器部署</h2>
   <span class="step-badge">STEP 2 / 5</span>
-  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像，镜像较多时可用关键词筛选实时过滤；未发现可用镜像时自动切换为上传 tar 包。本页只需填写镜像来源与模型路径，模型名称、vLLM 服务地址与 API Key 在步骤 3 的配置文件中填写。</p>
+  <p>点击“查看已有镜像”读取执行机 Docker 镜像列表并优先复用 AISBench 镜像，镜像较多时可用关键词筛选实时过滤；未发现可用镜像时自动切换为上传 tar 包。本页只需填写镜像来源与模型路径，模型名称、vLLM 服务地址与 API Key 在步骤 3 的 AISBench 参数配置中填写。</p>
   <figure class="figure">
-    <img src="images/step2-docker-20261106.png?v=20261121" alt="步骤 2：Docker 部署与模型配置界面">
+    <img src="images/step2-docker-20261106.png?v=20261121" alt="步骤 2：AISBench 容器部署界面">
     <figcaption>部署完成示例：复用已有镜像启动容器，测试代码已导入容器，宿主机临时目录自动清理</figcaption>
   </figure>
   <table>
@@ -317,7 +317,7 @@ build_exe.bat</code></pre>
       <tr><td>清理残留容器</td><td>列出并勾选删除上次未清理的 <code>aisbench-test-*</code> 容器（含测试任务状态列），可同时清理旧版遗留的临时目录。</td></tr>
       <tr><td>测试代码来源</td><td>默认使用程序内置代码，也可选择本地 zip 包。</td></tr>
       <tr><td>模型路径 *</td><td>远程执行机上的模型权重目录，可点击“浏览远程目录”定位。</td></tr>
-      <tr><td>模型名称 / vLLM 服务 IP / 端口 / API Key</td><td>已移至步骤 3 的配置文件中填写。</td></tr>
+      <tr><td>模型名称 / vLLM 服务 IP / 端口 / API Key</td><td>已移至步骤 3 的 AISBench 参数配置中填写。</td></tr>
     </tbody>
   </table>
 
@@ -346,11 +346,11 @@ build_exe.bat</code></pre>
   </div>
 </section>
 <section id="step3">
-  <h2>步骤 3：配置 config.py</h2>
+  <h2>步骤 3：AISBench 参数配置</h2>
   <span class="step-badge">STEP 3 / 5</span>
   <p>模型名称、vLLM 服务地址等参数在本页填写（默认留空，必填项以红色 <code>*</code> 标记）。确认或修改配置后点击“保存配置到容器”，配置会直接写入容器内部工作区；再用“验证配置”回读容器内文件并与界面值逐项比对。</p>
   <figure class="figure">
-    <img src="images/step3-config-20261106.png?v=20261121" alt="步骤 3：config.py 配置界面">
+    <img src="images/step3-config-20261106.png?v=20261121" alt="步骤 3：AISBench 参数配置界面">
     <figcaption>配置示例：ds 模型、远程模型路径、vLLM 服务 192.168.1.30:8000</figcaption>
   </figure>
   <table>
@@ -367,11 +367,11 @@ build_exe.bat</code></pre>
   </table>
 </section>
 <section id="step4">
-  <h2>步骤 4：设计测试用例</h2>
+  <h2>步骤 4：测试用例准备</h2>
   <span class="step-badge">STEP 4 / 5</span>
   <p>填写单个 DP 组 KV cache、DP 组数、模型最大上下文与前缀命中率，选择输入和输出长度后点击“生成测试用例”。表格会给出推荐请求数、前缀数量、最小请求数、并发数和 KV 使用率。</p>
   <figure class="figure">
-    <img src="images/step4-testcases-20261106.png?v=20261121" alt="步骤 4：测试用例设计界面">
+    <img src="images/step4-testcases-20261106.png?v=20261121" alt="步骤 4：测试用例准备界面">
     <figcaption>计算示例：单 DP KV cache 198469，DP 4，输入 16K/32K，输出 512/1024；前缀数量默认等于请求数</figcaption>
   </figure>
   <table>
@@ -476,7 +476,7 @@ build_exe.bat</code></pre>
     <li>在匹配列表中勾选要对比的用例。</li>
     <li>按分组选择需要观察的指标。</li>
     <li>点击“开始对比”，查看差异表格和柱状图。</li>
-    <li>需要留存时，点击“导出对比 CSV”保存差异表格，或点击“导出对比图”把每个指标的柱状图导出为 PNG。</li>
+    <li>需要留存时，点击“导出对比 CSV”保存差异表格，或点击“导出对比报告”生成一个自包含 HTML 报告，其中包含差异表格和全部勾选指标的柱状图。</li>
   </ol>
   <h3>匹配规则</h3>
   <ul>
@@ -491,7 +491,7 @@ build_exe.bat</code></pre>
       <tr><td>差异表格</td><td>展示 Req A/B、Max_CC A/B，以及每个指标的 A 值、B 值、Δ 和 Δ%。窗口可最大化/全屏，表格支持鼠标拖拽、滚轮纵向滚动和 Shift+滚轮横向滚动。</td></tr>
       <tr><td>柱状图</td><td>每个指标自动绘制分组柱状图；图例使用自定义 A/B 标注，横坐标展示输入、输出、请求数和 Max_CC。</td></tr>
       <tr><td>导出 CSV</td><td>将当前差异表格保存为新的 CSV 文件，默认文件名包含 A/B 标注。</td></tr>
-      <tr><td>导出图片</td><td>把每个已勾选指标的柱状图导出为 1280×640 PNG，文件名包含 A/B 标注与指标名。</td></tr>
+      <tr><td>导出报告</td><td>生成单个自包含 HTML 文件，包含差异表格与全部已勾选指标的柱状图（1280×640 PNG 内嵌），文件名包含 A/B 标注。</td></tr>
     </tbody>
   </table>
   <div class="callout warn">
@@ -501,7 +501,7 @@ build_exe.bat</code></pre>
 </section>
 <section id="cleanup">
   <h2>环境清理与退出</h2>
-  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在步骤 2 通过“清理残留容器”删除。清理提示会显示容器内测试任务状态，并提醒：清理后如需再次执行测试，需要从步骤 2 Docker 部署重新开始。</p>
+  <p>测试完成后会自动询问是否清理远程环境。也可以随时点击“清理环境”手动执行；上次退出未清理的容器可在步骤 2 通过“清理残留容器”删除。清理提示会显示容器内测试任务状态，并提醒：清理后如需再次执行测试，需要从步骤 2 AISBench 容器部署重新开始。</p>
   <table>
     <thead><tr><th>操作</th><th>结果</th></tr></thead>
     <tbody>
@@ -525,7 +525,7 @@ build_exe.bat</code></pre>
   </table>
   <div class="callout">
     <b>清理后如何再次测试</b>
-    清理会停止并删除容器；config.py、测试脚本和日志都保存在容器内部。因此清理后如需再次执行测试用例，需要从步骤 2 Docker 部署重新开始，再依次保存配置、生成测试用例并执行。
+    清理会停止并删除容器；config.py、测试脚本和日志都保存在容器内部。因此清理后如需再次执行测试用例，需要从步骤 2 AISBench 容器部署重新开始，再依次保存配置、生成测试用例并执行。
   </div>
   <div class="callout good">
     <b>安全边界</b>
@@ -550,7 +550,7 @@ build_exe.bat</code></pre>
   <h3>上次退出没有清理，怎么删除遗留容器？</h3>
   <p>重新连接后工具会自动扫描并提醒；也可以在步骤 2 点击“清理残留容器”，勾选要删除的容器，可同时清理旧版遗留的临时目录。列表会显示容器内测试任务状态（初始化 / 执行中 / 执行完成 / 异常终止），便于判断上次测试是否中断。</p>
   <h3>清理环境后想再次执行测试怎么办？</h3>
-  <p>清理会停止并删除容器，config.py、测试脚本和日志都保存在容器内部。需要回到步骤 2 重新执行 Docker 部署，再依次保存配置、生成测试用例并执行测试。</p>
+  <p>清理会停止并删除容器，config.py、测试脚本和日志都保存在容器内部。需要回到步骤 2 重新执行 AISBench 容器部署，再依次保存配置、生成测试用例并执行测试。</p>
   <h3>远程的 /tmp/AISBench_Prefix_Tools 目录为什么部署后不见了？</h3>
   <p>该目录现在只是部署暂存区，代码通过 docker cp 导入容器后会自动删除；后续 config.py、脚本和日志都在容器内部。</p>
   <h3>结果 CSV 可以单独解析吗？</h3>

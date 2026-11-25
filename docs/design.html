@@ -249,9 +249,9 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
   <h3>6.1 五步向导</h3>
   <ol>
     <li><b>SSH 连接</b>：校验远程主机可达性和认证方式。</li>
-    <li><b>Docker 部署与模型配置</b>：查看并选择执行机已有镜像；无可用镜像时上传 tar 包，同时配置代码、模型路径和 vLLM 服务，并一键部署容器。</li>
+    <li><b>AISBench 容器部署</b>：查看并选择执行机已有镜像；无可用镜像时上传 tar 包，同时配置代码、模型路径和 vLLM 服务，并一键部署容器。</li>
     <li><b>配置生成</b>：将 config.py 直接写入容器内部，并支持回读校验。</li>
-    <li><b>用例设计</b>：根据 KV cache 参数自动生成测试用例。</li>
+    <li><b>测试用例准备</b>：根据 KV cache 参数自动生成测试用例。</li>
     <li><b>执行测试</b>：写入脚本到容器、执行、下载日志并生成 CSV。</li>
   </ol>
   <h3>6.2 部署数据流</h3>
@@ -333,7 +333,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
 
 <section id="compare">
   <h2>9. 结果对比分析设计</h2>
-  <p>结果对比分析是独立入口，不依赖执行服务器。它以两个工具生成的 CSV 为输入，输出差异表格、柱状图和可归档的 CSV/PNG 文件。</p>
+  <p>结果对比分析是独立入口，不依赖执行服务器。它以两个工具生成的 CSV 为输入，输出差异表格、柱状图和可归档的 CSV / 自包含 HTML 报告文件。</p>
   <h3>9.1 匹配规则</h3>
   <ol>
     <li>优先按输入长度和输出长度精确匹配。</li>
@@ -350,7 +350,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px; padding: 30px
       <tr><td>差异表格</td><td>A 值、B 值、Δ、Δ%</td><td>量化对比结果</td></tr>
       <tr><td>柱状图</td><td>按指标分组，图例使用自定义 A/B 标注，横轴展示输入、输出、请求数、Max_CC</td><td>直观观察趋势</td></tr>
       <tr><td>导出 CSV</td><td>保存当前对比表，文件名包含 A/B 标注</td><td>归档与二次分析</td></tr>
-      <tr><td>导出 PNG</td><td>每个已勾选指标导出一张 1280×640 柱状图</td><td>直接嵌入报告和评审材料</td></tr>
+      <tr><td>导出报告</td><td>生成单个自包含 HTML 文件，包含差异表格和全部已勾选指标的柱状图</td><td>表格与图表同文件归档，便于评审和分享</td></tr>
     </tbody>
   </table>
   <div class="callout good">

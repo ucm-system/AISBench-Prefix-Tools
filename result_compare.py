@@ -3,10 +3,14 @@
 1. 数据源: 目录内 results_*.csv / *.csv, 无CSV时回退解析 test_*.log
 2. 匹配: 先按(输入长度,输出长度)精确匹配, 剩余按输入长度回退匹配
 3. 输出: 差异表格(A/B/Δ/Δ%) + 每指标分组柱状图(原生Canvas),
-   支持导出CSV和PNG对比图; A/B可自定义标注(默认取文件名)
+   支持导出CSV和单个自包含HTML报告(差异表格+全部图表);
+   A/B可自定义标注(默认取文件名)
 """
 
+import base64
 import csv
+import html
+import io
 import math
 import os
 import re
@@ -71,7 +75,7 @@ DEFAULT_METRICS = {"TTFT_avg", "TPOT_avg", "output_throughput", "qps",
 
 
 # ---------------------------------------------------------------------------
-#  图片导出辅助 (Pillow)
+#  图片/报告导出辅助 (Pillow)
 # ---------------------------------------------------------------------------
 
 def sanitize_name(text: str, fallback: str = "run", max_len: int = 40) -> str:
@@ -106,15 +110,15 @@ def _load_pil_font(size: int, bold: bool = False):
         return ImageFont.load_default()
 
 
-def render_chart_png(path: str, title: str, labels: List[str],
-                     values_a: List[Optional[float]],
-                     values_b: List[Optional[float]],
-                     name_a: str, name_b: str, unit: str = "",
-                     decimals: int = 2, width: int = 1280,
-                     height: int = 640) -> Optional[str]:
-    """把一张分组柱状图渲染为PNG文件 (与界面Canvas图表同风格)。
+def render_chart_image(title: str, labels: List[str],
+                       values_a: List[Optional[float]],
+                       values_b: List[Optional[float]],
+                       name_a: str, name_b: str, unit: str = "",
+                       decimals: int = 2, width: int = 1280,
+                       height: int = 640) -> Optional["Image.Image"]:
+    """把一张分组柱状图渲染为内存图像 (与界面Canvas图表同风格)。
 
-    返回写入的路径; Pillow不可用时返回None。
+    返回PIL图像对象; Pillow不可用时返回None。
     """
     if not PIL_AVAILABLE:
         return None
@@ -140,8 +144,7 @@ def render_chart_png(path: str, title: str, labels: List[str],
     if not values:
         draw.text((width // 2, height // 2), tr("无有效数据"),
                   fill=COLOR_TEXT_MUTED, font=font_axis, anchor="mm")
-        image.save(path, "PNG")
-        return path
+        return image
 
     y_max = _nice_ceiling(max(values))
     y_min = min(0.0, min(values))
@@ -207,7 +210,94 @@ def render_chart_png(path: str, title: str, labels: List[str],
     draw.text((x_b + swatch + 6, legend_y), text_b,
               fill=COLOR_TEXT_MUTED, font=font_small)
 
+    return image
+
+
+def render_chart_png(path: str, **kwargs) -> Optional[str]:
+    """把一张分组柱状图渲染为PNG文件, 返回写入的路径。"""
+    image = render_chart_image(**kwargs)
+    if image is None:
+        return None
     image.save(path, "PNG")
+    return path
+
+
+def render_report_html(path: str, title: str, meta: List[Tuple[str, str]],
+                       columns: List[Tuple[str, str]], rows: List[Dict],
+                       charts: List[Tuple[str, str, bytes]],
+                       table_title: str, charts_title: str) -> str:
+    """把差异表格和全部柱状图写入单个自包含HTML报告。
+
+    columns为(字段名, 表头)列表; charts为(指标名, 单位, PNG字节)列表,
+    图片以base64数据内嵌, 生成一个可直接归档/分享的HTML文件。
+    """
+    def esc(value) -> str:
+        return html.escape(str(value))
+
+    meta_html = "".join(
+        f"<tr><th>{esc(key)}</th><td>{esc(value)}</td></tr>"
+        for key, value in meta)
+    head_html = "".join(f"<th>{esc(header)}</th>" for _key, header in columns)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{esc(row.get(key, ''))}</td>"
+                         for key, _header in columns) + "</tr>"
+        for row in rows)
+    chart_html = "".join(
+        f'<section class="chart"><h2>{esc(name)}{esc(f" ({unit})" if unit else "")}'
+        f'</h2><img alt="{esc(name)}" src="data:image/png;base64,'
+        f'{base64.b64encode(png_bytes).decode("ascii")}"></section>'
+        for name, unit, png_bytes in charts)
+
+    document = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(title)}</title>
+<style>
+:root {{ --bg:{COLOR_BG}; --card:{COLOR_CARD}; --border:{COLOR_BORDER};
+         --text:{COLOR_TEXT}; --muted:{COLOR_TEXT_MUTED};
+         --primary:{COLOR_PRIMARY}; }}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+       font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif; }}
+.container {{ max-width: 1280px; margin: 0 auto; }}
+h1 {{ margin: 0 0 6px; font-size: 24px; color: var(--primary); }}
+h2 {{ margin: 28px 0 10px; font-size: 18px; border-bottom: 1px solid var(--border);
+     padding-bottom: 6px; }}
+.summary {{ background: var(--card); border: 1px solid var(--border);
+           border-radius: 6px; padding: 12px 16px; margin-top: 14px; }}
+.summary table {{ border-collapse: collapse; width: 100%; }}
+.summary th {{ text-align: left; color: var(--muted); font-weight: 600;
+              padding: 4px 12px 4px 0; white-space: nowrap; }}
+.summary td {{ padding: 4px 0; word-break: break-all; }}
+.data {{ background: var(--card); border: 1px solid var(--border);
+        border-radius: 6px; padding: 14px; overflow-x: auto; }}
+.data table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+.data th, .data td {{ border: 1px solid var(--border); padding: 6px 9px;
+                     text-align: center; white-space: nowrap; }}
+.data th {{ background: #f1f5f9; }}
+.chart {{ background: var(--card); border: 1px solid var(--border);
+         border-radius: 6px; padding: 14px; margin: 18px 0; }}
+.chart h2 {{ margin: 0 0 10px; border: none; font-size: 16px; }}
+.chart img {{ display: block; max-width: 100%; height: auto; }}
+footer {{ margin-top: 24px; color: var(--muted); font-size: 12px; }}
+</style>
+</head>
+<body><div class="container">
+<h1>{esc(title)}</h1>
+<div class="summary"><table>{meta_html}</table></div>
+<h2>{esc(table_title)}</h2>
+<div class="data"><table><thead><tr>{head_html}</tr></thead>
+<tbody>{body_html}</tbody></table></div>
+<h2>{esc(charts_title)}</h2>
+{chart_html}
+<footer>AISBench-Prefix-Tools</footer>
+</div></body>
+</html>
+"""
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(document)
     return path
 
 
@@ -552,7 +642,7 @@ class ResultCompareDialog:
                  font=("Segoe UI", 9)
                  ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         LocalizedLabel(row_a_label,
-                 text="(图表/导出文件中显示, 默认取文件名)",
+                 text="(图表/报告中显示, 默认取文件名)",
                  bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
                  font=("Segoe UI", 7)).pack(side=tk.LEFT, padx=4)
 
@@ -700,12 +790,12 @@ class ResultCompareDialog:
                                     state=tk.DISABLED,
                                     command=self._export_csv)
         self.export_btn.pack(side=tk.LEFT, padx=8)
-        self.export_image_btn = LocalizedButton(action_row, text="导出对比图",
-                                    font=("Segoe UI", 9), relief=tk.FLAT,
-                                    bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=12,
-                                    state=tk.DISABLED,
-                                    command=self._export_images)
-        self.export_image_btn.pack(side=tk.LEFT, padx=8)
+        self.export_report_btn = LocalizedButton(action_row, text="导出对比报告",
+                                            font=("Segoe UI", 9), relief=tk.FLAT,
+                                            bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=12,
+                                            state=tk.DISABLED,
+                                            command=self._export_report)
+        self.export_report_btn.pack(side=tk.LEFT, padx=8)
         self.compare_status_lbl = LocalizedLabel(action_row, text="", bg=COLOR_BG,
                                            fg=COLOR_TEXT_MUTED,
                                            font=("Segoe UI", 8))
@@ -927,7 +1017,7 @@ class ResultCompareDialog:
         self.selected_matches = selected_matches
         self.selected_metrics = selected_metrics
         self.export_btn.config(state=tk.NORMAL)
-        self.export_image_btn.config(
+        self.export_report_btn.config(
             state=tk.NORMAL if PIL_AVAILABLE else tk.DISABLED)
         self.compare_status_lbl.config(
             text=trf("已对比 {cases} 个用例 × {metrics} 个指标",
@@ -1129,30 +1219,32 @@ class ResultCompareDialog:
         self.compare_status_lbl.config(
             text=trf("已导出: {path}", path=path), fg=COLOR_SUCCESS)
 
-    def _export_images(self):
-        """把每个已选指标的柱状对比图导出为PNG图片。"""
+    def _export_report(self):
+        """把差异表格和全部柱状图汇总导出为一个自包含HTML报告。"""
         if not getattr(self, "compare_rows", None):
             showwarning("提示", "请先执行对比", parent=self.dialog)
             return
         if not PIL_AVAILABLE:
             showwarning("提示",
-                        "未安装Pillow, 无法导出图片\n请执行: pip install pillow",
+                        tr("未安装Pillow, 无法导出报告\n请执行: pip install pillow"),
                         parent=self.dialog)
             return
 
-        directory = filedialog.askdirectory(
-            parent=self.dialog, title="选择对比图保存目录",
-            initialdir=os.path.dirname(self.file_a_var.get().strip()) or
-            str(Path.home()))
-        if not directory:
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_name = (f"compare_report_{sanitize_name(self._label_a())}_vs_"
+                        f"{sanitize_name(self._label_b())}_{stamp}.html")
+        initial_dir = os.path.dirname(self.file_a_var.get().strip()) or str(Path.home())
+        path = filedialog.asksaveasfilename(
+            parent=self.dialog, title=tr("保存对比报告"),
+            defaultextension=".html", initialdir=initial_dir,
+            initialfile=default_name,
+            filetypes=[(tr("HTML报告"), "*.html")])
+        if not path:
             return
 
         name_a = f"A: {self._label_a()}"
         name_b = f"B: {self._label_b()}"
-        label_a = sanitize_name(self._label_a())
-        label_b = sanitize_name(self._label_b())
-        exported: List[str] = []
-
+        charts: List[Tuple[str, str, bytes]] = []
         for field, name, unit, decimals in self.selected_metrics:
             display_name = tr(name)
             labels: List[str] = []
@@ -1163,31 +1255,46 @@ class ResultCompareDialog:
                 result = compute_comparison(match, field)
                 values_a.append(result["a"])
                 values_b.append(result["b"])
+            image = render_chart_image(
+                title=display_name, labels=labels, values_a=values_a,
+                values_b=values_b, name_a=name_a, name_b=name_b,
+                unit=unit, decimals=decimals)
+            if image is None:
+                continue
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            charts.append((display_name, unit, buffer.getvalue()))
 
-            file_name = (f"compare_{label_a}_vs_{label_b}_"
-                         f"{sanitize_name(display_name, 'metric')}.png")
-            path = os.path.join(directory, file_name)
-            try:
-                written = render_chart_png(
-                    path, title=display_name, labels=labels, values_a=values_a,
-                    values_b=values_b, name_a=name_a, name_b=name_b,
-                    unit=unit, decimals=decimals)
-                if written:
-                    exported.append(written)
-            except OSError as exc:
-                showerror("错误", trf("导出图片失败: {error}", error=exc),
-                          parent=self.dialog)
-                return
+        columns = [("match", tr("匹配")), ("input", "Input"), ("output", "Output"),
+                   ("Req A/B", "Req A/B"), ("Max_CC A/B", "Max_CC A/B")]
+        for metric in self.compare_metrics:
+            columns.extend([(f"{metric} A", f"{metric} A"),
+                            (f"{metric} B", f"{metric} B"),
+                            (f"{metric} Δ", f"{metric} Δ"),
+                            (f"{metric} Δ%", f"{metric} Δ%")])
 
-        if not exported:
-            showwarning("提示", "没有可导出的图表", parent=self.dialog)
+        file_a = self.file_a_var.get().strip() or "-"
+        file_b = self.file_b_var.get().strip() or "-"
+        meta = [
+            (tr("文件A (基准)"), f"{self._label_a()}  ({file_a})"),
+            (tr("文件B (对比)"), f"{self._label_b()}  ({file_b})"),
+            (tr("用例数"), str(len(self.selected_matches))),
+            (tr("指标数"), str(len(self.selected_metrics))),
+            (tr("生成时间"), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        ]
+
+        try:
+            written = render_report_html(
+                path, title=tr("AISBench 结果对比分析报告"), meta=meta,
+                columns=columns, rows=self.compare_rows, charts=charts,
+                table_title=tr("差异对比表 (Δ = B - A)"),
+                charts_title=tr("柱状对比图"))
+        except OSError as exc:
+            showerror("错误", trf("导出报告失败: {error}", error=exc),
+                      parent=self.dialog)
             return
 
         self.compare_status_lbl.config(
-            text=trf("已导出 {count} 张对比图: {first} 等",
-                     count=len(exported), first=exported[0]),
-            fg=COLOR_SUCCESS)
-        showinfo("完成",
-                 trf("已导出 {count} 张对比图\n\n{files}",
-                     count=len(exported), files="\n".join(exported)),
+            text=trf("已导出报告: {path}", path=written), fg=COLOR_SUCCESS)
+        showinfo("完成", trf("已导出报告\n\n{path}", path=written),
                  parent=self.dialog)

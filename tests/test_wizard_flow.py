@@ -15,7 +15,7 @@ class WizardFlowTests(unittest.TestCase):
     def test_docker_and_file_steps_are_merged(self):
         self.assertEqual(
             main.WizardApp.STEP_TITLES,
-            ["SSH连接", "Docker部署", "配置文件", "测试用例", "执行测试"],
+            ["SSH连接", "AISBench容器部署", "AISBench参数配置", "测试用例准备", "执行测试"],
         )
 
     def test_residual_container_cleanup_is_supported(self):

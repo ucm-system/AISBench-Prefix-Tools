@@ -426,6 +426,49 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertEqual((str(ranges[0]), str(ranges[1])),
                              ("2.0", str(app.exec_log.index("2.end"))))
 
+    def test_abnormal_filters_by_level_keyword_and_invert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _, _ = self._build_app(tmp)
+            app._clear_exec_abnormal_entries()
+            app._add_exec_abnormal_entry("error", 1, "ERROR: timeout waiting response")
+            app._add_exec_abnormal_entry("warning", 2, "WARNING: retry count exceeded")
+            app._add_exec_abnormal_entry("error", 3, "ERROR: connection refused")
+            self.assertEqual(
+                len(app.exec_abnormal_tree.get_children()), 3)
+
+            # 级别筛选: 只看错误
+            app.abnormal_level_var.set("错误")
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 2)
+            self.assertTrue(all(e[0] == "错误" for e in entries))
+
+            # 关键词筛选: 匹配 connection
+            app.abnormal_level_var.set("all")
+            app.abnormal_keyword_var.set("connection")
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 1)
+            self.assertIn("connection refused", entries[0][2])
+
+            # 反选: 排除含 connection 的条目
+            app.abnormal_invert_var.set(True)
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 2)
+            self.assertNotIn("connection refused",
+                             [e[2] for e in entries])
+
+            # 计数标签显示 显示/总数
+            self.assertIn("显示", app.exec_abnormal_count_lbl.cget("text"))
+
+            # 重置恢复全部
+            app._reset_abnormal_filters()
+            self.assertEqual(len(app.exec_abnormal_tree.get_children()), 3)
+
     def test_run_sequence_prefixes_result_dir_with_task_name_and_saves_info(self):
         with tempfile.TemporaryDirectory() as tmp:
             app, docker, _ = self._build_app(tmp)
@@ -483,6 +526,42 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertIn("aisbench_test.py", text)
             self.assertIn("测试结果", text)
             self.assertIn("结果解读", text)
+
+    def test_run_sequence_enables_open_report_button(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, _ = self._build_app(tmp)
+            # 模拟报告已生成: 路径由后台线程写入, 按钮由主线程回调启用
+            report = os.path.join(tmp, "report_test.html")
+            with open(report, "w", encoding="utf-8") as handle:
+                handle.write("<html><body>report</body></html>")
+
+            app.current_report_path = report
+            app._set_test_report(report)  # 主线程回调
+
+            self.assertEqual(str(app.open_report_btn.cget("state")), "normal")
+            with mock.patch("main.webbrowser.open_new_tab") as open_tab:
+                app._open_test_report()
+                open_tab.assert_called_once()
+
+            # 路径不存在时给出警告而非崩溃
+            app.current_report_path = os.path.join(tmp, "missing.html")
+            with mock.patch("main.showwarning") as warn:
+                app._open_test_report()
+                warn.assert_called_once()
+
+    def test_container_prefix_field_previews_name_and_uses_prefix_in_deploy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = main.WizardApp()
+            try:
+                app.container_prefix_var.set("my team/nightly")
+                app.root.update()
+                preview = app.container_prefix_preview_lbl.cget("text")
+                self.assertIn("my-team-nightly-aisbench-test-", preview)
+
+                name = main.DockerManager(None).generate_container_name("my team/nightly")
+                self.assertRegex(name, r"^my-team-nightly-aisbench-test-\d{8}$")
+            finally:
+                app.root.destroy()
 
     def test_sanitize_task_name_replaces_unsafe_characters(self):
         self.assertEqual(

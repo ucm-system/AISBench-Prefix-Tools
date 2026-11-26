@@ -14,6 +14,7 @@ import io
 import math
 import os
 import re
+import webbrowser
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
@@ -796,6 +797,12 @@ class ResultCompareDialog:
                                             state=tk.DISABLED,
                                             command=self._export_report)
         self.export_report_btn.pack(side=tk.LEFT, padx=8)
+        self.open_report_btn = LocalizedButton(action_row, text="打开对比报告",
+                                          font=("Segoe UI", 9), relief=tk.FLAT,
+                                          bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=12,
+                                          state=tk.DISABLED,
+                                          command=self._open_report)
+        self.open_report_btn.pack(side=tk.LEFT, padx=8)
         self.compare_status_lbl = LocalizedLabel(action_row, text="", bg=COLOR_BG,
                                            fg=COLOR_TEXT_MUTED,
                                            font=("Segoe UI", 8))
@@ -1294,7 +1301,25 @@ class ResultCompareDialog:
                       parent=self.dialog)
             return
 
+        self.current_report_path = written
+        if hasattr(self, "open_report_btn"):
+            self.open_report_btn.config(state=tk.NORMAL)
         self.compare_status_lbl.config(
             text=trf("已导出报告: {path}", path=written), fg=COLOR_SUCCESS)
         showinfo("完成", trf("已导出报告\n\n{path}", path=written),
                  parent=self.dialog)
+
+    def _open_report(self):
+        """在系统默认浏览器中打开已导出的对比报告"""
+        path = getattr(self, "current_report_path", "")
+        if not path:
+            return
+        if not os.path.isfile(path):
+            showwarning("提示", trf("报告文件不存在: {path}", path=path),
+                        parent=self.dialog)
+            return
+        try:
+            webbrowser.open_new_tab(f"file://{os.path.abspath(path)}")
+        except Exception as exc:
+            showerror("错误", trf("打开报告失败: {error}", error=exc),
+                      parent=self.dialog)

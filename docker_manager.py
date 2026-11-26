@@ -196,10 +196,22 @@ class DockerManager:
             callback(trf("\n识别到镜像: {image}\n", image=image_name))
         return True, image_name
 
-    def generate_container_name(self) -> str:
-        """生成唯一的容器名称"""
+    @staticmethod
+    def sanitize_container_prefix(prefix: str) -> str:
+        """把用户自定义前缀转成合法的容器名前缀（小写字母数字和-_）"""
+        import re as _re
+        cleaned = _re.sub(r"[^a-zA-Z0-9_-]", "-", (prefix or "").strip())
+        cleaned = _re.sub(r"-{2,}", "-", cleaned).strip("-_.")
+        return cleaned[:40]
+
+    def generate_container_name(self, prefix: str = "") -> str:
+        """生成唯一的容器名称: 前缀由用户自定义, 后缀由工具自动生成"""
+        safe_prefix = self.sanitize_container_prefix(prefix)
         timestamp = datetime.now().strftime('%m%d%H%M')
-        return f"aisbench-test-{timestamp}"
+        generated_suffix = f"aisbench-test-{timestamp}"
+        if safe_prefix:
+            return f"{safe_prefix}-{generated_suffix}"
+        return generated_suffix
 
     def container_exists(self, name: str) -> bool:
         """检查容器是否存在"""

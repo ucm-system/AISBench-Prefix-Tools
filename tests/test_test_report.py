@@ -80,14 +80,17 @@ class InterpretResultsTests(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0][0], "warning")
 
-    def test_high_hbm_hit_is_good(self):
+    def test_notes_are_descriptive_without_judgments(self):
         results = [_sample_results()[0]]
         notes = _interpret_results(results)
-        levels = [level for level, _text in notes]
-        self.assertIn("good", levels)
         text = " ".join(text for _l, text in notes)
+        # 每个指标都有含义说明和具体数值, 不包含正常/异常判断
         self.assertIn("HBM", text)
         self.assertIn("92.1", text)
+        for keyword in ["TTFT", "TPOT", "输出吞吐", "QPS", "E2E"]:
+            self.assertIn(keyword, text)
+        for judgment in ["较高", "偏低", "良好", "建议", "可能超出"]:
+            self.assertNotIn(judgment, text)
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ def _fmt_value(value, field: str = "") -> str:
 
 
 def _interpret_results(results: List[Dict]) -> List[Tuple[str, str]]:
-    """根据解析出的结果生成面向用户的解读要点。"""
+    """根据解析出的结果生成指标含义与具体数值的解读要点(不做正常/异常判断)。"""
     notes: List[Tuple[str, str]] = []
     if not results:
         notes.append(("warning", "本次执行未从日志中提取到有效结果。请查看结果目录中的执行日志与 preflight.log，确认容器内服务状态与脚本错误信息。"))
@@ -66,45 +66,41 @@ def _interpret_results(results: List[Dict]) -> List[Tuple[str, str]]:
         except (TypeError, ValueError):
             return None
 
-    output_tp = [to_float(row, "output_throughput") for row in results]
-    output_tp = [v for v in output_tp if v is not None]
-    if output_tp:
-        best = max(output_tp)
-        total = sum(output_tp)
-        notes.append(("info", f"共 {len(results)} 个测试用例；输出吞吐合计 {total:.2f} tok/s，最高 {best:.2f} tok/s。吞吐随输入长度变化的趋势可用于判断长前缀场景下的容量压力。"))
-
     hbm = [to_float(row, "hbm_hit_rate") for row in results]
     hbm = [v for v in hbm if v is not None]
     if hbm:
-        avg = sum(hbm) / len(hbm)
-        if avg >= 90:
-            level, text = "good", "HBM 命中率整体较高，KV cache 前缀复用效果良好。"
-        elif avg >= 60:
-            level, text = "info", "HBM 命中率中等，可结合请求数与前缀数量配置评估缓存容量压力。"
-        else:
-            level, text = "warning", "HBM 命中率偏低，请求前缀总量可能超出 HBM KV cache 容量，或并发压力导致缓存驱逐。建议检查最小请求数/并发数设置。"
-        notes.append((level, f"HBM 命中率平均 {avg:.1f}%（范围 {min(hbm):.1f}% ~ {max(hbm):.1f}%）。{text}"))
+        notes.append(("info", f"HBM 命中率：各用例分别为 {', '.join(f'{v:.1f}%' for v in hbm)}，平均 {sum(hbm) / len(hbm):.1f}%，范围 {min(hbm):.1f}% ~ {max(hbm):.1f}%。该指标表示 KV cache 前缀命中 HBM 显存缓存的比例。"))
 
     external = [to_float(row, "external_hit_rate") for row in results]
     external = [v for v in external if v is not None]
     if external:
-        avg = sum(external) / len(external)
-        if avg > 5:
-            notes.append(("warning", f"外部命中率平均 {avg:.1f}%，存在超出 HBM 容量的 KV 访问；如需纯 HBM 压测，请降低请求数或并发。"))
-        else:
-            notes.append(("good", f"外部命中率平均 {avg:.1f}%，绝大多数 KV 访问命中 HBM。"))
+        notes.append(("info", f"外部命中率：各用例分别为 {', '.join(f'{v:.1f}%' for v in external)}，平均 {sum(external) / len(external):.1f}%。该指标表示超出 HBM 容量、由外部缓存介质（如主机内存）服务的 KV 访问比例。"))
 
     ttft = [to_float(row, "TTFT_avg") for row in results]
     ttft = [v for v in ttft if v is not None]
     if ttft:
-        notes.append(("info", f"TTFT 平均值范围 {min(ttft):.2f} ~ {max(ttft):.2f} ms；数值随输入长度增长通常符合 prefill 计算量线性增长的预期。"))
+        notes.append(("info", f"TTFT 平均值：各用例分别为 {', '.join(f'{v:.2f}' for v in ttft)} ms，范围 {min(ttft):.2f} ~ {max(ttft):.2f} ms。TTFT（Time To First Token）指从请求发出到收到第一个输出 token 的延迟。"))
 
     tpot = [to_float(row, "TPOT_avg") for row in results]
     tpot = [v for v in tpot if v is not None]
     if tpot:
-        notes.append(("info", f"TPOT 平均值范围 {min(tpot):.2f} ~ {max(tpot):.2f} ms；该指标主要反映 decode 阶段单 token 延迟，通常应基本稳定。"))
+        notes.append(("info", f"TPOT 平均值：各用例分别为 {', '.join(f'{v:.2f}' for v in tpot)} ms，范围 {min(tpot):.2f} ~ {max(tpot):.2f} ms。TPOT（Time Per Output Token）指生成每个输出 token 的平均时间。"))
 
-    notes.append(("info", "字段说明：TTFT=首 token 延迟；TPOT=每输出 token 平均延迟；E2E_time=端到端总耗时；HBM/外部命中率反映 KV cache 前缀在不同存储层级的命中情况。"))
+    output_tp = [to_float(row, "output_throughput") for row in results]
+    output_tp = [v for v in output_tp if v is not None]
+    if output_tp:
+        notes.append(("info", f"输出吞吐：各用例分别为 {', '.join(f'{v:.2f}' for v in output_tp)} tok/s，合计 {sum(output_tp):.2f} tok/s，最高 {max(output_tp):.2f} tok/s。该指标指每秒生成的输出 token 数量。"))
+
+    qps = [to_float(row, "qps") for row in results]
+    qps = [v for v in qps if v is not None]
+    if qps:
+        notes.append(("info", f"QPS：各用例分别为 {', '.join(f'{v:.2f}' for v in qps)} req/s。该指标指每秒完成的请求数量。"))
+
+    e2e = [to_float(row, "E2E_time") for row in results]
+    e2e = [v for v in e2e if v is not None]
+    if e2e:
+        notes.append(("info", f"E2E 时间：各用例分别为 {', '.join(f'{v:.2f}' for v in e2e)} s。该指标指单个用例从开始执行到全部请求完成的总耗时。"))
+
     return notes
 
 

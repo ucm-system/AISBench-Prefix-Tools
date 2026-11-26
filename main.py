@@ -519,6 +519,8 @@ class WizardApp:
             snapshot["zip_path"] = self.zip_path.get()
         if hasattr(self, "work_dir_var"):
             snapshot["work_dir"] = self.work_dir_var.get()
+        if hasattr(self, "container_prefix_var"):
+            snapshot["container_prefix"] = self.container_prefix_var.get()
         if hasattr(self, "work_dir_status"):
             snapshot["work_dir_status"] = (
                 self.work_dir_status.cget("text"), self.work_dir_status.cget("fg"))
@@ -564,8 +566,12 @@ class WizardApp:
             snapshot["task_name"] = self.task_name_var.get()
         if hasattr(self, "open_result_btn"):
             snapshot["open_result_state"] = self.open_result_btn.cget("state")
+        if hasattr(self, "open_report_btn"):
+            snapshot["open_report_state"] = self.open_report_btn.cget("state")
         if hasattr(self, "current_result_dir"):
             snapshot["current_result_dir"] = self.current_result_dir
+        if hasattr(self, "current_report_path"):
+            snapshot["current_report_path"] = self.current_report_path
         if hasattr(self, "deployed"):
             snapshot["deployed"] = self.deployed
         if hasattr(self, "_content_canvas"):
@@ -621,6 +627,8 @@ class WizardApp:
             self.zip_path.set(snapshot["zip_path"])
         if "work_dir" in snapshot:
             self.work_dir_var.set(snapshot["work_dir"])
+        if "container_prefix" in snapshot:
+            self.container_prefix_var.set(snapshot["container_prefix"])
         if snapshot.get("work_dir_status"):
             text, color = snapshot["work_dir_status"]
             self.work_dir_status.config(text=text, fg=color)
@@ -679,6 +687,10 @@ class WizardApp:
             self.current_result_dir = snapshot["current_result_dir"]
         if snapshot.get("open_result_state") == tk.NORMAL:
             self.open_result_btn.config(state=tk.NORMAL)
+        if "current_report_path" in snapshot:
+            self.current_report_path = snapshot["current_report_path"]
+        if snapshot.get("open_report_state") == tk.NORMAL:
+            self.open_report_btn.config(state=tk.NORMAL)
 
         # ---- 恢复侧边栏/残留容器状态 ----
         if self.ssh.connected:
@@ -1063,7 +1075,38 @@ class WizardApp:
         LocalizedButton(model_frame, text="浏览远程目录", command=self._browse_remote_model,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
+        row += 1
+
+        # 容器名称前缀: 用户自定义部分作为前缀, 工具生成的部分作为后缀
+        self._grid_field_label(form, "容器名称前缀 (可选):", row=row)
+        prefix_frame = tk.Frame(form, bg=COLOR_CARD)
+        prefix_frame.grid(row=row, column=1, columnspan=2, padx=16,
+                          pady=(0, 8), sticky=tk.EW)
+        self.container_prefix_var = tk.StringVar()
+        self.container_prefix_entry = tk.Entry(
+            prefix_frame, textvariable=self.container_prefix_var, width=32,
+            font=("Segoe UI", 9))
+        self.container_prefix_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.container_prefix_preview_lbl = LocalizedLabel(
+            prefix_frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            font=("Segoe UI", 8))
+        self.container_prefix_preview_lbl.pack(side=tk.LEFT, padx=(8, 0))
+        self.container_prefix_var.trace_add("write", self._update_container_name_preview)
+        self._update_container_name_preview()
+
         form.columnconfigure(1, weight=1)
+
+    def _update_container_name_preview(self, *_args):
+        """实时预览最终容器名称: <用户前缀>-aisbench-test-<时间戳>"""
+        if not hasattr(self, "container_prefix_preview_lbl"):
+            return
+        prefix = DockerManager.sanitize_container_prefix(
+            self.container_prefix_var.get())
+        from datetime import datetime as _dt
+        stamp = _dt.now().strftime('%m%d%H%M')
+        preview = (f"{prefix}-" if prefix else "") + f"aisbench-test-{stamp}"
+        self.container_prefix_preview_lbl.config(
+            text=trf("容器名: {name}", name=preview))
 
     def _on_image_source_change(self):
         """切换镜像来源: 执行机已有镜像 / 本地tar包"""
@@ -1759,18 +1802,73 @@ class WizardApp:
         for item in self.exec_abnormal_tree.get_children():
             self.exec_abnormal_tree.delete(item)
         self._exec_abnormal_entries = []
-        self.exec_abnormal_count_lbl.config(text=trf("共 {count} 条", count=0))
+        self._refresh_abnormal_count()
 
     def _add_exec_abnormal_entry(self, kind: str, line_no: int, message: str):
         """由LiveLogHandler在主线程调用: 记录WARN/ERROR行并提供跳转入口"""
         self._exec_abnormal_entries.append(
             {"kind": kind, "line": line_no, "message": message})
-        level = tr("错误") if kind == "error" else tr("警告")
+        # 筛选值保持源语言存储, 渲染时再本地化
+        if self._abnormal_entry_matches_filters(kind, message):
+            self._insert_abnormal_row(len(self._exec_abnormal_entries) - 1)
+        self._refresh_abnormal_count()
+
+    def _insert_abnormal_row(self, index: int):
+        """按当前索引插入异常提示行"""
+        entry = self._exec_abnormal_entries[index]
+        level = tr("错误") if entry["kind"] == "error" else tr("警告")
         self.exec_abnormal_tree.insert(
-            "", tk.END, iid=str(len(self._exec_abnormal_entries) - 1),
-            values=(level, line_no, message))
-        self.exec_abnormal_count_lbl.config(
-            text=trf("共 {count} 条", count=len(self._exec_abnormal_entries)))
+            "", tk.END, iid=str(index),
+            values=(level, entry["line"], entry["message"]))
+
+    def _abnormal_entry_matches_filters(self, kind: str, message: str) -> bool:
+        """判断异常条目是否命中级别+关键词筛选(反选时取反)"""
+        level = getattr(self, "abnormal_level_var", None)
+        level_value = level.get() if level else "all"
+        level_key = {"all": "all", "错误": "error", "警告": "warning",
+                     "Error": "error", "Warning": "warning"}.get(level_value, "all")
+        if level_key != "all" and kind != level_key:
+            return False
+        keyword = (getattr(self, "abnormal_keyword_var", None) and
+                   self.abnormal_keyword_var.get().strip().lower()) or ""
+        matched = (not keyword or keyword in message.lower())
+        invert = bool(getattr(self, "abnormal_invert_var", None) and
+                      self.abnormal_invert_var.get())
+        return (not matched) if invert else matched
+
+    def _apply_abnormal_filters(self):
+        """按级别/关键词/反选重新渲染异常提示列表"""
+        if not hasattr(self, "exec_abnormal_tree"):
+            return
+        for item in self.exec_abnormal_tree.get_children():
+            self.exec_abnormal_tree.delete(item)
+        for index, entry in enumerate(self._exec_abnormal_entries):
+            if self._abnormal_entry_matches_filters(entry["kind"], entry["message"]):
+                self._insert_abnormal_row(index)
+        self._refresh_abnormal_count()
+
+    def _reset_abnormal_filters(self):
+        """重置级别/关键词/反选筛选条件"""
+        if hasattr(self, "abnormal_level_var"):
+            self.abnormal_level_var.set("all")
+        if hasattr(self, "abnormal_keyword_var"):
+            self.abnormal_keyword_var.set("")
+        if hasattr(self, "abnormal_invert_var"):
+            self.abnormal_invert_var.set(False)
+        self._apply_abnormal_filters()
+
+    def _refresh_abnormal_count(self):
+        """刷新异常提示计数: 显示条数/总数"""
+        shown = len(self.exec_abnormal_tree.get_children())
+        total = len(self._exec_abnormal_entries)
+        if hasattr(self, "exec_abnormal_count_lbl"):
+            if shown == total:
+                self.exec_abnormal_count_lbl.config(
+                    text=trf("共 {count} 条", count=total))
+            else:
+                self.exec_abnormal_count_lbl.config(
+                    text=trf("显示 {shown}/{total} 条",
+                             shown=shown, total=total))
 
     def _jump_to_exec_abnormal_log(self, event=None):
         """点击异常提示行时, 高亮并滚动到总执行日志的对应位置"""
@@ -2038,7 +2136,10 @@ class WizardApp:
 
         # Step 4: 创建容器(仅挂载模型路径, 代码随后导入)
         self._log_docker(tr("[4/5] 创建并启动容器...\n"))
-        container_name = self.docker.generate_container_name()
+        container_prefix = DockerManager.sanitize_container_prefix(
+            self.container_prefix_var.get()
+            if hasattr(self, "container_prefix_var") else "")
+        container_name = self.docker.generate_container_name(container_prefix)
         ok, msg = self.docker.create_container(
             image_name, model_path, container_name,
             callback=lambda t: self._log_docker(t)  # 直接写缓冲区
@@ -2986,6 +3087,39 @@ class WizardApp:
                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         self.exec_abnormal_count_lbl.pack(side=tk.LEFT, padx=8)
 
+        # 筛选栏: 级别(全部/错误/警告) + 关键词 + 反选
+        abnormal_filter_row = tk.Frame(log_pane, bg=COLOR_BG)
+        abnormal_filter_row.pack(fill=tk.X, pady=(1, 0))
+        LocalizedLabel(abnormal_filter_row, text="级别:", bg=COLOR_BG,
+                fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        self.abnormal_level_var = tk.StringVar(value="all")
+        self.abnormal_level_combo = ttk.Combobox(abnormal_filter_row,
+                textvariable=self.abnormal_level_var, width=8,
+                state="readonly", font=("Segoe UI", 8))
+        self.abnormal_level_combo.config(
+            values=["all", tr("错误"), tr("警告")])
+        self.abnormal_level_combo.set("all")
+        self.abnormal_level_combo.pack(side=tk.LEFT, padx=(4, 8))
+        LocalizedLabel(abnormal_filter_row, text="关键词:", bg=COLOR_BG,
+                fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        self.abnormal_keyword_var = tk.StringVar()
+        self.abnormal_keyword_entry = tk.Entry(abnormal_filter_row,
+                textvariable=self.abnormal_keyword_var, width=24,
+                font=("Segoe UI", 8))
+        self.abnormal_keyword_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 8))
+        self.abnormal_invert_var = tk.BooleanVar(value=False)
+        self.abnormal_invert_chk = LocalizedCheckbutton(abnormal_filter_row,
+                text="反选", variable=self.abnormal_invert_var, bg=COLOR_BG,
+                font=("Segoe UI", 8), command=self._apply_abnormal_filters)
+        self.abnormal_invert_chk.pack(side=tk.LEFT)
+        LocalizedButton(abnormal_filter_row, text="重置", font=("Segoe UI", 8),
+                relief=tk.FLAT, bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=8,
+                command=self._reset_abnormal_filters).pack(side=tk.LEFT, padx=(8, 0))
+        self.abnormal_level_combo.bind("<<ComboboxSelected>>",
+                                       lambda _e: self._apply_abnormal_filters())
+        self.abnormal_keyword_var.trace_add(
+            "write", lambda *_a: self._apply_abnormal_filters())
+
         abnormal_columns = ("level", "line", "message")
         self.exec_abnormal_tree = ttk.Treeview(log_pane, columns=abnormal_columns,
                 show="headings", height=4, selectmode="browse")
@@ -3028,6 +3162,11 @@ class WizardApp:
                 fg="white", padx=10, command=self._open_result_directory,
                 state=tk.DISABLED)
         self.open_result_btn.pack(side=tk.LEFT, padx=8)
+        self.open_report_btn = LocalizedButton(res_header, text="打开测试报告",
+                font=("Segoe UI", 8), relief=tk.FLAT, bg=COLOR_PRIMARY,
+                fg="white", padx=10, command=self._open_test_report,
+                state=tk.DISABLED)
+        self.open_report_btn.pack(side=tk.LEFT, padx=8)
         LocalizedButton(res_header, text="结果对比分析", font=("Segoe UI", 8),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
                   command=self._open_result_compare).pack(side=tk.RIGHT)
@@ -3153,6 +3292,19 @@ class WizardApp:
                 subprocess.Popen(["xdg-open", path])
         except Exception as e:
             showerror("打开失败", trf("无法打开结果目录: {error}", error=e))
+
+    def _open_test_report(self):
+        """在系统默认浏览器中打开本次测试生成的HTML报告"""
+        path = getattr(self, "current_report_path", "")
+        if not path:
+            return
+        if not os.path.isfile(path):
+            showwarning("提示", trf("报告文件不存在: {path}", path=path))
+            return
+        try:
+            webbrowser.open_new_tab(f"file://{os.path.abspath(path)}")
+        except Exception as e:
+            showerror("打开失败", trf("无法打开测试报告: {error}", error=e))
 
     def _execute_tests(self):
         """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
@@ -3422,6 +3574,10 @@ class WizardApp:
                 status="completed")
             if report_path:
                 self._log_exec(f"  HTML报告: {report_path}\n")
+                # 后台线程直接记录路径; 按钮启用投递到主线程
+                self.current_report_path = report_path
+                self.root.after(0, lambda p=report_path:
+                                self._set_test_report(p))
 
             # 输出结果摘要表
             self._log_exec("结果摘要:\n")
@@ -3485,6 +3641,8 @@ class WizardApp:
                 status="no_results")
             if report_path:
                 self._log_exec(f"  HTML报告: {report_path}\n")
+                self.root.after(0, lambda p=report_path:
+                                self._set_test_report(p))
 
     def _generate_test_report(self, result_dir: str, task_name: str,
                               commands: List[str], results: List[dict],
@@ -3534,6 +3692,12 @@ class WizardApp:
         except Exception as exc:
             self._log_exec(trf("  ⚠ 测试报告生成失败: {error}\n", error=exc))
             return None
+
+    def _set_test_report(self, path: str):
+        """记录本次测试报告路径并启用"打开测试报告"按钮 (主线程调用)"""
+        self.current_report_path = path
+        if hasattr(self, "open_report_btn"):
+            self.open_report_btn.config(state=tk.NORMAL)
 
     def _write_task_info(self, result_dir: str, info: dict):
         """将本次任务信息写入结果目录下的task_info.json"""

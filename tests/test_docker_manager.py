@@ -89,6 +89,24 @@ class DockerManagerContainerTests(unittest.TestCase):
         self.assertNotIn("aisbench_auto_tools_prefix-main", run_cmd)
         self.assertEqual(self.manager.code_host_path, "")
 
+    def test_generate_container_name_uses_custom_prefix(self):
+        self.assertIn("myteam-aisbench-test-",
+                      self.manager.generate_container_name("myteam"))
+
+    def test_generate_container_name_sanitizes_prefix(self):
+        # 非法字符替换为-, 连续-折叠, 首尾符号去除, 长度截断
+        self.assertEqual(DockerManager.sanitize_container_prefix("Team A/B:C"),
+                         "Team-A-B-C")
+        self.assertEqual(DockerManager.sanitize_container_prefix("..x--y.."),
+                         "x-y")
+        self.assertEqual(DockerManager.sanitize_container_prefix("  "), "")
+        self.assertEqual(DockerManager.sanitize_container_prefix("a" * 100)[:40],
+                         "a" * 40)
+
+    def test_generate_container_name_without_prefix_keeps_default(self):
+        self.assertRegex(self.manager.generate_container_name(""),
+                         r"^aisbench-test-\d{8}$")
+
     def test_stop_script_kills_children_and_target_process(self):
         self.manager.container_name = "aisbench-test-unit"
         self.manager.code_mount_path = "/benchmark/ais_bench/code"

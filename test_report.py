@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from kvcache_animation import render_kvcache_animation_html
+
 
 # 报告中展示的核心结果列 (字段, 表头, 单位)
 RESULT_COLUMNS = [
@@ -49,6 +51,89 @@ def _fmt_value(value, field: str = "") -> str:
     if isinstance(value, float) and value == int(value):
         return str(int(value))
     return str(value)
+
+
+def _to_float(value) -> Optional[float]:
+    """宽容地把日志/CSV中的数值字段转为float(支持带千分位逗号)。"""
+    try:
+        if value in (None, ""):
+            return None
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value) -> int:
+    num = _to_float(value)
+    return int(num) if num is not None else 0
+
+
+def _cache_frac(value: Optional[float]) -> Optional[float]:
+    """把百分数命中率转为0~1的小数并限幅。"""
+    if value is None:
+        return None
+    return max(0.0, min(100.0, value)) / 100.0
+
+
+def _hit_rate_text(frac: Optional[float]) -> str:
+    if frac is None:
+        return "未解析到"
+    return f"{frac * 100:.1f}%"
+
+
+def _repeat_text(repeat: Optional[float]) -> str:
+    if repeat is None:
+        return "未提供"
+    return f"{repeat * 100:.0f}%"
+
+
+def _scenario_text(hbm: Optional[float], external: Optional[float],
+                   repeat: Optional[float]) -> str:
+    """按AISBench prefix测试两阶段原理, 描述该用例的KV cache命中过程。"""
+    hbm = _cache_frac(hbm)
+    external = _cache_frac(external)
+    repeat_text = _repeat_text(repeat)
+    parts: List[str] = []
+
+    if hbm is None:
+        parts.append("本用例日志中未解析到 HBM 命中率，动画按 0% 演示。")
+    elif hbm > 0:
+        parts.append(
+            f"HBM 命中率为 {hbm * 100:.1f}%：预埋阶段写入 HBM 的前缀 KV cache "
+            f"在正式测试阶段仍有一部分留在 HBM 中，带前缀（repeat_rate = {repeat_text}）的请求"
+            "直接在 HBM 中命中这部分前缀，命中的 KV cache 直接用于模型 forward 阶段的 attention 计算。")
+    else:
+        parts.append(
+            f"HBM 命中率为 0%：预埋阶段写入的前缀 KV cache 已把 HBM 显存空间占满；"
+            f"正式测试阶段新请求的 KV cache 依据 LRU 策略不断写入 HBM，"
+            f"把此前预埋的前缀 KV 覆盖/逐出，因此请求虽然带有 {repeat_text} 的前缀，"
+            "也无法在 HBM 中命中之前预埋的前缀。")
+
+    if external is None:
+        parts.append("日志中未解析到外部命中率，外置存储命中过程按 0% 演示。")
+    elif external > 0:
+        if hbm == 0:
+            parts.append(
+                f"外部命中率为 {external * 100:.1f}%：请求前缀虽然没有在 HBM 中命中，"
+                "但在外置存储中找到了对应的 KV cache，并从外置存储加载回 HBM，"
+                "用于模型 forward 阶段的 attention 计算。")
+        else:
+            parts.append(
+                f"外部命中率为 {external * 100:.1f}%：HBM 未命中的前缀中有一部分在外置存储中找到，"
+                "KV cache 从外置存储加载回 HBM 后参与 attention 计算。")
+    else:
+        parts.append(
+            "外部命中率为 0%：这部分前缀 KV cache 要么没有被写入外置存储，"
+            "要么超过了外置存储容量而被驱逐；正式测试阶段既不在 HBM 命中、"
+            "也不在外置存储命中的前缀，只能由 prefill 重新计算。")
+
+    if hbm is not None and external is not None:
+        miss = max(0.0, 1.0 - hbm - external)
+        if miss > 0:
+            parts.append(
+                f"两部分命中率合计后仍有约 {miss * 100:.1f}% 的前缀 KV 未在缓存中命中，"
+                "这部分输入前缀在正式测试阶段由 prefill 重新计算生成。")
+    return "".join(parts)
 
 
 def _interpret_results(results: List[Dict]) -> List[Tuple[str, str]]:
@@ -107,7 +192,8 @@ def _interpret_results(results: List[Dict]) -> List[Tuple[str, str]]:
 def render_test_report(path: str, task_name: str, model_info: Dict[str, str],
                        test_config: Dict[str, str], commands: List[str],
                        results: List[Dict], environment: Dict[str, str],
-                       status: str = "completed") -> str:
+                       status: str = "completed",
+                       cache_info: Optional[Dict] = None) -> str:
     """生成单次测试执行的自包含HTML报告, 返回报告文件路径。
 
     model_info: MODEL_NAME/MODEL_PATH/HOST_IP/HOST_PORT 等
@@ -138,9 +224,10 @@ def render_test_report(path: str, task_name: str, model_info: Dict[str, str],
     body_html = ""
     if results:
         body_html = "".join(
-            "<tr>" + "".join(f"<td>{esc(_fmt_value(row.get(field), field))}</td>"
-                             for field, _n, _u in columns) + "</tr>"
-            for row in results)
+            f'<tr class="case-row" data-case="{i}" title="点击查看该用例的 KV Cache 命中过程动画">'
+            + "".join(f"<td>{esc(_fmt_value(row.get(field), field))}</td>"
+                      for field, _n, _u in columns) + "</tr>"
+            for i, row in enumerate(results))
     else:
         span = len(columns)
         body_html = (f'<tr><td class="empty" colspan="{span}">'
@@ -155,6 +242,9 @@ def render_test_report(path: str, task_name: str, model_info: Dict[str, str],
         "no_results": "无有效结果", "running": "运行中",
     }.get(status, status)
     status_class = "ok" if status == "completed" else "warn"
+    animation_html = render_kvcache_animation_html(results, cache_info)
+    result_hint = ('<span class="hint">（点击用例行可在下方动画中查看该用例的 '
+                   'KV Cache 命中过程）</span>' if results else "")
 
     document = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -176,6 +266,7 @@ h1 {{ margin:0 0 6px; font-size:24px; color:var(--primary); }}
 .status.ok {{ background:var(--ok); }} .status.warn {{ background:var(--warn); }}
 h2 {{ margin:28px 0 10px; font-size:18px; border-bottom:1px solid var(--border);
      padding-bottom:6px; }}
+.hint {{ font-size:12px; color:var(--muted); font-weight:normal; margin-left:8px; }}
 .card {{ background:var(--card); border:1px solid var(--border);
         border-radius:6px; padding:14px 16px; }}
 .kv table {{ border-collapse:collapse; width:100%; }}
@@ -194,6 +285,8 @@ h2 {{ margin:28px 0 10px; font-size:18px; border-bottom:1px solid var(--border);
                     text-align:center; white-space:nowrap; }}
 .data th {{ background:#f1f5f9; }}
 .data td.empty {{ color:var(--muted); padding:18px; }}
+tr.case-row {{ cursor:pointer; }}
+tr.case-row:hover {{ background:#eff6ff; }}
 ul.notes {{ list-style:none; padding:0; margin:0; }}
 ul.notes li {{ padding:8px 12px 8px 30px; margin:6px 0; border-radius:4px;
               position:relative; background:var(--card);
@@ -223,9 +316,11 @@ footer {{ margin-top:24px; color:var(--muted); font-size:12px; }}
 <h2>执行命令（{len(commands)} 个测试用例）</h2>
 <div class="card">{command_html or '<span class="empty">无执行命令</span>'}</div>
 
-<h2>测试结果</h2>
+<h2>测试结果{result_hint}</h2>
 <div class="card data"><table><thead><tr>{head_html}</tr></thead>
 <tbody>{body_html}</tbody></table></div>
+
+{animation_html}
 
 <h2>结果解读</h2>
 <ul class="notes">{note_html}</ul>

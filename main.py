@@ -3672,6 +3672,15 @@ class WizardApp:
                 "请求发送速率": rate_text,
                 "测试用例数": str(len(getattr(designer, "test_cases", []) or [])),
             }
+            cache_info = {
+                # 数值形式, 供KV Cache命中过程动画计算预埋需求与容量比例
+                "single_kv_cache": getattr(designer, "single_kv_cache", 0),
+                "dp": getattr(designer, "dp", 0),
+                "total_kv_cache": getattr(designer, "total_kv_cache", 0),
+                "max_request_length": getattr(designer, "max_request_length", 0),
+                "repeat_rate": repeat_rate,
+                "request_rate": request_rate,
+            }
             environment = {
                 "任务名称": task_name,
                 "容器名称": getattr(self.docker, "container_name", "") or "-",
@@ -3687,7 +3696,7 @@ class WizardApp:
                 report_path, task_name=task_name or os.path.basename(result_dir),
                 model_info=model_info, test_config=test_config,
                 commands=commands or [], results=results or [],
-                environment=environment, status=status)
+                environment=environment, status=status, cache_info=cache_info)
             return written
         except Exception as exc:
             self._log_exec(trf("  ⚠ 测试报告生成失败: {error}\n", error=exc))

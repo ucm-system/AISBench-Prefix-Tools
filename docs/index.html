@@ -217,7 +217,7 @@ footer { text-align: center; color: var(--muted); font-size: 13px;
     <div class="feature">
       <div class="icon">📊</div>
       <h4>结果对比分析</h4>
-      <p>单次执行自动生成自包含 HTML 测试报告（模型/配置/命令/结果/解读）；选择两个结果 CSV 可按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV / 单文件 HTML 报告导出。</p>
+      <p>单次执行自动生成自包含 HTML 测试报告（模型/配置/命令/结果/解读/KV Cache 命中过程动画）；选择两个结果 CSV 可按输入规模匹配用例，输出差异表格、分组柱状图与可标注的 CSV / 单文件 HTML 报告导出。</p>
     </div>
   </div>
   <h3>整体流程</h3>
@@ -424,6 +424,11 @@ build_exe.bat</code></pre>
   <p>摘要表格包含 Input、Output、请求数、最大并发、并发、输入吞吐、输出吞吐、TTFT、TPOT、QPS、HBM 命中率和外部缓存命中率，并标注 CSV 与日志路径。</p>
   <h3>HTML 测试报告</h3>
   <p>每次执行完成后，工具会在结果目录中自动生成 <code>report_&lt;任务名&gt;_test_logs_&lt;时间戳&gt;.html</code>。报告为单文件自包含 HTML，汇总模型与服务、测试配置、执行环境、每个用例的执行命令、测试结果表格以及结果解读（每个指标的含义说明与各用例具体数值，不做正常/异常判断），可直接归档与分享。结果摘要栏提供 <b>打开测试报告</b> 按钮，一键在浏览器中查看；对比分析窗口导出报告后同样提供 <b>打开对比报告</b> 按钮。</p>
+  <p>报告还包含 <b>KV Cache 命中过程动画</b> 章节：按 AISBench prefix 测试的两阶段原理，用 Canvas 动画演示每个测试用例的缓存行为——阶段一 prefill 数据集把可复用前缀的 KV cache 逐步写入 HBM 显存，HBM 占满后溢出写入外置存储；阶段二带前缀比例（repeat_rate）的正式请求先查询 HBM，未命中转查外置存储并把命中的 KV cache 加载回 HBM，仍未命中的前缀由 prefill 重新计算。每个用例都有独立的动画与解读：HBM 命中率为 0 时展示预埋撑爆 HBM、新请求 KV 依据 LRU 覆盖旧前缀导致无法命中的过程；外部命中率为 0 时说明前缀 KV 未写入外置存储或已超过容量被驱逐；HBM 未命中但外部命中时展示从外置存储加载回 HBM 参与 attention 计算的路径。打开报告默认显示第一个用例的动画，点击用例标签或“测试结果”表格中的用例行即可切换，动画支持暂停与重新播放。</p>
+  <figure class="figure">
+    <img src="images/report-kvcache-animation-20261126.png?v=20261126" alt="测试报告中的 KV Cache 命中过程动画">
+    <figcaption>KV Cache 命中过程动画：阶段二带前缀请求查询 HBM / 外置存储的命中、加载与重算路径</figcaption>
+  </figure>
   <div class="callout good">
     <b>测试命令示例</b>
     每次执行会随机生成 seed，保证数据集可复现且不同轮次不同；当请求发送速率大于 0 时，还会追加 request_rate 参数。

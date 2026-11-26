@@ -526,6 +526,11 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertIn("aisbench_test.py", text)
             self.assertIn("测试结果", text)
             self.assertIn("结果解读", text)
+            # 测试配置数值必须与designer实际值一致(防止字段名写错回落为0)
+            self.assertIn("单个DP组KV cache (tokens)", text)
+            self.assertIn("1,000,000", text)   # _build_app 设置的单DP组KV cache
+            self.assertIn("模型最大上下文 (tokens)", text)
+            self.assertIn("8,192", text)       # _build_app 设置的最大上下文
 
     def test_run_sequence_enables_open_report_button(self):
         with tempfile.TemporaryDirectory() as tmp:

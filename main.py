@@ -3667,7 +3667,7 @@ class WizardApp:
                 "单个DP组KV cache (tokens)": f"{getattr(designer, 'single_kv_cache', 0):,}",
                 "DP组数": str(getattr(designer, "dp", "")),
                 "总KV cache (tokens)": f"{getattr(designer, 'total_kv_cache', 0):,}",
-                "模型最大上下文 (tokens)": f"{getattr(designer, 'max_request_len', 0):,}",
+                "模型最大上下文 (tokens)": f"{getattr(designer, 'max_request_length', 0):,}",
                 "前缀命中率 (repeat_rate)": f"{repeat_rate * 100:.0f}%",
                 "请求发送速率": rate_text,
                 "测试用例数": str(len(getattr(designer, "test_cases", []) or [])),

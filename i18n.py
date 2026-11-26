@@ -16,23 +16,22 @@ CURRENT_LANGUAGE = "zh"
 TRANSLATIONS = {
     "en": {
         "SSH连接": "SSH Connection",
-        "Docker部署": "Docker Deployment",
-        "配置文件": "Configuration",
-        "测试用例": "Test Cases",
+        "AISBench容器部署": "AISBench container deployment",
+        "AISBench参数配置": "AISBench parameter configuration",
+        "测试用例准备": "Test case preparation",
         "执行测试": "Run Tests",
         "1. SSH连接": "1. SSH Connection",
-        "2. Docker部署": "2. Docker Deployment",
-        "3. 配置文件": "3. Configuration",
-        "4. 测试用例": "4. Test Cases",
+        "2. AISBench容器部署": "2. AISBench container deployment",
+        "3. AISBench参数配置": "3. AISBench parameter configuration",
+        "4. 测试用例准备": "4. Test case preparation",
         "5. 执行测试": "5. Run Tests",
         "AISBench 镜像来源:": "AISBench image source:",
         "API Key (鉴权, 可选):": "API Key (auth, optional):",
-        "Docker 部署": "Docker Deployment",
         "GPU/NPU KV cache size → 单个DP组KV cache (tokens);   Maximum concurrency → 模型最大上下文 (tokens)":
             "GPU/NPU KV cache size → KV cache per DP group (tokens); Maximum concurrency → model max context (tokens)",
         "config.py 位置: 尚未部署": "config.py location: not deployed yet",
-        "config.py 位置: 尚未部署（请先完成Docker部署）":
-            "config.py location: not deployed yet (finish Docker deployment first)",
+        "config.py 位置: 尚未部署（请先完成AISBench容器部署）":
+            "config.py location: not deployed yet (finish AISBench container deployment first)",
         "● 已连接": "● Connected",
         "● 未连接": "● Not connected",
         "⚠ 已写入但存在不一致!": "⚠ Written but inconsistent!",
@@ -101,12 +100,12 @@ TRANSLATIONS = {
         "  ✓ 测试状态标记: {state}\n": "  ✓ Test state marker: {state}\n",
         "  - 测试任务状态: {state}\n": "  - Test task state: {state}\n",
         "  测试任务状态: {state}\n": "  Test task state: {state}\n",
-        "\n\n清理后如需再次执行测试, 需从步骤2 Docker部署重新开始。":
-            "\n\nTo run tests again after cleanup, start over from step 2 (Docker deployment).",
-        "如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n":
-            "To run test cases again, start over from step 2 (Docker deployment).\n",
-        "  如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n":
-            "  To run test cases again, start over from step 2 (Docker deployment).\n",
+        "\n\n清理后如需再次执行测试, 需从步骤2 AISBench容器部署重新开始。":
+            "\n\nTo run tests again after cleanup, start over from step 2 (AISBench container deployment).",
+        "如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。\n":
+            "To run test cases again, start over from step 2 (AISBench container deployment).\n",
+        "  如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。\n":
+            "  To run test cases again, start over from step 2 (AISBench container deployment).\n",
         "未发现可用镜像，请上传本地AISBench镜像tar包。":
             "No usable image found. Upload a local AISBench image tar package.",
         "请输入本次测试任务名称": "Enter a task name for this test run",
@@ -194,7 +193,7 @@ TRANSLATIONS = {
         "执行机 IP": "Execution host IP",
         "SSH 端口": "SSH port",
         "用户名": "Username",
-        "步骤 2: Docker部署与模型配置": "Step 2: Docker deployment and model configuration",
+        "步骤 2: AISBench容器部署": "Step 2: AISBench container deployment",
         "选择AISBench镜像来源(支持关键词筛选), 填写模型路径后一键部署容器":
             "Select the AISBench image source (keyword filtering supported), "
             "fill in the model path, and deploy the container in one click",
@@ -205,7 +204,7 @@ TRANSLATIONS = {
         "模型路径:": "Model path:",
         "容器名称:": "Container name:",
         "镜像名称:": "Image name:",
-        "步骤 3: 配置 config.py": "Step 3: Configure config.py",
+        "步骤 3: AISBench参数配置": "Step 3: AISBench parameter configuration",
         "配置aisbench_auto_tools_prefix的测试参数": "Configure aisbench_auto_tools_prefix test parameters",
         "MODEL_NAME (模型名称)": "MODEL_NAME (model name)",
         "MODEL_PATH (模型路径)": "MODEL_PATH (model path)",
@@ -219,7 +218,7 @@ TRANSLATIONS = {
             "POD_INFO (required for multi-DP under PD disaggregation)",
         "关键词筛选:": "Keyword filter:",
         "清除": "Clear",
-        "步骤 4: 设计测试用例": "Step 4: Design test cases",
+        "步骤 4: 测试用例准备": "Step 4: Test case preparation",
         "根据KV cache信息生成测试参数": "Generate test parameters from KV cache information",
         "  并发数 = floor( total_kv_cache / (input_len + output_len) )":
             "  Concurrency = floor(total_kv_cache / (input_len + output_len))",
@@ -326,6 +325,21 @@ TRANSLATIONS = {
         "加载数据": "Load data",
         "导出对比CSV": "Export comparison CSV",
         "差异对比表 (Δ = B - A):": "Difference table (Δ = B - A):",
+        "级别:": "Level:",
+        "关键词:": "Keyword:",
+        "反选": "Invert",
+        "重置": "Reset",
+        "显示 {shown}/{total} 条": "Showing {shown}/{total} entries",
+        "容器名称前缀 (可选):": "Container name prefix (optional):",
+        "容器名: {name}": "Container: {name}",
+        "差异对比表 (Δ = B - A)": "Difference table (Δ = B - A)",
+        "柱状对比图": "Bar charts",
+        "AISBench 结果对比分析报告": "AISBench result comparison report",
+        "文件A (基准)": "File A (baseline)",
+        "文件B (对比)": "File B (comparison)",
+        "用例数": "Cases",
+        "指标数": "Metrics",
+        "生成时间": "Generated at",
         "开始对比": "Start comparison",
         "文件A (基准):": "File A (baseline):",
         "文件B (对比):": "File B (comparison):",
@@ -337,15 +351,20 @@ TRANSLATIONS = {
         "选择结果CSV文件": "Select result CSV file",
         '标注A:': 'Label A:',
         '标注B:': 'Label B:',
-        '(图表/导出文件中显示, 默认取文件名)': '(shown in charts/exported files; defaults to file name)',
+        '(图表/报告中显示, 默认取文件名)': '(shown in charts/report; defaults to file name)',
         '(自定义数据名称, 如: 优化后v2)': '(custom data name, e.g. optimized-v2)',
-        '导出对比图': 'Export comparison charts',
-        '选择对比图保存目录': 'Select folder for comparison charts',
-        '未安装Pillow, 无法导出图片\n请执行: pip install pillow': 'Pillow is not installed; cannot export images\nRun: pip install pillow',
-        '没有可导出的图表': 'No charts to export',
-        '已导出 {count} 张对比图: {first} 等': 'Exported {count} comparison chart(s): {first} etc.',
-        '已导出 {count} 张对比图\n\n{files}': 'Exported {count} comparison chart(s)\n\n{files}',
-        '导出图片失败: {error}': 'Failed to export images: {error}',
+        '导出对比报告': 'Export comparison report',
+        '保存对比报告': 'Save comparison report',
+        'HTML报告': 'HTML report',
+        '未安装Pillow, 无法导出报告\n请执行: pip install pillow': 'Pillow is not installed; cannot export the report\nRun: pip install pillow',
+        '导出报告失败: {error}': 'Failed to export report: {error}',
+        '已导出报告: {path}': 'Exported report: {path}',
+        '已导出报告\n\n{path}': 'Exported report\n\n{path}',
+        '打开对比报告': 'Open comparison report',
+        '打开测试报告': 'Open test report',
+        '报告文件不存在: {path}': 'Report file does not exist: {path}',
+        '打开报告失败: {error}': 'Failed to open report: {error}',
+        '无法打开测试报告: {error}': 'Failed to open the test report: {error}',
         '导出失败: {error}': 'Failed to export: {error}',
         '已导出: {path}': 'Exported: {path}',
         '请先执行对比': 'Please run the comparison first',
@@ -510,7 +529,7 @@ TRANSLATIONS = {
         '请先连接到远程主机': 'Please connect to the remote host first',
         '请输入临时部署目录路径': 'Please enter the temporary deploy directory path',
         '请先完成模型路径选择': 'Please finish model path selection first',
-        '请先完成Docker部署': 'Please finish Docker deployment first',
+        '请先完成AISBench容器部署': 'Please finish AISBench container deployment first',
         '写入config.py失败': 'Failed to write config.py',
         'config.py 已写入，但回读失败，请点击"验证配置"手动检查': 'config.py was written, but read-back failed; click "Verify config" to check manually',
         '无法从容器读取config.py\n可能原因: 1)未点击"保存配置到容器" 2)路径错误 3)SSH连接断开': 'Cannot read config.py from the container\nPossible causes: 1) "Save config to container" not clicked 2) wrong path 3) SSH connection lost',
@@ -523,14 +542,14 @@ TRANSLATIONS = {
         '请选择本地代码zip包 (或改用程序内置)': 'Please select a local code zip package (or use built-in)',
         '请先查看并选择执行机上的镜像': 'Please view and select an image on the execution host first',
         '请选择要上传的AISBench镜像tar包': 'Please select the AISBench image tar package to upload',
-        'Docker部署完成!': 'Docker deployment complete!',
+        'AISBench容器部署完成!': 'AISBench container deployment complete!',
         '请输入有效的数字\n(请求发送速率支持小数, 如 0.3 表示 0.3 req/s; 0 表示Burst模式)': 'Please enter a valid number\n(the request send rate supports decimals, e.g. 0.3 = 0.3 req/s; 0 means Burst mode)',
         '没有有效的输入长度': 'No valid input lengths',
         '请输入有效的输入/输出长度': 'Please enter valid input/output lengths',
         '请求数和并发数必须为数字': 'Request count and concurrency must be numbers',
         '测试已完成但未提取到有效结果，请检查执行日志': 'Tests completed but no valid results were extracted; check the execution log',
-        '环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n如需再次执行测试用例, 请从步骤2 Docker部署重新开始。':
-            'Environment cleanup complete!\nContainer removed, no temporary directory leftovers.\nLocal test results are not affected.\nTo run test cases again, start over from step 2 (Docker deployment).',
+        '环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。':
+            'Environment cleanup complete!\nContainer removed, no temporary directory leftovers.\nLocal test results are not affected.\nTo run test cases again, start over from step 2 (AISBench container deployment).',
         '请完成镜像和模型路径选择': 'Please finish image and model path selection',
         '尚未生成测试用例，是否继续?': 'No test cases generated yet. Continue?',
         'Docker容器尚未部署，是否继续?': 'Docker container is not deployed yet. Continue?',
@@ -560,8 +579,8 @@ TRANSLATIONS = {
         '清理失败: {work_dir}': 'Cleanup failed: {work_dir}',
         '确定要清理临时部署目录吗?\n\n{work_dir}\n\n这将删除残留的暂存文件（镜像tar、代码包等），\n并停止当前会话创建的容器。\n容器内的测试代码和日志不受影响。': 'Clean the temporary deploy directory?\n\n{work_dir}\n\nThis deletes leftover staging files (image tar, code package, etc.)\nand stops containers created in this session.\nTest code and logs inside the container are not affected.',
         '发现 {count} 个本工具容器{suffix}': 'Found {count} tool container(s){suffix}',
-        '检测到 {count} 个本工具创建的历史容器:\n\n{listing}\n\n这些容器可能是上次退出时未清理的。\n是否打开清理窗口进行选择清理?\n(清理后如需再次执行测试, 需从步骤2 Docker部署重新开始)':
-            'Detected {count} historical container(s) created by this tool:\n\n{listing}\n\nThey may be leftovers from a previous run.\nOpen the cleanup window to clean them selectively?\n(To run tests again after cleanup, start over from step 2 Docker deployment)',
+        '检测到 {count} 个本工具创建的历史容器:\n\n{listing}\n\n这些容器可能是上次退出时未清理的。\n是否打开清理窗口进行选择清理?\n(清理后如需再次执行测试, 需从步骤2 AISBench容器部署重新开始)':
+            'Detected {count} historical container(s) created by this tool:\n\n{listing}\n\nThey may be leftovers from a previous run.\nOpen the cleanup window to clean them selectively?\n(To run tests again after cleanup, start over from step 2 AISBench container deployment)',
         '\n\n同时删除临时部署目录:\n  {work_dir}': '\n\nAlso delete the temporary deploy directory:\n  {work_dir}',
         '查询失败: {error}': 'Query failed: {error}',
         '共 {count} 个容器': '{count} container(s) in total',
@@ -604,17 +623,18 @@ TRANSLATIONS = {
             'POD_INFO = ["141.xx.xx.11:8000","141.xx.xx.12:8000"]',
         'ID {id} · 创建于 {created} · 大小 {size}': 'ID {id} · created {created} · size {size}',
         '已选择 {selected} ({detail})': 'Selected {selected} ({detail})',
-        '测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nLog: {log}\n{count} records in total',
+        '测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录': 'Tests complete!\n\nCSV: {csv}\nReport: {report}\nLog: {log}\n{count} records in total',
+        '  ⚠ 测试报告生成失败: {error}\n': '  ⚠ Failed to generate the test report: {error}\n',
         '  - 临时部署目录残留: {work_dir} (正常情况下已自动清理)\n': '  - Temporary deploy directory leftovers: {work_dir} (normally cleaned automatically)\n',
-        '测试已完成! 建议清理远程环境:\n\n  - Docker容器: {container}\n  - 测试任务状态: {state}\n{work_dir_line}\n是否立即清理?\n(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n(否: 稍后可点击"清理环境"按钮手动清理)\n\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n需要从步骤2 Docker部署重新开始。':
-            'Tests complete! Cleaning up the remote environment is recommended:\n\n  - Docker container: {container}\n  - Test task state: {state}\n{work_dir_line}\nClean up now?\n(Yes: stop and remove the container + delete leftover staging files; local results are not affected)\n(No: you can click the "Clean environment" button later)\n\nNote: the container will be removed after cleanup. To run test cases again,\nstart over from step 2 (Docker deployment).',
+        '测试已完成! 建议清理远程环境:\n\n  - Docker容器: {container}\n  - 测试任务状态: {state}\n{work_dir_line}\n是否立即清理?\n(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n(否: 稍后可点击"清理环境"按钮手动清理)\n\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n需要从步骤2 AISBench容器部署重新开始。':
+            'Tests complete! Cleaning up the remote environment is recommended:\n\n  - Docker container: {container}\n  - Test task state: {state}\n{work_dir_line}\nClean up now?\n(Yes: stop and remove the container + delete leftover staging files; local results are not affected)\n(No: you can click the "Clean environment" button later)\n\nNote: the container will be removed after cleanup. To run test cases again,\nstart over from step 2 (AISBench container deployment).',
         '  Docker容器: {container}\n': '  Docker container: {container}\n',
         '  临时部署目录: {work_dir} (如有残留)\n': '  Temporary deploy directory: {work_dir} (if any leftovers)\n',
-        '确认清理以下远程资源?\n\n{container_line}{state_line}{work_dir_line}\n清理后容器将停止删除, 残留暂存文件将被清除。\n本地下载的测试结果不受影响。\n清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始。\n':
-            'Clean the following remote resources?\n\n{container_line}{state_line}{work_dir_line}The container will be stopped and removed, and leftover staging files will be deleted.\nDownloaded local test results are not affected.\nTo run test cases again after cleanup, start over from step 2 (Docker deployment).\n',
+        '确认清理以下远程资源?\n\n{container_line}{state_line}{work_dir_line}\n清理后容器将停止删除, 残留暂存文件将被清除。\n本地下载的测试结果不受影响。\n清理后如需再次执行测试用例, 需从步骤2 AISBench容器部署重新开始。\n':
+            'Clean the following remote resources?\n\n{container_line}{state_line}{work_dir_line}The container will be stopped and removed, and leftover staging files will be deleted.\nDownloaded local test results are not affected.\nTo run test cases again after cleanup, start over from step 2 (AISBench container deployment).\n',
         '  临时部署目录残留: {work_dir} (如有)\n': '  Temporary deploy directory leftovers: {work_dir} (if any)\n',
-        '检测到Docker容器仍在运行!\n\n  容器: {container}\n  测试任务状态: {state}\n{work_dir_line}\n退出前是否清理远程环境?\n(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n\n注意: 清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始;\n若测试任务正在执行中, 直接退出将导致测试异常终止。':
-            'The Docker container is still running!\n\n  Container: {container}\n  Test task state: {state}\n{work_dir_line}Clean up the remote environment before exiting?\n(Yes: clean up and exit  No: exit and keep the container  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" in step 2 on the next connection)\n\nNote: to run test cases again after cleanup, start over from step 2 (Docker deployment);\nif a test task is still running, exiting directly will terminate it abnormally.',
+        '检测到Docker容器仍在运行!\n\n  容器: {container}\n  测试任务状态: {state}\n{work_dir_line}\n退出前是否清理远程环境?\n(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n\n注意: 清理后如需再次执行测试用例, 需从步骤2 AISBench容器部署重新开始;\n若测试任务正在执行中, 直接退出将导致测试异常终止。':
+            'The Docker container is still running!\n\n  Container: {container}\n  Test task state: {state}\n{work_dir_line}Clean up the remote environment before exiting?\n(Yes: clean up and exit  No: exit and keep the container  Cancel: do not exit)\n(Uncleaned containers can be removed via "Clean residual containers" in step 2 on the next connection)\n\nNote: to run test cases again after cleanup, start over from step 2 (AISBench container deployment);\nif a test task is still running, exiting directly will terminate it abnormally.',
         '  ⚠ 仍有 {count} 个历史容器残留: {listing}\n':
             '  ⚠ {count} historical container(s) remain: {listing}\n',
     }

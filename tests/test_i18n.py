@@ -22,7 +22,7 @@ class I18nTests(unittest.TestCase):
     def test_translate_static_text(self):
         i18n.set_language("en")
         self.assertEqual(i18n.tr("SSH连接"), "SSH Connection")
-        self.assertEqual(i18n.tr("Docker部署"), "Docker Deployment")
+        self.assertEqual(i18n.tr("AISBench容器部署"), "AISBench container deployment")
 
     def test_unknown_text_falls_back_to_source(self):
         i18n.set_language("en")
@@ -83,7 +83,7 @@ class LanguageSwitchTests(unittest.TestCase):
             self.assertIn("Select CSV...", texts)
             self.assertIn("Label A:", texts)
             self.assertIn("Label B:", texts)
-            self.assertIn("Export comparison charts", texts)
+            self.assertIn("Export comparison report", texts)
             self.assertIn("TTFT average (ms)", texts)
             self.assertIn("■ Throughput", texts)
         finally:
@@ -187,9 +187,9 @@ class DynamicMessageI18nTests(unittest.TestCase):
             "Found 3 image(s). Select an AISBench image; if none is suitable, "
             "switch to uploading a tar package.")
         self.assertEqual(
-            i18n.trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
-                     csv="a.csv", log="logs", count=2),
-            "Tests complete!\n\nCSV: a.csv\nLog: logs\n2 records in total")
+            i18n.trf("测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录",
+                     csv="a.csv", report="report.html", log="logs", count=2),
+            "Tests complete!\n\nCSV: a.csv\nReport: report.html\nLog: logs\n2 records in total")
 
     def test_messagebox_literals_are_translated(self):
         i18n.set_language("en")
@@ -282,7 +282,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                         "Clean up the remote environment before exiting?", args[2])
                     self.assertIn("Test task state: Not marked", args[2])
                     self.assertIn(
-                        "start over from step 2 (Docker deployment)", args[2])
+                        "start over from step 2 (AISBench container deployment)", args[2])
                     self.assertIn(
                         "exiting directly will terminate it abnormally", args[2])
                 finally:
@@ -312,7 +312,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                         "Temporary deploy directory leftovers: /tmp/aisbench_deploy",
                         message)
                     self.assertIn(
-                        "start over from step 2 (Docker deployment)", message)
+                        "start over from step 2 (AISBench container deployment)", message)
                     self.assertIn(
                         "the container will be removed after cleanup", message)
                 finally:
@@ -341,7 +341,7 @@ class DynamicMessageI18nTests(unittest.TestCase):
                                   message)
                     self.assertIn(
                         "To run test cases again after cleanup, "
-                        "start over from step 2 (Docker deployment).",
+                        "start over from step 2 (AISBench container deployment).",
                         message)
                 finally:
                     app.root.destroy()

@@ -15,7 +15,7 @@ class WizardFlowTests(unittest.TestCase):
     def test_docker_and_file_steps_are_merged(self):
         self.assertEqual(
             main.WizardApp.STEP_TITLES,
-            ["SSH连接", "Docker部署", "配置文件", "测试用例", "执行测试"],
+            ["SSH连接", "AISBench容器部署", "AISBench参数配置", "测试用例准备", "执行测试"],
         )
 
     def test_residual_container_cleanup_is_supported(self):
@@ -426,6 +426,49 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertEqual((str(ranges[0]), str(ranges[1])),
                              ("2.0", str(app.exec_log.index("2.end"))))
 
+    def test_abnormal_filters_by_level_keyword_and_invert(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, _, _ = self._build_app(tmp)
+            app._clear_exec_abnormal_entries()
+            app._add_exec_abnormal_entry("error", 1, "ERROR: timeout waiting response")
+            app._add_exec_abnormal_entry("warning", 2, "WARNING: retry count exceeded")
+            app._add_exec_abnormal_entry("error", 3, "ERROR: connection refused")
+            self.assertEqual(
+                len(app.exec_abnormal_tree.get_children()), 3)
+
+            # 级别筛选: 只看错误
+            app.abnormal_level_var.set("错误")
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 2)
+            self.assertTrue(all(e[0] == "错误" for e in entries))
+
+            # 关键词筛选: 匹配 connection
+            app.abnormal_level_var.set("all")
+            app.abnormal_keyword_var.set("connection")
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 1)
+            self.assertIn("connection refused", entries[0][2])
+
+            # 反选: 排除含 connection 的条目
+            app.abnormal_invert_var.set(True)
+            app._apply_abnormal_filters()
+            entries = [app.exec_abnormal_tree.item(i)["values"]
+                       for i in app.exec_abnormal_tree.get_children()]
+            self.assertEqual(len(entries), 2)
+            self.assertNotIn("connection refused",
+                             [e[2] for e in entries])
+
+            # 计数标签显示 显示/总数
+            self.assertIn("显示", app.exec_abnormal_count_lbl.cget("text"))
+
+            # 重置恢复全部
+            app._reset_abnormal_filters()
+            self.assertEqual(len(app.exec_abnormal_tree.get_children()), 3)
+
     def test_run_sequence_prefixes_result_dir_with_task_name_and_saves_info(self):
         with tempfile.TemporaryDirectory() as tmp:
             app, docker, _ = self._build_app(tmp)
@@ -448,6 +491,82 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertEqual(info["status"], "no_results")
             self.assertEqual(info["container_name"], "aisbench-test-unit")
             self.assertEqual(info["result_dir_name"], result_dirs[0])
+
+    def test_run_sequence_generates_html_report_in_result_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, _ = self._build_app(tmp)
+            docker.run_script.return_value = 0
+            results_root = os.path.join(tmp, "results")
+            sample = [{
+                "input_len": 4096, "output_len": 1024, "total_req": 1000,
+                "max_cc": 100, "cc": 80, "TTFT_avg": "120.5",
+                "TPOT_avg": "15.2", "output_throughput": "850.4",
+                "qps": "12.3", "hbm_hit_rate": 92.1,
+                "external_hit_rate": 5.4, "E2E_time": "81.2",
+            }]
+
+            with mock.patch.object(app, "_check_model_path_in_container",
+                                   return_value=(True, "OK")):
+                with mock.patch("main.parse_log_directory",
+                                return_value=sample) as parse:
+                    app._run_test_sequence(results_root, "报告任务")
+            parse.assert_called_once()
+
+            result_dirs = os.listdir(results_root)
+            self.assertEqual(len(result_dirs), 1)
+            report_path = os.path.join(
+                results_root, result_dirs[0],
+                f"report_{result_dirs[0]}.html")
+            self.assertTrue(os.path.isfile(report_path))
+            with open(report_path, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertIn("AISBench 测试报告", text)
+            self.assertIn("报告任务", text)
+            self.assertIn("执行命令", text)
+            self.assertIn("aisbench_test.py", text)
+            self.assertIn("测试结果", text)
+            self.assertIn("结果解读", text)
+            # 测试配置数值必须与designer实际值一致(防止字段名写错回落为0)
+            self.assertIn("单个DP组KV cache (tokens)", text)
+            self.assertIn("1,000,000", text)   # _build_app 设置的单DP组KV cache
+            self.assertIn("模型最大上下文 (tokens)", text)
+            self.assertIn("8,192", text)       # _build_app 设置的最大上下文
+
+    def test_run_sequence_enables_open_report_button(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app, docker, _ = self._build_app(tmp)
+            # 模拟报告已生成: 路径由后台线程写入, 按钮由主线程回调启用
+            report = os.path.join(tmp, "report_test.html")
+            with open(report, "w", encoding="utf-8") as handle:
+                handle.write("<html><body>report</body></html>")
+
+            app.current_report_path = report
+            app._set_test_report(report)  # 主线程回调
+
+            self.assertEqual(str(app.open_report_btn.cget("state")), "normal")
+            with mock.patch("main.webbrowser.open_new_tab") as open_tab:
+                app._open_test_report()
+                open_tab.assert_called_once()
+
+            # 路径不存在时给出警告而非崩溃
+            app.current_report_path = os.path.join(tmp, "missing.html")
+            with mock.patch("main.showwarning") as warn:
+                app._open_test_report()
+                warn.assert_called_once()
+
+    def test_container_prefix_field_previews_name_and_uses_prefix_in_deploy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = main.WizardApp()
+            try:
+                app.container_prefix_var.set("my team/nightly")
+                app.root.update()
+                preview = app.container_prefix_preview_lbl.cget("text")
+                self.assertIn("my-team-nightly-aisbench-test-", preview)
+
+                name = main.DockerManager(None).generate_container_name("my team/nightly")
+                self.assertRegex(name, r"^my-team-nightly-aisbench-test-\d{8}$")
+            finally:
+                app.root.destroy()
 
     def test_sanitize_task_name_replaces_unsafe_characters(self):
         self.assertEqual(

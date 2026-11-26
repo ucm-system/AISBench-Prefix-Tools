@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""结果对比功能测试: 自定义标注 + PNG图片导出"""
+"""结果对比功能测试: 自定义标注 + 单文件HTML报告导出"""
 import csv
 import os
 import tempfile
@@ -7,6 +7,9 @@ import tkinter as tk
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import base64
+import re
 
 import result_compare
 import i18n
@@ -117,48 +120,57 @@ class ResultCompareDialogTests(unittest.TestCase):
             self.assertEqual(chart.name_a, "A: 基线v1")
             self.assertEqual(chart.name_b, "B: 优化后v2")
 
-    def test_export_images_writes_valid_pngs_with_labels(self):
+    def test_export_report_writes_single_html_with_table_and_charts(self):
         if not result_compare.PIL_AVAILABLE:
             self.skipTest("Pillow not installed")
         self._load_and_compare()
-        out_dir = self.dir / "charts"
-        out_dir.mkdir()
-        with mock.patch("result_compare.filedialog.askdirectory",
-                        return_value=str(out_dir)):
-            self.dialog._export_images()
+        report = self.dir / "compare_report_基线v1_vs_优化后v2.html"
+        with mock.patch("result_compare.filedialog.asksaveasfilename",
+                        return_value=str(report)) as ask_save:
+            self.dialog._export_report()
 
-        files = sorted(out_dir.glob("*.png"))
-        self.assertTrue(files)
-        for path in files:
-            self.assertIn("基线v1", path.name)
-            self.assertIn("优化后v2", path.name)
-            with open(path, "rb") as handle:
-                header = handle.read(8)
-            self.assertEqual(header, b"\x89PNG\r\n\x1a\n")
+        ask_save.assert_called_once()
+        self.assertTrue(report.is_file())
+        # 不再分散导出多张PNG, 全部内容汇总在单个HTML文件中
+        self.assertEqual(list(self.dir.glob("*.png")), [])
 
-        from PIL import Image
-        with Image.open(files[0]) as image:
-            self.assertEqual(image.size, (1280, 640))
-            self.assertEqual(image.format, "PNG")
+        text = report.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("<!DOCTYPE html>"))
+        self.assertIn("AISBench 结果对比分析报告", text)
+        self.assertIn("差异对比表 (Δ = B - A)", text)
+        self.assertIn("柱状对比图", text)
+        self.assertIn("基线v1", text)
+        self.assertIn("优化后v2", text)
+        self.assertIn("TTFT平均 A", text)
+        embedded = text.count("data:image/png;base64,")
+        self.assertEqual(embedded, len(self.dialog.selected_metrics))
 
-    def test_export_images_requires_comparison_first(self):
+        first_image = re.search(r"data:image/png;base64,([A-Za-z0-9+/=]+)",
+                                text).group(1)
+        self.assertTrue(base64.b64decode(first_image).startswith(
+            b"\x89PNG\r\n\x1a\n"))
+
+    def test_export_report_requires_comparison_first(self):
         with mock.patch("result_compare.showwarning") as warn:
-            self.dialog._export_images()
+            self.dialog._export_report()
         warn.assert_called_once()
 
-    def test_export_image_status_is_english(self):
+    def test_export_report_status_is_english(self):
         if not result_compare.PIL_AVAILABLE:
             self.skipTest("Pillow not installed")
         i18n.set_language("en")
         try:
             self._load_and_compare()
-            out_dir = self.dir / "charts-en"
-            out_dir.mkdir()
-            with mock.patch("result_compare.filedialog.askdirectory",
-                            return_value=str(out_dir)):
-                self.dialog._export_images()
+            report = self.dir / "report-en.html"
+            with mock.patch("result_compare.filedialog.asksaveasfilename",
+                            return_value=str(report)):
+                self.dialog._export_report()
             status = self.dialog.compare_status_lbl.cget("text")
-            self.assertTrue(status.startswith("Exported "))
+            self.assertTrue(status.startswith("Exported report: "))
+            text = report.read_text(encoding="utf-8")
+            self.assertIn("AISBench result comparison report", text)
+            self.assertIn("Difference table (Δ = B - A)", text)
+            self.assertIn("Bar charts", text)
         finally:
             i18n.set_language("zh")
 

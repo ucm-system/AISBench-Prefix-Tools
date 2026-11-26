@@ -7,7 +7,7 @@ AISBenchPrefixTools - Windows GUI应用程序
   1. 连接远程执行机 (SSH)
   2. 选择执行机已有镜像或上传镜像tar包, 填写模型路径并部署容器
   3. 配置config.py (模型名称/服务地址等参数直接写入容器内部)
-  4. 设计测试用例
+  4. 测试用例准备
   5. 执行测试并收集结果 (测试代码/日志均在容器内, 宿主机临时目录部署后自动删除)
 """
 
@@ -21,7 +21,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from datetime import datetime
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple, List
 
 from ssh_manager import SSHManager
 from docker_manager import DockerManager, describe_test_state
@@ -29,6 +29,7 @@ from config_manager import ConfigManager
 from test_designer import TestDesigner
 from log_parser import parse_log_directory
 from log_tools import RemoteLogBrowser, KV_GREP_COMMAND
+from test_report import render_test_report
 from result_compare import ResultCompareDialog
 from i18n import (
     LocalizedButton,
@@ -288,9 +289,9 @@ class WizardApp:
 
     STEP_TITLES = [
         "SSH连接",
-        "Docker部署",
-        "配置文件",
-        "测试用例",
+        "AISBench容器部署",
+        "AISBench参数配置",
+        "测试用例准备",
         "执行测试",
     ]
 
@@ -518,6 +519,8 @@ class WizardApp:
             snapshot["zip_path"] = self.zip_path.get()
         if hasattr(self, "work_dir_var"):
             snapshot["work_dir"] = self.work_dir_var.get()
+        if hasattr(self, "container_prefix_var"):
+            snapshot["container_prefix"] = self.container_prefix_var.get()
         if hasattr(self, "work_dir_status"):
             snapshot["work_dir_status"] = (
                 self.work_dir_status.cget("text"), self.work_dir_status.cget("fg"))
@@ -563,8 +566,12 @@ class WizardApp:
             snapshot["task_name"] = self.task_name_var.get()
         if hasattr(self, "open_result_btn"):
             snapshot["open_result_state"] = self.open_result_btn.cget("state")
+        if hasattr(self, "open_report_btn"):
+            snapshot["open_report_state"] = self.open_report_btn.cget("state")
         if hasattr(self, "current_result_dir"):
             snapshot["current_result_dir"] = self.current_result_dir
+        if hasattr(self, "current_report_path"):
+            snapshot["current_report_path"] = self.current_report_path
         if hasattr(self, "deployed"):
             snapshot["deployed"] = self.deployed
         if hasattr(self, "_content_canvas"):
@@ -620,6 +627,8 @@ class WizardApp:
             self.zip_path.set(snapshot["zip_path"])
         if "work_dir" in snapshot:
             self.work_dir_var.set(snapshot["work_dir"])
+        if "container_prefix" in snapshot:
+            self.container_prefix_var.set(snapshot["container_prefix"])
         if snapshot.get("work_dir_status"):
             text, color = snapshot["work_dir_status"]
             self.work_dir_status.config(text=text, fg=color)
@@ -678,6 +687,10 @@ class WizardApp:
             self.current_result_dir = snapshot["current_result_dir"]
         if snapshot.get("open_result_state") == tk.NORMAL:
             self.open_result_btn.config(state=tk.NORMAL)
+        if "current_report_path" in snapshot:
+            self.current_report_path = snapshot["current_report_path"]
+        if snapshot.get("open_report_state") == tk.NORMAL:
+            self.open_report_btn.config(state=tk.NORMAL)
 
         # ---- 恢复侧边栏/残留容器状态 ----
         if self.ssh.connected:
@@ -918,7 +931,7 @@ class WizardApp:
             showerror("连接失败", msg)
 
     # ============================================================
-    #  Step 1: Docker部署与模型配置
+    #  Step 1: AISBench容器部署
     # ============================================================
 
     def _grid_field_label(self, parent, text, row, column=0, required=False,
@@ -936,7 +949,7 @@ class WizardApp:
     def _build_step1_files(self):
         frame = self.step_frames[1]
 
-        self._build_step_header(frame, "步骤 2: Docker部署与模型配置",
+        self._build_step_header(frame, "步骤 2: AISBench容器部署",
                                 "选择AISBench镜像来源(支持关键词筛选), 填写模型路径后一键部署容器")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -1062,7 +1075,38 @@ class WizardApp:
         LocalizedButton(model_frame, text="浏览远程目录", command=self._browse_remote_model,
                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 0))
 
+        row += 1
+
+        # 容器名称前缀: 用户自定义部分作为前缀, 工具生成的部分作为后缀
+        self._grid_field_label(form, "容器名称前缀 (可选):", row=row)
+        prefix_frame = tk.Frame(form, bg=COLOR_CARD)
+        prefix_frame.grid(row=row, column=1, columnspan=2, padx=16,
+                          pady=(0, 8), sticky=tk.EW)
+        self.container_prefix_var = tk.StringVar()
+        self.container_prefix_entry = tk.Entry(
+            prefix_frame, textvariable=self.container_prefix_var, width=32,
+            font=("Segoe UI", 9))
+        self.container_prefix_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.container_prefix_preview_lbl = LocalizedLabel(
+            prefix_frame, text="", bg=COLOR_CARD, fg=COLOR_TEXT_MUTED,
+            font=("Segoe UI", 8))
+        self.container_prefix_preview_lbl.pack(side=tk.LEFT, padx=(8, 0))
+        self.container_prefix_var.trace_add("write", self._update_container_name_preview)
+        self._update_container_name_preview()
+
         form.columnconfigure(1, weight=1)
+
+    def _update_container_name_preview(self, *_args):
+        """实时预览最终容器名称: <用户前缀>-aisbench-test-<时间戳>"""
+        if not hasattr(self, "container_prefix_preview_lbl"):
+            return
+        prefix = DockerManager.sanitize_container_prefix(
+            self.container_prefix_var.get())
+        from datetime import datetime as _dt
+        stamp = _dt.now().strftime('%m%d%H%M')
+        preview = (f"{prefix}-" if prefix else "") + f"aisbench-test-{stamp}"
+        self.container_prefix_preview_lbl.config(
+            text=trf("容器名: {name}", name=preview))
 
     def _on_image_source_change(self):
         """切换镜像来源: 执行机已有镜像 / 本地tar包"""
@@ -1293,7 +1337,7 @@ class WizardApp:
         dialog.destroy()
 
     # ============================================================
-    #  Step 1: Docker部署区 (与文件/模型配置合并展示)
+    #  Step 1: AISBench容器部署区 (与文件/模型配置合并展示)
     # ============================================================
 
     def _build_step1_docker_section(self):
@@ -1301,7 +1345,7 @@ class WizardApp:
 
         deploy_header = tk.Frame(frame, bg=COLOR_BG)
         deploy_header.pack(fill=tk.X, pady=(12, 8))
-        LocalizedLabel(deploy_header, text="Docker 部署", bg=COLOR_BG, fg=COLOR_TEXT,
+        LocalizedLabel(deploy_header, text="AISBench容器部署", bg=COLOR_BG, fg=COLOR_TEXT,
                  font=("Segoe UI", 12, "bold")).pack(anchor=tk.W)
         LocalizedLabel(deploy_header,
                  text="已有镜像直接复用；代码先暂存宿主机，容器创建后导入容器并自动删除暂存目录",
@@ -1542,7 +1586,7 @@ class WizardApp:
                         "{listing}\n\n"
                         "这些容器可能是上次退出时未清理的。\n"
                         "是否打开清理窗口进行选择清理?\n"
-                        "(清理后如需再次执行测试, 需从步骤2 Docker部署重新开始)",
+                        "(清理后如需再次执行测试, 需从步骤2 AISBench容器部署重新开始)",
                         count=len(residuals), listing=listing),
                     icon=messagebox.WARNING):
                 self._open_residual_container_dialog()
@@ -1684,7 +1728,7 @@ class WizardApp:
                                trf("  {name}  [{state}]", name=n,
                                    state=state_by_name.get(n, tr("未标记")))
                                for n in names)
-                           + tr("\n\n清理后如需再次执行测试, 需从步骤2 Docker部署重新开始。"))
+                           + tr("\n\n清理后如需再次执行测试, 需从步骤2 AISBench容器部署重新开始。"))
             if clean_temp_var.get():
                 confirm_msg += trf("\n\n同时删除临时部署目录:\n  {work_dir}",
                                    work_dir=self.work_dir_var.get().strip())
@@ -1710,7 +1754,7 @@ class WizardApp:
                         self.docker.remote_work_base = work_dir
                     self.docker.remove_work_dir(callback=_log_async)
                 _log("✓ 清理完成\n")
-                _log(tr("如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
+                _log(tr("如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。\n"))
 
                 def _done():
                     clean_btn.config(state=tk.NORMAL, text="清理选中")
@@ -1758,18 +1802,73 @@ class WizardApp:
         for item in self.exec_abnormal_tree.get_children():
             self.exec_abnormal_tree.delete(item)
         self._exec_abnormal_entries = []
-        self.exec_abnormal_count_lbl.config(text=trf("共 {count} 条", count=0))
+        self._refresh_abnormal_count()
 
     def _add_exec_abnormal_entry(self, kind: str, line_no: int, message: str):
         """由LiveLogHandler在主线程调用: 记录WARN/ERROR行并提供跳转入口"""
         self._exec_abnormal_entries.append(
             {"kind": kind, "line": line_no, "message": message})
-        level = tr("错误") if kind == "error" else tr("警告")
+        # 筛选值保持源语言存储, 渲染时再本地化
+        if self._abnormal_entry_matches_filters(kind, message):
+            self._insert_abnormal_row(len(self._exec_abnormal_entries) - 1)
+        self._refresh_abnormal_count()
+
+    def _insert_abnormal_row(self, index: int):
+        """按当前索引插入异常提示行"""
+        entry = self._exec_abnormal_entries[index]
+        level = tr("错误") if entry["kind"] == "error" else tr("警告")
         self.exec_abnormal_tree.insert(
-            "", tk.END, iid=str(len(self._exec_abnormal_entries) - 1),
-            values=(level, line_no, message))
-        self.exec_abnormal_count_lbl.config(
-            text=trf("共 {count} 条", count=len(self._exec_abnormal_entries)))
+            "", tk.END, iid=str(index),
+            values=(level, entry["line"], entry["message"]))
+
+    def _abnormal_entry_matches_filters(self, kind: str, message: str) -> bool:
+        """判断异常条目是否命中级别+关键词筛选(反选时取反)"""
+        level = getattr(self, "abnormal_level_var", None)
+        level_value = level.get() if level else "all"
+        level_key = {"all": "all", "错误": "error", "警告": "warning",
+                     "Error": "error", "Warning": "warning"}.get(level_value, "all")
+        if level_key != "all" and kind != level_key:
+            return False
+        keyword = (getattr(self, "abnormal_keyword_var", None) and
+                   self.abnormal_keyword_var.get().strip().lower()) or ""
+        matched = (not keyword or keyword in message.lower())
+        invert = bool(getattr(self, "abnormal_invert_var", None) and
+                      self.abnormal_invert_var.get())
+        return (not matched) if invert else matched
+
+    def _apply_abnormal_filters(self):
+        """按级别/关键词/反选重新渲染异常提示列表"""
+        if not hasattr(self, "exec_abnormal_tree"):
+            return
+        for item in self.exec_abnormal_tree.get_children():
+            self.exec_abnormal_tree.delete(item)
+        for index, entry in enumerate(self._exec_abnormal_entries):
+            if self._abnormal_entry_matches_filters(entry["kind"], entry["message"]):
+                self._insert_abnormal_row(index)
+        self._refresh_abnormal_count()
+
+    def _reset_abnormal_filters(self):
+        """重置级别/关键词/反选筛选条件"""
+        if hasattr(self, "abnormal_level_var"):
+            self.abnormal_level_var.set("all")
+        if hasattr(self, "abnormal_keyword_var"):
+            self.abnormal_keyword_var.set("")
+        if hasattr(self, "abnormal_invert_var"):
+            self.abnormal_invert_var.set(False)
+        self._apply_abnormal_filters()
+
+    def _refresh_abnormal_count(self):
+        """刷新异常提示计数: 显示条数/总数"""
+        shown = len(self.exec_abnormal_tree.get_children())
+        total = len(self._exec_abnormal_entries)
+        if hasattr(self, "exec_abnormal_count_lbl"):
+            if shown == total:
+                self.exec_abnormal_count_lbl.config(
+                    text=trf("共 {count} 条", count=total))
+            else:
+                self.exec_abnormal_count_lbl.config(
+                    text=trf("显示 {shown}/{total} 条",
+                             shown=shown, total=total))
 
     def _jump_to_exec_abnormal_log(self, event=None):
         """点击异常提示行时, 高亮并滚动到总执行日志的对应位置"""
@@ -2037,7 +2136,10 @@ class WizardApp:
 
         # Step 4: 创建容器(仅挂载模型路径, 代码随后导入)
         self._log_docker(tr("[4/5] 创建并启动容器...\n"))
-        container_name = self.docker.generate_container_name()
+        container_prefix = DockerManager.sanitize_container_prefix(
+            self.container_prefix_var.get()
+            if hasattr(self, "container_prefix_var") else "")
+        container_name = self.docker.generate_container_name(container_prefix)
         ok, msg = self.docker.create_container(
             image_name, model_path, container_name,
             callback=lambda t: self._log_docker(t)  # 直接写缓冲区
@@ -2078,16 +2180,16 @@ class WizardApp:
         self.dataset_path_var.set(self.docker.code_mount_path)
 
         # 显示成功消息
-        self.root.after(0, lambda: showinfo("成功", "Docker部署完成!"))
+        self.root.after(0, lambda: showinfo("成功", "AISBench容器部署完成!"))
 
     # ============================================================
-    #  Step 3: 配置文件
+    #  Step 3: AISBench参数配置
     # ============================================================
 
     def _build_step3_config(self):
         frame = self.step_frames[2]
 
-        self._build_step_header(frame, "步骤 3: 配置 config.py",
+        self._build_step_header(frame, "步骤 3: AISBench参数配置",
                                 "配置aisbench_auto_tools_prefix的测试参数")
 
         form = tk.Frame(frame, bg=COLOR_CARD, relief=tk.SOLID, bd=1)
@@ -2202,7 +2304,7 @@ class WizardApp:
             text = f"config.py 位置(容器内): {container_path}"
             self.config_path_lbl.config(text=text, fg=COLOR_TEXT)
         else:
-            self.config_path_lbl.config(text="config.py 位置: 尚未部署（请先完成Docker部署）",
+            self.config_path_lbl.config(text="config.py 位置: 尚未部署（请先完成AISBench容器部署）",
                                         fg=COLOR_TEXT_MUTED)
 
     @staticmethod
@@ -2220,7 +2322,7 @@ class WizardApp:
     def _save_config(self):
         """保存配置到容器，并回读验证"""
         if not self.config_mgr:
-            showwarning("提示", "请先完成Docker部署")
+            showwarning("提示", "请先完成AISBench容器部署")
             return
 
         config = {k: v.get() for k, v in self.config_entry_vars.items()}
@@ -2284,7 +2386,7 @@ class WizardApp:
     def _verify_config(self):
         """从容器读取config.py并显示，与界面值对比"""
         if not self.config_mgr:
-            showwarning("提示", "请先完成Docker部署")
+            showwarning("提示", "请先完成AISBench容器部署")
             return
 
         self._update_config_path_label()
@@ -2345,7 +2447,7 @@ class WizardApp:
     def _build_step4_testcases(self):
         frame = self.step_frames[3]
 
-        self._build_step_header(frame, "步骤 4: 设计测试用例",
+        self._build_step_header(frame, "步骤 4: 测试用例准备",
                                "根据KV cache信息生成测试参数")
 
         # 计算公式说明
@@ -2985,6 +3087,39 @@ class WizardApp:
                 bg=COLOR_BG, fg=COLOR_TEXT_MUTED, font=("Segoe UI", 9))
         self.exec_abnormal_count_lbl.pack(side=tk.LEFT, padx=8)
 
+        # 筛选栏: 级别(全部/错误/警告) + 关键词 + 反选
+        abnormal_filter_row = tk.Frame(log_pane, bg=COLOR_BG)
+        abnormal_filter_row.pack(fill=tk.X, pady=(1, 0))
+        LocalizedLabel(abnormal_filter_row, text="级别:", bg=COLOR_BG,
+                fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        self.abnormal_level_var = tk.StringVar(value="all")
+        self.abnormal_level_combo = ttk.Combobox(abnormal_filter_row,
+                textvariable=self.abnormal_level_var, width=8,
+                state="readonly", font=("Segoe UI", 8))
+        self.abnormal_level_combo.config(
+            values=["all", tr("错误"), tr("警告")])
+        self.abnormal_level_combo.set("all")
+        self.abnormal_level_combo.pack(side=tk.LEFT, padx=(4, 8))
+        LocalizedLabel(abnormal_filter_row, text="关键词:", bg=COLOR_BG,
+                fg=COLOR_TEXT_MUTED, font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        self.abnormal_keyword_var = tk.StringVar()
+        self.abnormal_keyword_entry = tk.Entry(abnormal_filter_row,
+                textvariable=self.abnormal_keyword_var, width=24,
+                font=("Segoe UI", 8))
+        self.abnormal_keyword_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 8))
+        self.abnormal_invert_var = tk.BooleanVar(value=False)
+        self.abnormal_invert_chk = LocalizedCheckbutton(abnormal_filter_row,
+                text="反选", variable=self.abnormal_invert_var, bg=COLOR_BG,
+                font=("Segoe UI", 8), command=self._apply_abnormal_filters)
+        self.abnormal_invert_chk.pack(side=tk.LEFT)
+        LocalizedButton(abnormal_filter_row, text="重置", font=("Segoe UI", 8),
+                relief=tk.FLAT, bg=COLOR_CARD, fg=COLOR_PRIMARY, padx=8,
+                command=self._reset_abnormal_filters).pack(side=tk.LEFT, padx=(8, 0))
+        self.abnormal_level_combo.bind("<<ComboboxSelected>>",
+                                       lambda _e: self._apply_abnormal_filters())
+        self.abnormal_keyword_var.trace_add(
+            "write", lambda *_a: self._apply_abnormal_filters())
+
         abnormal_columns = ("level", "line", "message")
         self.exec_abnormal_tree = ttk.Treeview(log_pane, columns=abnormal_columns,
                 show="headings", height=4, selectmode="browse")
@@ -3027,6 +3162,11 @@ class WizardApp:
                 fg="white", padx=10, command=self._open_result_directory,
                 state=tk.DISABLED)
         self.open_result_btn.pack(side=tk.LEFT, padx=8)
+        self.open_report_btn = LocalizedButton(res_header, text="打开测试报告",
+                font=("Segoe UI", 8), relief=tk.FLAT, bg=COLOR_PRIMARY,
+                fg="white", padx=10, command=self._open_test_report,
+                state=tk.DISABLED)
+        self.open_report_btn.pack(side=tk.LEFT, padx=8)
         LocalizedButton(res_header, text="结果对比分析", font=("Segoe UI", 8),
                   relief=tk.FLAT, bg=COLOR_PRIMARY, fg="white", padx=10,
                   command=self._open_result_compare).pack(side=tk.RIGHT)
@@ -3153,6 +3293,19 @@ class WizardApp:
         except Exception as e:
             showerror("打开失败", trf("无法打开结果目录: {error}", error=e))
 
+    def _open_test_report(self):
+        """在系统默认浏览器中打开本次测试生成的HTML报告"""
+        path = getattr(self, "current_report_path", "")
+        if not path:
+            return
+        if not os.path.isfile(path):
+            showwarning("提示", trf("报告文件不存在: {path}", path=path))
+            return
+        try:
+            webbrowser.open_new_tab(f"file://{os.path.abspath(path)}")
+        except Exception as e:
+            showerror("打开失败", trf("无法打开测试报告: {error}", error=e))
+
     def _execute_tests(self):
         """执行测试完整流程: 生成.sh → 上传 → 运行 → 下载日志 → 解析CSV"""
         if not self.docker or not self.docker.container_is_running():
@@ -3270,6 +3423,7 @@ class WizardApp:
 
     def _run_test_sequence(self, local_dir, task_name=""):
         """执行测试的4阶段流水线（在后台线程中运行）"""
+        self._test_started_at = datetime.now().isoformat(timespec="seconds")
         # ===== 阶段0: 预检查模型路径 =====
         self._log_exec("[0/4] 预检查: 验证容器内MODEL_PATH...\n")
         if self._test_cancel_event.is_set():
@@ -3287,6 +3441,7 @@ class WizardApp:
 
         # ===== 阶段1: 生成.sh脚本 =====
         self._log_exec("[1/4] 生成测试脚本...\n")
+        test_commands = self.designer.generate_commands()
         script_content, log_dir_name = self.designer.generate_shell_script()
         local_result_dir_name = (
             f"{task_name}_{log_dir_name}" if task_name else log_dir_name)
@@ -3413,6 +3568,17 @@ class WizardApp:
             self._log_exec(f"  共 {len(results)} 条记录\n")
             self._log_exec(f"{'='*60}\n\n")
 
+            # 生成单次测试执行HTML报告
+            report_path = self._generate_test_report(
+                local_log_dir, task_name, test_commands, results,
+                status="completed")
+            if report_path:
+                self._log_exec(f"  HTML报告: {report_path}\n")
+                # 后台线程直接记录路径; 按钮启用投递到主线程
+                self.current_report_path = report_path
+                self.root.after(0, lambda p=report_path:
+                                self._set_test_report(p))
+
             # 输出结果摘要表
             self._log_exec("结果摘要:\n")
             self._log_exec("-" * 125 + "\n")
@@ -3438,8 +3604,9 @@ class WizardApp:
 
             self.root.after(0, lambda: showinfo(
                 "完成",
-                trf("测试完成!\n\nCSV: {csv}\n日志: {log}\n共 {count} 条记录",
-                    csv=csv_path, log=local_log_dir, count=len(results))
+                trf("测试完成!\n\nCSV: {csv}\n报告: {report}\n日志: {log}\n共 {count} 条记录",
+                    csv=csv_path, report=report_path or "-", log=local_log_dir,
+                    count=len(results))
             ))
         else:
             task_info.update({
@@ -3468,6 +3635,69 @@ class WizardApp:
                     self._log_exec(f"  日志目录: {local_log_dir}\n")
             self.root.after(0, lambda: showwarning("提示", "测试已完成但未提取到有效结果，请检查执行日志"))
             self.root.after(0, lambda: self._set_result_directory(local_log_dir))
+
+            report_path = self._generate_test_report(
+                local_log_dir, task_name, test_commands, [],
+                status="no_results")
+            if report_path:
+                self._log_exec(f"  HTML报告: {report_path}\n")
+                self.root.after(0, lambda p=report_path:
+                                self._set_test_report(p))
+
+    def _generate_test_report(self, result_dir: str, task_name: str,
+                              commands: List[str], results: List[dict],
+                              status: str = "completed"):
+        """为单次测试执行生成自包含HTML报告, 返回报告路径或None。"""
+        try:
+            config_values = {k: v.get() for k, v in
+                             getattr(self, "config_entry_vars", {}).items()}
+            model_info = {
+                "MODEL_NAME (模型名称)": config_values.get("model_name", ""),
+                "MODEL_PATH (模型路径)": config_values.get("model_path", ""),
+                "HOST_IP (vLLM服务IP)": config_values.get("host_ip", ""),
+                "HOST_PORT (vLLM服务端口)": config_values.get("host_port", ""),
+                "API_KEY": "已设置" if config_values.get("api_key", "") else "未设置",
+            }
+            designer = getattr(self, "designer", None)
+            repeat_rate = getattr(designer, "repeat_rate", 0) or 0
+            request_rate = getattr(designer, "request_rate", 0) or 0
+            rate_text = ("Burst (0)" if request_rate == 0
+                         else f"{request_rate} req/s")
+            test_config = {
+                "单个DP组KV cache (tokens)": f"{getattr(designer, 'single_kv_cache', 0):,}",
+                "DP组数": str(getattr(designer, "dp", "")),
+                "总KV cache (tokens)": f"{getattr(designer, 'total_kv_cache', 0):,}",
+                "模型最大上下文 (tokens)": f"{getattr(designer, 'max_request_length', 0):,}",
+                "前缀命中率 (repeat_rate)": f"{repeat_rate * 100:.0f}%",
+                "请求发送速率": rate_text,
+                "测试用例数": str(len(getattr(designer, "test_cases", []) or [])),
+            }
+            environment = {
+                "任务名称": task_name,
+                "容器名称": getattr(self.docker, "container_name", "") or "-",
+                "镜像名称": getattr(self.docker, "image_name", "") or "-",
+                "容器内代码路径": getattr(self.docker, "code_mount_path", "") or "-",
+                "结果目录": result_dir,
+                "开始时间": getattr(self, "_test_started_at", "") or "-",
+                "结束时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            report_path = os.path.join(
+                result_dir, f"report_{os.path.basename(result_dir)}.html")
+            written = render_test_report(
+                report_path, task_name=task_name or os.path.basename(result_dir),
+                model_info=model_info, test_config=test_config,
+                commands=commands or [], results=results or [],
+                environment=environment, status=status)
+            return written
+        except Exception as exc:
+            self._log_exec(trf("  ⚠ 测试报告生成失败: {error}\n", error=exc))
+            return None
+
+    def _set_test_report(self, path: str):
+        """记录本次测试报告路径并启用"打开测试报告"按钮 (主线程调用)"""
+        self.current_report_path = path
+        if hasattr(self, "open_report_btn"):
+            self.open_report_btn.config(state=tk.NORMAL)
 
     def _write_task_info(self, result_dir: str, info: dict):
         """将本次任务信息写入结果目录下的task_info.json"""
@@ -3518,7 +3748,7 @@ class WizardApp:
             "(是: 停止并删除容器 + 删除残留暂存文件, 本地结果不受影响)\n"
             '(否: 稍后可点击"清理环境"按钮手动清理)\n'
             "\n注意: 清理后容器将被删除, 如需再次执行测试用例,\n"
-            "需要从步骤2 Docker部署重新开始。",
+            "需要从步骤2 AISBench容器部署重新开始。",
             container=self.docker.container_name,
             state=state_label,
             work_dir_line=work_dir_line)
@@ -3551,7 +3781,7 @@ class WizardApp:
                 "{work_dir_line}"
                 "\n清理后容器将停止删除, 残留暂存文件将被清除。\n"
                 "本地下载的测试结果不受影响。\n"
-                "清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始。\n",
+                "清理后如需再次执行测试用例, 需从步骤2 AISBench容器部署重新开始。\n",
                 container_line=container_line,
                 state_line=state_line,
                 work_dir_line=work_dir_line)
@@ -3609,7 +3839,7 @@ class WizardApp:
             local_dir = self.local_output_var.get().strip()
             self._log_exec(f"  本地测试结果保留在: {local_dir}\n")
             self._log_exec(tr(
-                "  如需再次执行测试用例, 请从步骤2 Docker部署重新开始。\n"))
+                "  如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。\n"))
 
             def _restore_cleanup():
                 self.cleanup_btn.config(state=tk.DISABLED, text="清理环境")
@@ -3619,7 +3849,7 @@ class WizardApp:
                 else:
                     showinfo("清理完成",
                         "环境清理完成!\n容器已删除, 临时目录无残留。\n本地测试结果不受影响。\n"
-                        "如需再次执行测试用例, 请从步骤2 Docker部署重新开始。")
+                        "如需再次执行测试用例, 请从步骤2 AISBench容器部署重新开始。")
 
             self.root.after(0, _restore_cleanup)
 
@@ -3721,7 +3951,7 @@ class WizardApp:
                 "\n退出前是否清理远程环境?\n"
                 "(是: 清理后退出  否: 直接退出保留容器  取消: 不退出)\n"
                 '(未清理的容器下次连接时可通过步骤2"清理残留容器"删除)\n'
-                "\n注意: 清理后如需再次执行测试用例, 需从步骤2 Docker部署重新开始;\n"
+                "\n注意: 清理后如需再次执行测试用例, 需从步骤2 AISBench容器部署重新开始;\n"
                 "若测试任务正在执行中, 直接退出将导致测试异常终止。",
                 container=self.docker.container_name,
                 state=state_label,

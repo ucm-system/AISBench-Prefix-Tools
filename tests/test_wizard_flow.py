@@ -526,6 +526,11 @@ class TestExecutionStateTests(unittest.TestCase):
             self.assertIn("aisbench_test.py", text)
             self.assertIn("测试结果", text)
             self.assertIn("结果解读", text)
+            # 报告包含KV Cache命中过程动画, 且传入数值型缓存信息
+            self.assertIn("KV Cache 命中过程动画", text)
+            self.assertIn('id="animCanvas0"', text)
+            self.assertIn("总 KV cache 2,000,000 tokens", text)
+            self.assertIn("预埋 KV 需求", text)
             # 测试配置数值必须与designer实际值一致(防止字段名写错回落为0)
             self.assertIn("单个DP组KV cache (tokens)", text)
             self.assertIn("1,000,000", text)   # _build_app 设置的单DP组KV cache

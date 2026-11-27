@@ -72,6 +72,15 @@ class RenderTestReportTests(unittest.TestCase):
             self.assertIn('id="animCanvas0"', text)
             self.assertIn('id="animCanvas1"', text)
             self.assertIn('id="animTabs"', text)
+            # 进度条: 支持拖动回放, 播放速度已放慢(两阶段各14s)
+            self.assertIn('id="animSlider0"', text)
+            self.assertIn('id="animSlider1"', text)
+            self.assertIn('id="animTime0"', text)
+            self.assertIn("拖动进度条可回放任意时刻", text)
+            self.assertIn("PHASE1 = 14000, PHASE2 = 14000", text)
+            self.assertIn("28.0s", text)
+            # 层级排版说明与方向箭头
+            self.assertIn("重算 KV → attention", text)
             self.assertIn("阶段一：KV Cache 预埋", text)
             self.assertIn("阶段二：正式测试", text)
             # 测试结果行可点击切换到对应用例动画
@@ -109,8 +118,9 @@ class RenderTestReportTests(unittest.TestCase):
         html_text = render_kvcache_animation_html(
             _sample_results(),
             {"total_kv_cache": 4000000, "repeat_rate": 0.9})
-        # 两个用例各有一个canvas与解读块
+        # 两个用例各有一个canvas/进度条与解读块
         self.assertEqual(html_text.count('class="anim-canvas"'), 2)
+        self.assertEqual(html_text.count('class="anim-slider"'), 2)
         self.assertEqual(html_text.count("命中过程解读"), 2)
         self.assertIn("用例 1 · 4K/1K", html_text)
         self.assertIn("用例 2 · 16K/2K", html_text)

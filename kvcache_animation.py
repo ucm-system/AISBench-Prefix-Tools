@@ -173,8 +173,12 @@ def _animation_case_html(case: Dict) -> str:
         '<div class="anim-controls">'
         f'<button type="button" class="anim-btn" id="animReplay{i}">重新播放</button>'
         f'<button type="button" class="anim-btn" id="animToggle{i}">暂停</button>'
-        f'<span class="anim-phase" id="animPhase{i}">阶段一：KV Cache 预埋（prefill 数据集写入）</span>'
+        f'<input type="range" id="animSlider{i}" class="anim-slider" min="0" step="25" value="0" aria-label="动画进度（可拖动）">'
+        f'<span class="anim-time" id="animTime{i}">0.0s / 28.0s</span>'
         '</div>'
+        '<div class="anim-phase-row">'
+        f'<span class="anim-phase" id="animPhase{i}">阶段一：KV Cache 预埋（prefill 数据集写入）</span>'
+        '<span class="anim-phase-tip">拖动进度条可回放任意时刻</span></div>'
         '<div class="anim-legend">'
         '<span><span class="dot" style="background:#2563eb"></span>预埋写入/请求查询</span>'
         '<span><span class="dot" style="background:#16a34a"></span>HBM 命中</span>'
@@ -207,7 +211,12 @@ _ANIMATION_TEMPLATE = """<style>
 .anim-btn{padding:5px 14px;border:1px solid var(--border);border-radius:4px;
  background:#fff;font-size:12.5px;cursor:pointer;}
 .anim-btn:hover{border-color:var(--primary);color:var(--primary);}
+.anim-slider{flex:1;min-width:240px;accent-color:var(--primary);cursor:pointer;}
+.anim-time{font-size:12.5px;color:var(--muted);white-space:nowrap;
+ font-variant-numeric:tabular-nums;}
 .anim-phase{font-size:13px;font-weight:600;color:var(--primary);}
+.anim-phase-row{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;flex-wrap:wrap;}
+.anim-phase-tip{font-size:12px;color:var(--muted);}
 .anim-legend{display:flex;flex-wrap:wrap;gap:14px;margin:4px 0 10px;
  font-size:12.5px;color:var(--muted);}
 .anim-legend .dot{display:inline-block;width:10px;height:10px;border-radius:50%;
@@ -226,9 +235,9 @@ __CASES_HTML__
 (function () {
 "use strict";
 var CASES = __CASES_JSON__;
-var PHASE1 = 8000, PHASE2 = 8000, TOTAL = PHASE1 + PHASE2;
+var PHASE1 = 14000, PHASE2 = 14000, TOTAL = PHASE1 + PHASE2;
 var N1 = 10, N2 = 10;
-var state = {active: 0, t: 0, playing: true, last: null};
+var state = {active: 0, t: 0, playing: true, last: null, scrubbing: false};
 
 function clamp01(v){return v < 0 ? 0 : v > 1 ? 1 : v;}
 function lerp(a, b, u){return a + (b - a) * u;}
@@ -253,21 +262,22 @@ function polyPoint(pts, u){
 }
 
 var BOX = {
-  src: [40, 180, 150, 210],
-  hbm: [560, 48, 360, 168],
-  ext: [560, 312, 360, 168],
-  att: [245, 440, 205, 72],
-  pre: [245, 300, 170, 68]
+  src: [20, 110, 180, 190],
+  hbm: [350, 90, 330, 140],
+  ext: [350, 320, 330, 140],
+  att: [760, 130, 180, 140],
+  pre: [760, 340, 180, 120]
 };
+// 层级: 请求源(左) → 存储层HBM(中上)/外置存储(中下) → 计算层(右)
 var PATH = {
-  writeHbm: [[190, 285], [400, 175], [560, 132]],
-  writeExt: [[190, 285], [400, 305], [640, 312]],
-  query:    [[190, 285], [400, 175], [560, 132]],
-  hbmHit:   [[660, 216], [520, 335], [350, 440]],
-  queryExt: [[920, 132], [950, 262], [920, 392]],
-  loadBack: [[710, 312], [710, 216]],
-  extMiss:  [[560, 380], [485, 360], [415, 334]],
-  preAtt:   [[330, 368], [348, 440]]
+  writeHbm: [[200, 205], [275, 205], [350, 160]],
+  writeExt: [[410, 230], [410, 320]],
+  query:    [[200, 205], [275, 205], [350, 160]],
+  hbmHit:   [[680, 160], [720, 160], [760, 175]],
+  queryExt: [[480, 230], [480, 320]],
+  loadBack: [[550, 320], [550, 230]],
+  extMiss:  [[515, 460], [620, 480], [760, 415]],
+  preAtt:   [[850, 340], [850, 270]]
 };
 var COLOR = {
   write: "#2563eb", hit: "#16a34a", load: "#d97706", spill: "#7c3aed",
@@ -321,8 +331,9 @@ function drawBox(ctx, r, title, sub){
   }
 }
 function drawBlocks(ctx, r, fill, evictFrac, hitFrac, baseColor, evictColor){
-  var cols = 15, rows = 5, gx = r[0] + 14, gy = r[1] + 52;
-  var cw = (r[2] - 28) / cols, ch = (r[3] - 64) / rows;
+  // 块区从 r+58 开始, 预留标题/副标题/说明行
+  var cols = 15, rows = 5, gx = r[0] + 14, gy = r[1] + 58;
+  var cw = (r[2] - 28) / cols, ch = (r[3] - 70) / rows;
   var cells = cols * rows, filled = Math.round(cells * clamp01(fill));
   var evicted = Math.round(cells * clamp01(evictFrac));
   var hitCells = Math.round(cells * clamp01(hitFrac));
@@ -350,6 +361,18 @@ function drawPath(ctx, pts, label, labelAt, showLabel){
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (var i = 1; i < pts.length; i++) { ctx.lineTo(pts[i][0], pts[i][1]); }
   ctx.stroke();
+  // 末端箭头, 标明数据流向
+  var n = pts.length;
+  var dx = pts[n-1][0] - pts[n-2][0], dy = pts[n-1][1] - pts[n-2][1];
+  var len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var ux = dx / len, uy = dy / len;
+  var tipX = pts[n-1][0], tipY = pts[n-1][1];
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - 10 * ux + 5 * uy, tipY - 10 * uy - 5 * ux);
+  ctx.lineTo(tipX - 10 * ux - 5 * uy, tipY - 10 * uy + 5 * ux);
+  ctx.closePath();
+  ctx.fillStyle = "#94a3b8"; ctx.fill();
   if (showLabel && label) {
     ctx.fillStyle = COLOR.muted;
     ctx.font = "11.5px 'Segoe UI','Microsoft YaHei',sans-serif";
@@ -370,7 +393,7 @@ function drawParticle(ctx, p, color, text){
   }
 }
 function drawFlash(ctx, at, t0, t, color){
-  var u = (t - t0) / 550;
+  var u = (t - t0) / 900;
   if (u < 0 || u > 1) { return; }
   ctx.beginPath();
   ctx.arc(at[0], at[1], 12 + 26 * u, 0, Math.PI * 2);
@@ -384,7 +407,7 @@ function phase1Routes(cfg){
   for (var i = 0; i < N1; i++) {
     var toExt = i >= N1 - extCount;
     routes.push({
-      start: 300 + i * span, dur: 900,
+      start: 300 + i * span, dur: 1500,
       pts: toExt ? PATH.writeExt : PATH.writeHbm,
       color: toExt ? COLOR.spill : COLOR.write,
       text: "预填" + (i + 1)
@@ -399,18 +422,18 @@ function phase2Routes(cfg){
   for (var j = 0; j < N2; j++) {
     var kind = j < hit ? "hbm" : (j < hit + ext ? "ext" : "miss");
     var segs = [
-      {pts: PATH.query, dur: 800, color: COLOR.write, text: "请求" + (j + 1)}
+      {pts: PATH.query, dur: 1400, color: COLOR.write, text: "请求" + (j + 1)}
     ];
     if (kind === "hbm") {
-      segs.push({pts: PATH.hbmHit, dur: 900, color: COLOR.hit, text: "HBM命中"});
+      segs.push({pts: PATH.hbmHit, dur: 1500, color: COLOR.hit, text: "HBM命中"});
     } else if (kind === "ext") {
-      segs.push({pts: PATH.queryExt, dur: 650, color: COLOR.miss, text: "HBM未命中"});
-      segs.push({pts: PATH.loadBack, dur: 650, color: COLOR.load, text: "外置命中加载"});
-      segs.push({pts: PATH.hbmHit, dur: 900, color: COLOR.hit, text: "参与attention"});
+      segs.push({pts: PATH.queryExt, dur: 1100, color: COLOR.miss, text: "HBM未命中"});
+      segs.push({pts: PATH.loadBack, dur: 1100, color: COLOR.load, text: "外置命中加载"});
+      segs.push({pts: PATH.hbmHit, dur: 1500, color: COLOR.hit, text: "参与attention"});
     } else {
-      segs.push({pts: PATH.queryExt, dur: 650, color: COLOR.miss, text: "HBM未命中"});
-      segs.push({pts: PATH.extMiss, dur: 650, color: COLOR.miss, text: "外置未命中"});
-      segs.push({pts: PATH.preAtt, dur: 650, color: COLOR.write, text: "prefill重算"});
+      segs.push({pts: PATH.queryExt, dur: 1100, color: COLOR.miss, text: "HBM未命中"});
+      segs.push({pts: PATH.extMiss, dur: 1100, color: COLOR.miss, text: "外置未命中"});
+      segs.push({pts: PATH.preAtt, dur: 1100, color: COLOR.write, text: "prefill重算"});
     }
     var start = PHASE1 + 300 + j * span, cursor = start;
     segs.forEach(function (s) { s.start = cursor; cursor += s.dur; });
@@ -426,32 +449,41 @@ function drawCase(ctx, cfg, t){
   var inPhase1 = t < PHASE1;
   var p1 = ease((t - 300) / (PHASE1 - 1600));
   var p2 = ease((t - PHASE1 - 300) / (PHASE2 - 2400));
+  var FONT = "'Segoe UI','Microsoft YaHei',sans-serif";
 
   ctx.fillStyle = inPhase1 ? "#dbeafe" : "#dcfce7";
   roundRect(ctx, 12, 10, 936, 44, 8); ctx.fill();
   ctx.fillStyle = COLOR.text;
-  ctx.font = "bold 15px 'Segoe UI','Microsoft YaHei',sans-serif";
+  ctx.font = "bold 15px " + FONT;
   ctx.textAlign = "left"; ctx.textBaseline = "middle";
   ctx.fillText(inPhase1 ? "阶段一：KV Cache 预埋（prefill 数据集写入）"
                         : "阶段二：正式测试（带前缀请求查询命中）", 26, 25);
   ctx.fillStyle = COLOR.muted;
-  ctx.font = "12px 'Segoe UI','Microsoft YaHei',sans-serif";
+  ctx.font = "12px " + FONT;
   ctx.fillText(inPhase1
     ? "预埋请求把可复用前缀的 KV cache 写入 HBM 显存；HBM 占满后溢出写入外置存储"
     : "请求先查询 HBM；未命中转查外置存储并加载回 HBM；仍未命中由 prefill 重新计算",
     26, 43);
   ctx.fillStyle = "#e2e8f0"; ctx.fillRect(12, 60, 936, 6);
   ctx.fillStyle = "#2563eb"; ctx.fillRect(12, 60, 936 * (t / TOTAL), 6);
+  // 阶段分界刻度: 前半预埋 / 后半正式测试
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(12 + 936 * 0.5, 56, 2, 14);
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10.5px " + FONT;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("预埋阶段", 12 + 936 * 0.25, 70);
+  ctx.fillText("正式测试", 12 + 936 * 0.75, 70);
 
-  drawPath(ctx, PATH.writeHbm, "", null, false);
-  drawPath(ctx, PATH.hbmHit, "HBM命中 → attention", [510, 300], !inPhase1);
-  drawPath(ctx, PATH.queryExt, "未命中 → 查询外置存储", [905, 262], !inPhase1);
-  drawPath(ctx, PATH.loadBack, "加载回 HBM", [762, 264],
+  // 连线按层级: 请求→HBM, HBM→attention, HBM↕外置, 外置→prefill, prefill→attention
+  drawPath(ctx, PATH.writeHbm, "查询 / 预填写入", [275, 182], true);
+  drawPath(ctx, PATH.hbmHit, "HBM 命中", [720, 140], !inPhase1);
+  drawPath(ctx, PATH.queryExt, "未命中转查", [480, 252], !inPhase1);
+  drawPath(ctx, PATH.loadBack, "加载回 HBM", [550, 288],
            !inPhase1 && frac(cfg.external) > 0);
-  drawPath(ctx, PATH.extMiss, "外置未命中 → prefill 重算", [488, 372], !inPhase1);
-  drawPath(ctx, PATH.preAtt, "", null, false);
+  drawPath(ctx, PATH.extMiss, "外置未命中 → prefill 重算", [630, 502], !inPhase1);
+  drawPath(ctx, PATH.preAtt, "重算 KV → attention", [850, 303], !inPhase1);
   if (inPhase1 && externalPresent(cfg)) {
-    drawPath(ctx, PATH.writeExt, "HBM 占满后溢出写入外置存储", [400, 340], true);
+    drawPath(ctx, PATH.writeExt, "溢出写入", [410, 272], true);
   }
 
   drawBox(ctx, BOX.hbm, "HBM 显存 KV Cache", "LRU 淘汰策略");
@@ -460,14 +492,15 @@ function drawCase(ctx, cfg, t){
   drawBlocks(ctx, BOX.hbm, hbmFill, evictFrac, inPhase1 ? 0 : frac(cfg.hbm) * p2,
              "#93c5fd", COLOR.evict);
   ctx.fillStyle = COLOR.muted;
-  ctx.font = "12px 'Segoe UI','Microsoft YaHei',sans-serif";
+  ctx.font = "12px " + FONT;
   ctx.textAlign = "right"; ctx.textBaseline = "top";
   ctx.fillText("已用 " + Math.round(hbmFill * 100) + "%",
                BOX.hbm[0] + BOX.hbm[2] - 12, BOX.hbm[1] + 29);
   if (!inPhase1 && frac(cfg.hbm) === 0) {
     ctx.fillStyle = COLOR.miss;
-    ctx.fillText("LRU：新请求 KV 覆盖旧前缀 KV",
-                 BOX.hbm[0] + BOX.hbm[2] - 12, BOX.hbm[1] + 48);
+    ctx.font = "11.5px " + FONT;
+    ctx.fillText("LRU：新请求覆盖旧前缀",
+                 BOX.hbm[0] + BOX.hbm[2] - 12, BOX.hbm[1] + 44);
   }
 
   drawBox(ctx, BOX.ext, "外置存储（DRAM 分级缓存）",
@@ -476,6 +509,7 @@ function drawCase(ctx, cfg, t){
   drawBlocks(ctx, BOX.ext, extFillTarget(cfg) * (inPhase1 ? p1 : 1), 0, 0,
              "#c4b5fd", COLOR.evict);
   ctx.fillStyle = COLOR.muted;
+  ctx.font = "12px " + FONT;
   ctx.textAlign = "right";
   ctx.fillText("已用 " + Math.round(extFillTarget(cfg) * (inPhase1 ? p1 : 1) * 100) + "%",
                BOX.ext[0] + BOX.ext[2] - 12, BOX.ext[1] + 29);
@@ -495,10 +529,10 @@ function drawCase(ctx, cfg, t){
       }
     });
     ctx.fillStyle = COLOR.muted;
-    ctx.font = "12px 'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.font = "12px " + FONT;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     var sent = Math.min(N1, Math.max(0, Math.floor((t - 300) / (PHASE1 * 0.6 / N1)) + 1));
-    ctx.fillText("已发送 " + sent + "/" + N1, BOX.src[0] + 75, BOX.src[1] + 175);
+    ctx.fillText("已发送 " + sent + "/" + N1, BOX.src[0] + 90, BOX.src[1] + 120);
   } else {
     var done = 0;
     phase2Routes(cfg).forEach(function (route) {
@@ -510,25 +544,25 @@ function drawCase(ctx, cfg, t){
       });
       if (route.kind === "hbm") {
         drawFlash(ctx, PATH.query[PATH.query.length - 1],
-                  route.segs[0].start + 800, t, COLOR.hit);
+                  route.segs[0].start + 1400, t, COLOR.hit);
       } else if (route.kind === "ext") {
         drawFlash(ctx, PATH.queryExt[PATH.queryExt.length - 1],
-                  route.segs[1].start + 650, t, COLOR.load);
+                  route.segs[1].start + 1100, t, COLOR.load);
       } else {
         drawFlash(ctx, PATH.extMiss[PATH.extMiss.length - 1],
-                  route.segs[2].start + 650, t, COLOR.miss);
+                  route.segs[2].start + 1100, t, COLOR.miss);
       }
       var last = route.segs[route.segs.length - 1];
       if (t > last.start + last.dur) { done += 1; }
     });
     ctx.fillStyle = COLOR.muted;
-    ctx.font = "12px 'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.font = "12px " + FONT;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("已完成请求 " + done + "/" + N2, BOX.src[0] + 75, BOX.src[1] + 175);
+    ctx.fillText("已完成请求 " + done + "/" + N2, BOX.src[0] + 90, BOX.src[1] + 120);
   }
 
   ctx.fillStyle = COLOR.muted;
-  ctx.font = "12px 'Segoe UI','Microsoft YaHei',sans-serif";
+  ctx.font = "12px " + FONT;
   ctx.textAlign = "left"; ctx.textBaseline = "bottom";
   ctx.fillText("HBM 命中率 " + (cfg.hbm == null ? "未知" : (cfg.hbm * 100).toFixed(1) + "%") +
                " ｜ 外部命中率 " + (cfg.external == null ? "未知" : (cfg.external * 100).toFixed(1) + "%") +
@@ -559,6 +593,30 @@ CASES.forEach(function (cfg, i) {
       state.playing = !state.playing; syncToggle();
     });
   }
+  var slider = document.getElementById("animSlider" + i);
+  if (slider) {
+    slider.max = String(TOTAL);
+    // 拖动时暂停播放, 松开后恢复拖动前的播放状态
+    slider.addEventListener("pointerdown", function () {
+      state.scrubbing = true;
+      state.resumeAfterScrub = state.playing;
+      state.playing = false;
+      syncToggle();
+    });
+    slider.addEventListener("pointerup", function () {
+      state.scrubbing = false;
+      state.playing = !!state.resumeAfterScrub;
+      syncToggle();
+    });
+    slider.addEventListener("input", function () {
+      var v = parseInt(slider.value, 10);
+      if (!isNaN(v)) {
+        state.t = Math.max(0, Math.min(TOTAL - 1, v));
+        state.playing = false;
+        syncToggle();
+      }
+    });
+  }
 });
 
 function syncToggle(){
@@ -573,6 +631,7 @@ function activate(i){
     if (el) { el.hidden = (j !== i); }
   });
   tabBtns.forEach(function (b, j) { b.classList.toggle("active", j === i); });
+  syncProgress(true);
   syncToggle();
 }
 activate(0);
@@ -597,6 +656,18 @@ function phaseLabel(t){
     : "阶段二：正式测试（带前缀请求查询命中）";
 }
 
+function syncProgress(force){
+  var slider = document.getElementById("animSlider" + state.active);
+  var timeEl = document.getElementById("animTime" + state.active);
+  if (slider && (force || !state.scrubbing)) {
+    slider.value = String(Math.round(state.t));
+  }
+  if (timeEl) {
+    timeEl.textContent = (state.t / 1000).toFixed(1) + "s / " +
+                         (TOTAL / 1000).toFixed(1) + "s";
+  }
+}
+
 function frame(now){
   if (state.last == null) { state.last = now; }
   var dt = now - state.last;
@@ -610,6 +681,7 @@ function frame(now){
     drawCase(canvas.getContext("2d"), cfg, state.t);
   }
   phaseLabel(state.t);
+  syncProgress(false);
   requestAnimationFrame(frame);
 }
 if (CASES.length > 0) { requestAnimationFrame(frame); }
@@ -636,7 +708,8 @@ def render_kvcache_animation_html(results: List[Dict],
              'HBM 占满后溢出写入外置存储）；正式测试阶段发送带前缀比例（repeat_rate）的请求，'
              '先查询 HBM，未命中转查外置存储并把命中的 KV cache 加载回 HBM，仍未命中由 '
              'prefill 重新计算。点击上方用例标签或“测试结果”表格中的用例行，切换查看对应用例'
-             '的动画。</p>')
+             '的动画。动画支持暂停/继续与重新播放，拖动进度条可回放任意时刻（前半段为预埋'
+             '阶段，后半段为正式测试阶段）。</p>')
     cases_html = (intro + '<div class="anim-tabs" id="animTabs"></div>'
                   + "".join(_animation_case_html(c) for c in cases)
                   + '<p class="anim-note">动画为示意性演示：色块数量表示 KV cache 空间的相对'
